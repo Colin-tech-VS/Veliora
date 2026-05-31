@@ -966,6 +966,15 @@ async function handoffCrawlToBackground() {
   }
 }
 
+async function dismissCrawlUI() {
+  if (crawlState.active && crawlState.jobId) {
+    await handoffCrawlToBackground();
+    showToast("Crawl en arrière-plan — notification à la fin", "info", 4500);
+    return;
+  }
+  hideCrawlLoader();
+}
+
 async function finishCrawlFromJob(job, label, options = {}) {
   if (crawlState._finishing) return;
   if (!crawlState.active && !job?.id) return;
@@ -977,7 +986,11 @@ async function finishCrawlFromJob(job, label, options = {}) {
     const finalJob = jobId
       ? await api(`/crawler/jobs/${jobId}?lite=1`).catch(() => job)
       : job;
-    await refreshAppData();
+    try {
+      await refreshAppData();
+    } catch (err) {
+      console.warn("refresh after crawl", err);
+    }
     notifyCrawlResult(finalJob, lbl);
     if (window.CrawlWatch) {
       CrawlWatch.showLocalNotification(finalJob, lbl);
@@ -996,13 +1009,17 @@ async function finishCrawlFromJob(job, label, options = {}) {
       const lead = LEADS.find((l) => normalizeUrlKey(l.source_url || "") === target);
       if (lead) openDrawer(lead.id);
     }
-    hideCrawlLoader();
   } finally {
+    hideCrawlLoader();
     crawlState._finishing = false;
   }
 }
 
 function setupCrawlBackground() {
+  document.getElementById("crawl-close-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismissCrawlUI();
+  });
   document.getElementById("crawl-minimize-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     minimizeCrawlUI({ notify: true });
@@ -1012,10 +1029,9 @@ function setupCrawlBackground() {
     cancelStaleCrawlUi();
     showToast("Crawl annulé", "success");
   });
-  document.getElementById("crawl-dock-cancel")?.addEventListener("click", (e) => {
+  document.getElementById("crawl-dock-close")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    cancelStaleCrawlUi();
-    showToast("Crawl annulé", "success");
+    dismissCrawlUI();
   });
   document.getElementById("crawl-dock")?.addEventListener("click", (e) => {
     if (e.target.closest(".crawl-dock-close")) return;
@@ -3464,7 +3480,7 @@ async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
   const job = await api(`/crawler/jobs/${jobId}${qs}`);
   const newFetch = wantLogs || job.logs?.length ? now : lastLogsFetch;
   let displayLabel = label;
-  if (label.startsWith("Tous les sites")) {
+  if (label.startsWith("Portails recommandés") || label.startsWith("Tous les sites")) {
     displayLabel = applyCrawlLabelFromJobMessage(label, job.message) || label;
   }
   const title =

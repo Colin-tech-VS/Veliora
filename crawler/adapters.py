@@ -419,10 +419,82 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="lefigaro",
         name="Le Figaro Immobilier",
         base_url="https://immobilier.lefigaro.fr",
-        search_url="https://immobilier.lefigaro.fr/annonces/immobilier-location-appartement.html",
+        search_url="https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement.html",
         listing_patterns=[
             r"immobilier\.lefigaro\.fr/annonces/annonce-[^/\"'\s]+",
             r"immobilier\.lefigaro\.fr/annonces/[^/\"'\s]+-\d{7,}\.html",
+        ],
+    ),
+    # Portails recommandés (HTTP, sans anti-bot — inclus dans « Crawler tout »)
+    AdapterConfig(
+        id="superimmo",
+        name="Superimmo",
+        base_url="https://www.superimmo.com",
+        search_url="https://www.superimmo.com/achat/appartement",
+        listing_patterns=[
+            r"superimmo\.com/[^/\"'\s]+/annonce-\d+",
+            r"superimmo\.com/annonce/\d+",
+            r"superimmo\.com/[^/\"'\s]+/\d{5,}",
+        ],
+    ),
+    AdapterConfig(
+        id="avendrealouer",
+        name="AvendreAouer",
+        base_url="https://www.avendrealouer.fr",
+        search_url="https://www.avendrealouer.fr/vente/appartement.html",
+        listing_patterns=[
+            r"avendrealouer\.fr/[^/\"'\s]+-\d{5,}\.htm",
+            r"avendrealouer\.fr/vente/[^/\"'\s]+-\d+",
+        ],
+    ),
+    AdapterConfig(
+        id="etreproprio",
+        name="EtreProprio",
+        base_url="https://www.etreproprio.com",
+        search_url="https://www.etreproprio.com/achat/appartement",
+        listing_patterns=[
+            r"etreproprio\.com/annonce/\d+",
+            r"etreproprio\.com/[^/\"'\s]+/\d{5,}",
+        ],
+    ),
+    AdapterConfig(
+        id="maisonappart",
+        name="Maison & Appartement",
+        base_url="https://www.maison-et-appartement.fr",
+        search_url="https://www.maison-et-appartement.fr/vente-appartement",
+        listing_patterns=[
+            r"maison-et-appartement\.fr/[^/\"'\s]+-\d{5,}\.html",
+            r"maison-et-appartement\.fr/annonce/\d+",
+        ],
+    ),
+    AdapterConfig(
+        id="ouestfranceimmo",
+        name="Ouest-France Immo",
+        base_url="https://www.ouestfrance-immo.com",
+        search_url="https://www.ouestfrance-immo.com/achat/appartement",
+        listing_patterns=[
+            r"ouestfrance-immo\.fr/annonce/\d+",
+            r"ouestfrance-immo\.fr/[^/\"'\s]+-\d{5,}",
+        ],
+    ),
+    AdapterConfig(
+        id="lesiteimmo",
+        name="LeSiteImmo",
+        base_url="https://www.lesiteimmo.com",
+        search_url="https://www.lesiteimmo.com/recherche/vente/appartement",
+        listing_patterns=[
+            r"lesiteimmo\.com/annonce/\d+",
+            r"lesiteimmo\.com/[^/\"'\s]+/\d{5,}",
+        ],
+    ),
+    AdapterConfig(
+        id="notaires",
+        name="Immobilier Notaires",
+        base_url="https://www.immobilier.notaires.fr",
+        search_url="https://www.immobilier.notaires.fr/fr/ventes",
+        listing_patterns=[
+            r"immobilier\.notaires\.fr/fr/annonce/\d+",
+            r"immobilier\.notaires\.fr/[^/\"'\s]+/\d{5,}",
         ],
     ),
 ]
@@ -435,6 +507,13 @@ ADAPTER_CLASSES = {
     "bienici": BienIciAdapter,
     "paruvendu": ParuVenduAdapter,
     "lefigaro": LeFigaroAdapter,
+    "superimmo": GenericAdapter,
+    "avendrealouer": GenericAdapter,
+    "etreproprio": GenericAdapter,
+    "maisonappart": GenericAdapter,
+    "ouestfranceimmo": GenericAdapter,
+    "lesiteimmo": GenericAdapter,
+    "notaires": GenericAdapter,
 }
 
 _DEFAULT_BY_ID = {c.id: c for c in DEFAULT_SOURCES}

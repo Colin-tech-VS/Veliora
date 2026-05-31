@@ -542,9 +542,8 @@ def _source_sort_key(src: dict) -> tuple:
     return (0, src.get("name") or "")
 
 
-# Portails à anti-bot fort (DataDome) — crawlés en dernier pour ne pas bloquer
-# le crawl global sur la source la plus protégée (les portails accessibles passent d'abord).
-HARD_ANTIBOT_HOSTS = ("leboncoin", "seloger", "bienici", "pap.fr", "logic-immo")
+# Portails payants / anti-bot fort (exclus du « Crawler tout » gratuit).
+HARD_ANTIBOT_HOSTS = ("leboncoin", "seloger", "bienici", "logic-immo")
 
 
 def _crawl_priority(src: dict) -> int:

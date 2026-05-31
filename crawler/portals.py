@@ -12,18 +12,21 @@ PORTAL_IDS = (
     "bienici",
     "paruvendu",
     "lefigaro",
+    "superimmo",
+    "avendrealouer",
+    "etreproprio",
+    "maisonappart",
+    "ouestfranceimmo",
+    "lesiteimmo",
+    "notaires",
 )
 
-# Ces sites nécessitent Playwright (SPA / anti-bot) pour les pages résultats.
+# Portails payants / anti-bot fort — Playwright souvent requis.
 PROTECTED_HOSTS = (
     "leboncoin.fr",
     "seloger.com",
     "logic-immo.com",
     "bienici.com",
-    "pap.fr",
-    "paruvendu.fr",
-    "lefigaro.fr",
-    "figaro.fr",
 )
 
 

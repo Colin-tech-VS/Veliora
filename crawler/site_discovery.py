@@ -158,6 +158,34 @@ PORTAL_DISCOVER_URLS: dict[str, list[str]] = {
         "https://immobilier.lefigaro.fr/annonces/immobilier-location-appartement.html",
         "https://immobilier.lefigaro.fr/annonces/immobilier-location-maison.html",
     ],
+    "superimmo": [
+        "https://www.superimmo.com/achat/appartement",
+        "https://www.superimmo.com/achat/maison",
+        "https://www.superimmo.com/location/appartement",
+    ],
+    "avendrealouer": [
+        "https://www.avendrealouer.fr/vente/appartement.html",
+        "https://www.avendrealouer.fr/vente/maison.html",
+    ],
+    "etreproprio": [
+        "https://www.etreproprio.com/achat/appartement",
+        "https://www.etreproprio.com/achat/maison",
+    ],
+    "maisonappart": [
+        "https://www.maison-et-appartement.fr/vente-appartement",
+        "https://www.maison-et-appartement.fr/vente-maison",
+    ],
+    "ouestfranceimmo": [
+        "https://www.ouestfrance-immo.com/achat/appartement",
+        "https://www.ouestfrance-immo.com/achat/maison",
+    ],
+    "lesiteimmo": [
+        "https://www.lesiteimmo.com/recherche/vente/appartement",
+        "https://www.lesiteimmo.com/recherche/vente/maison",
+    ],
+    "notaires": [
+        "https://www.immobilier.notaires.fr/fr/ventes",
+    ],
 }
 
 

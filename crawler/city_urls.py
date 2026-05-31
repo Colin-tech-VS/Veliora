@@ -196,10 +196,49 @@ def city_search_url_candidates(
         _add(search_url or "")
         return out or [search_url]
 
+    if portal == "paruvendu":
+        if slug:
+            _add(f"https://www.paruvendu.fr/immobilier/vente/{slug}")
+        _add(f"{(search_url or 'https://www.paruvendu.fr/immobilier/').rstrip('/')}?ville={q_city}")
+        return out
+
     if portal == "lefigaro" or "figaro" in (search_url or ""):
         ps = path_slug.replace("-", "+")
         _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{ps}.html")
         _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement-{ps}.html")
+        return out
+
+    if portal == "superimmo" and path_slug:
+        _add(f"https://www.superimmo.com/achat/appartement/{path_slug}")
+        _add(f"https://www.superimmo.com/achat/maison/{path_slug}")
+        return out
+
+    if portal == "avendrealouer" and slug:
+        _add(f"https://www.avendrealouer.fr/vente/appartement-{slug}.html")
+        _add(f"https://www.avendrealouer.fr/vente/maison-{slug}.html")
+        return out
+
+    if portal == "etreproprio" and slug:
+        _add(f"https://www.etreproprio.com/achat/appartement/{slug}")
+        _add(f"https://www.etreproprio.com/achat/maison/{slug}")
+        return out
+
+    if portal == "maisonappart" and slug:
+        _add(f"https://www.maison-et-appartement.fr/vente-appartement/{slug}")
+        _add(f"https://www.maison-et-appartement.fr/vente-maison/{slug}")
+        return out
+
+    if portal == "ouestfranceimmo" and slug:
+        _add(f"https://www.ouestfrance-immo.com/achat/appartement/{slug}")
+        _add(f"https://www.ouestfrance-immo.com/achat/maison/{slug}")
+        return out
+
+    if portal == "lesiteimmo" and slug:
+        _add(f"https://www.lesiteimmo.com/recherche/vente/appartement/{slug}")
+        return out
+
+    if portal == "notaires" and q_city:
+        _add(f"https://www.immobilier.notaires.fr/fr/resultats?ville={q_city}")
         return out
 
     _add(apply_city_to_search_url(search_url, source_id, city, postcode))
