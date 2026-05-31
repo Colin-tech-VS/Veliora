@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS sources (
     name            TEXT NOT NULL,
     base_url        TEXT NOT NULL,
     search_url      TEXT,
-    enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled         SMALLINT NOT NULL DEFAULT 1,
     found_total     INTEGER NOT NULL DEFAULT 0,
     found_today     INTEGER NOT NULL DEFAULT 0,
     last_scan       TIMESTAMPTZ,
     last_error      TEXT,
-    is_custom       BOOLEAN NOT NULL DEFAULT FALSE,
+    is_custom       SMALLINT NOT NULL DEFAULT 0,
     agency_id       TEXT,
     logo_url        TEXT,
     logo_fallback   TEXT,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS leads (
     priority_tier   TEXT,
     score_explanation TEXT,
     scores_computed_at TIMESTAMPTZ,
-    missing_fields  JSONB NOT NULL DEFAULT '[]',
+    missing_fields  TEXT NOT NULL DEFAULT '[]',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS crawl_jobs (
     leads_found     INTEGER NOT NULL DEFAULT 0,
     leads_saved     INTEGER NOT NULL DEFAULT 0,
     leads_updated   INTEGER NOT NULL DEFAULT 0,
-    errors          JSONB NOT NULL DEFAULT '[]',
-    warnings        JSONB NOT NULL DEFAULT '[]',
+    errors          TEXT NOT NULL DEFAULT '[]',
+    warnings        TEXT NOT NULL DEFAULT '[]',
     message         TEXT,
     city            TEXT,
     eta_seconds     INTEGER,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS agency_users (
     role            TEXT NOT NULL DEFAULT 'collaborator',
     first_name      TEXT,
     last_name       TEXT,
-    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    active          SMALLINT NOT NULL DEFAULT 1,
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -171,17 +171,17 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     user_id         TEXT NOT NULL,
     email           TEXT NOT NULL,
     expires_at      TIMESTAMPTZ NOT NULL,
-    used            BOOLEAN NOT NULL DEFAULT FALSE,
+    used            SMALLINT NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS agency_settings (
     agency_id           TEXT PRIMARY KEY REFERENCES agencies(id),
-    target_cities       JSONB NOT NULL DEFAULT '[]',
-    target_neighborhoods JSONB NOT NULL DEFAULT '[]',
+    target_cities       TEXT NOT NULL DEFAULT '[]',
+    target_neighborhoods TEXT NOT NULL DEFAULT '[]',
     mandate_goal_month  INTEGER NOT NULL DEFAULT 5,
     onboarding_step     INTEGER NOT NULL DEFAULT 0,
-    onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    onboarding_completed SMALLINT NOT NULL DEFAULT 0,
     updated_at          TIMESTAMPTZ
 );
 
@@ -204,27 +204,27 @@ CREATE TABLE IF NOT EXISTS lead_outcomes (
     outcome_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     agent_id        TEXT,
     notes           TEXT,
-    scores_snapshot JSONB
+    scores_snapshot TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_lead_outcomes_lead ON lead_outcomes(lead_id, agency_id, outcome_at DESC);
 
 CREATE TABLE IF NOT EXISTS agency_scoring_weights (
     agency_id       TEXT PRIMARY KEY,
-    weights_json    JSONB NOT NULL,
+    weights_json    TEXT NOT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS dvf_commune_cache (
     cache_key       TEXT PRIMARY KEY,
-    payload         JSONB NOT NULL,
+    payload         TEXT NOT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Mandats
 CREATE TABLE IF NOT EXISTS agency_legal_profiles (
     agency_id       TEXT PRIMARY KEY,
-    profile_json    JSONB NOT NULL DEFAULT '{}',
+    profile_json    TEXT NOT NULL DEFAULT '{}',
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -236,7 +236,7 @@ CREATE TABLE IF NOT EXISTS seller_mandates (
     exclusivity     TEXT NOT NULL DEFAULT 'exclusif',
     status          TEXT NOT NULL DEFAULT 'draft',
     title           TEXT NOT NULL,
-    fields_json     JSONB NOT NULL DEFAULT '{}',
+    fields_json     TEXT NOT NULL DEFAULT '{}',
     body_html       TEXT,
     recipient_email TEXT,
     sent_at         TIMESTAMPTZ,
@@ -261,7 +261,7 @@ CREATE TABLE IF NOT EXISTS property_clients (
     property_type   TEXT,
     rooms_min       INTEGER,
     surface_min     DOUBLE PRECISION,
-    cities_json     JSONB NOT NULL DEFAULT '[]',
+    cities_json     TEXT NOT NULL DEFAULT '[]',
     status          TEXT NOT NULL DEFAULT 'actif',
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -283,8 +283,8 @@ CREATE TABLE IF NOT EXISTS mandate_dossiers (
     rooms           TEXT,
     price           INTEGER,
     property_type   TEXT,
-    photos_json     JSONB NOT NULL DEFAULT '[]',
-    linked_clients_json JSONB NOT NULL DEFAULT '[]',
+    photos_json     TEXT NOT NULL DEFAULT '[]',
+    linked_clients_json TEXT NOT NULL DEFAULT '[]',
     status          TEXT NOT NULL DEFAULT 'actif',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

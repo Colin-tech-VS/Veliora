@@ -16,7 +16,7 @@ from velora_db.sql_adapt import adapt_sql
 logger = logging.getLogger(__name__)
 
 class DbCursor:
-    """Curseur unifié (fetchone / lastrowid)."""
+    """Curseur unifié (fetchone / fetchall / lastrowid / rowcount)."""
 
     def __init__(self, raw, *, postgres: bool, returning: bool) -> None:
         self._raw = raw
@@ -27,6 +27,10 @@ class DbCursor:
             row = raw.fetchone()
             if row is not None:
                 self.lastrowid = row[0] if isinstance(row, (tuple, list)) else row.get("id")
+
+    @property
+    def rowcount(self) -> int:
+        return self._raw.rowcount
 
     def fetchone(self):
         return self._raw.fetchone()
