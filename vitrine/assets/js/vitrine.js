@@ -95,10 +95,13 @@
       setPrice("home-hero-price-ht", ht);
       setPrice("home-price-ttc", ttc);
       setPrice("trial-price-ht", ht);
+      setPrice("legal-price-ht", ht);
+      setPrice("footer-price-ht", ht);
       const statHt = document.getElementById("stat-ht");
       if (statHt) statHt.textContent = `${ht} €`;
       const maxSrc = document.getElementById("max-sources");
-      if (maxSrc && cfg.max_sources_per_agency) maxSrc.textContent = String(cfg.max_sources_per_agency);
+      const maxSources = cfg.max_sources ?? cfg.max_sources_per_agency;
+      if (maxSrc && maxSources) maxSrc.textContent = String(maxSources);
       const trial = document.getElementById("trial-line");
       if (trial && cfg.stripe?.require_payment) {
         const days = cfg.trial_days || cfg.stripe?.trial_days;
