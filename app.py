@@ -680,6 +680,60 @@ def api_stats():
     })
 
 
+@app.route("/api/roi/stats")
+def api_roi_stats():
+    """Tableau de bord ROI mensuel — appels → RDV → mandats signés."""
+    import datetime
+
+    from crawler.storage import get_connection
+
+    agency_id = _aid()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT outcome_type, COUNT(*) AS n
+               FROM lead_outcomes
+               WHERE agency_id = ? AND outcome_at >= ?
+               GROUP BY outcome_type""",
+            (agency_id, month_start),
+        ).fetchall()
+        all_rows = conn.execute(
+            """SELECT outcome_type, COUNT(*) AS n
+               FROM lead_outcomes
+               WHERE agency_id = ?
+               GROUP BY outcome_type""",
+            (agency_id,),
+        ).fetchall()
+
+    counts = {r["outcome_type"]: r["n"] for r in rows}
+    all_counts = {r["outcome_type"]: r["n"] for r in all_rows}
+    calls = counts.get("call", 0)
+    rdvs = counts.get("rdv", 0)
+    mandats = counts.get("mandat_signe", 0)
+    subscription_eur = 500
+    commission_eur = 3000
+    roi_multiple = round((mandats * commission_eur) / subscription_eur, 1) if mandats else 0
+    return jsonify({
+        "ok": True,
+        "period": "month",
+        "month_start": month_start,
+        "calls": calls,
+        "rdvs": rdvs,
+        "mandats": mandats,
+        "roi_multiple": roi_multiple,
+        "subscription_eur": subscription_eur,
+        "commission_eur": commission_eur,
+        "all_time": {
+            "calls": all_counts.get("call", 0),
+            "rdvs": all_counts.get("rdv", 0),
+            "mandats": all_counts.get("mandat_signe", 0),
+        },
+    })
+
+
 @app.route("/api/sources", methods=["GET", "POST"])
 def api_sources():
     if request.method == "POST":
@@ -1292,19 +1346,11 @@ def api_mandate_send(mandate_id):
         agency_id,
         {"recipient_email": to, "mark_sent": sent_smtp},
     )
+    _mailto_body = "Bonjour,\n\nVeuillez trouver votre mandat en pièce jointe ou via le lien que nous vous enverrons.\n\nCordialement"
     mailto = (
         f"mailto:{quote(to)}?subject={quote(subject)}"
-        f"&body={quote('Bonjour,\n\nVeuillez trouver votre mandat en pièce jointe ou via le lien que nous vous enverrons.\n\nCordialement')}"
+        f"&body={quote(_mailto_body)}"
     )
-    return jsonify({
-        "ok": True,
-        "mandate": mandate,
-        "sent_smtp": sent_smtp,
-        "email_configured": email_enabled(),
-        "mailto": mailto,
-    })
-
-
     return jsonify({
         "ok": True,
         "mandate": mandate,

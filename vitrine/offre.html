@@ -182,6 +182,75 @@
       </ol>
     </section>
 
+    <!-- Calculateur ROI interactif -->
+    <section class="v-section v-roi-calc v-reveal" id="roi-calc">
+      <h2>Calculez votre ROI en 10 secondes</h2>
+      <p class="sub">Un mandat suffit à rentabiliser l'abonnement — voyez par vous-même.</p>
+      <div class="v-roi-calc-widget">
+        <div class="v-roi-calc-slider-wrap">
+          <label for="roi-mandats-slider" class="v-roi-calc-label">
+            Mandats exclusifs visés par mois :
+            <strong id="roi-mandats-val" class="v-roi-calc-num">2</strong>
+          </label>
+          <input type="range" id="roi-mandats-slider" class="v-roi-slider" min="1" max="10" value="2" step="1">
+          <div class="v-roi-slider-marks"><span>1</span><span>5</span><span>10</span></div>
+        </div>
+        <div class="v-roi-calc-result">
+          <div class="v-roi-result-row">
+            <span>Commission estimée</span>
+            <strong id="roi-commission">6 000 €</strong>
+          </div>
+          <div class="v-roi-result-row">
+            <span>Abonnement Veliora</span>
+            <strong>− 500 € HT</strong>
+          </div>
+          <div class="v-roi-result-row v-roi-net">
+            <span>Net mensuel</span>
+            <strong id="roi-net">+ 5 500 €</strong>
+          </div>
+          <div class="v-roi-result-row v-roi-x">
+            <span>Abonnement remboursé</span>
+            <strong id="roi-x">12 ×</strong>
+          </div>
+        </div>
+        <p class="v-roi-calc-note">* Estimation : ~3 000 € de commission par mandat exclusif. Vos chiffres peuvent varier selon le marché local.</p>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">Démarrer — 1 mandat suffit à rentabiliser</a>
+      </div>
+    </section>
+
+    <!-- RGPD & conformité -->
+    <section class="v-section v-rgpd v-reveal" id="rgpd">
+      <h2>Données & conformité RGPD</h2>
+      <p class="sub">Le frein n°1 à la signature, c'est la question des données. Voici les réponses claires.</p>
+      <div class="v-rgpd-grid">
+        <div class="v-rgpd-item">
+          <h3>Base légale</h3>
+          <p>Le traitement repose sur l'<strong>intérêt légitime</strong> de votre agence (prospection commerciale B2B, conformément aux lignes directrices CNIL sur la prospection directe).</p>
+        </div>
+        <div class="v-rgpd-item">
+          <h3>Sources publiques uniquement</h3>
+          <p>Veliora analyse exclusivement des <strong>annonces visibles de tout internaute</strong> sur des portails publics (LBC, PAP, SeLoger…). Aucun accès à une base privée ou opaque.</p>
+        </div>
+        <div class="v-rgpd-item">
+          <h3>Isolation stricte par agence</h3>
+          <p>Chaque agence a un espace <strong>entièrement isolé</strong> : aucun prospect, aucune source ne sont partagés entre agences concurrentes. Vos données restent vôtres.</p>
+        </div>
+        <div class="v-rgpd-item">
+          <h3>Opt-out vendeur</h3>
+          <p>Tout vendeur peut demander la suppression de ses données. La fiche prospect se supprime en un clic, sans justification requise.</p>
+        </div>
+        <div class="v-rgpd-item">
+          <h3>Hébergement européen</h3>
+          <p>Données hébergées en Europe (Scalingo, région EU). Aucun transfert hors UE. Sous-traitants listés dans notre <a href="/legal#dpa">DPA</a>.</p>
+        </div>
+        <div class="v-rgpd-item">
+          <h3>Sous-traitant RGPD</h3>
+          <p>Vous êtes <strong>responsable de traitement</strong> ; Veliora est votre sous-traitant. Le contrat DPA est intégré aux CGV et signé à l'inscription.</p>
+        </div>
+      </div>
+      <p class="v-rgpd-footer">Des questions sur votre situation ? <a href="mailto:support@veliora.fr">Contactez-nous</a> · <a href="/legal#dpa">Lire le DPA complet →</a></p>
+    </section>
+
     <!-- FAQ commerciale -->
     <section class="v-section v-faq" id="faq">
       <h2>Questions avant de s’abonner</h2>
@@ -258,5 +327,30 @@
 
   <script src="/vitrine/assets/js/vitrine.js?v=28" defer></script>
   <script src="/vitrine/assets/js/offre.js?v=1" defer></script>
+  <script>
+    (function() {
+      var slider = document.getElementById("roi-mandats-slider");
+      var valEl = document.getElementById("roi-mandats-val");
+      var commissionEl = document.getElementById("roi-commission");
+      var netEl = document.getElementById("roi-net");
+      var xEl = document.getElementById("roi-x");
+      var COMMISSION = 3000;
+      var SUBSCRIPTION = 500;
+      function updateRoi() {
+        var n = parseInt(slider.value, 10);
+        var gross = n * COMMISSION;
+        var net = gross - SUBSCRIPTION;
+        var multiple = Math.round(gross / SUBSCRIPTION * 10) / 10;
+        valEl.textContent = n;
+        commissionEl.textContent = gross.toLocaleString("fr-FR") + " €";
+        netEl.textContent = "+ " + net.toLocaleString("fr-FR") + " €";
+        xEl.textContent = multiple + " ×";
+      }
+      if (slider) {
+        slider.addEventListener("input", updateRoi);
+        updateRoi();
+      }
+    })();
+  </script>
 </body>
 </html>

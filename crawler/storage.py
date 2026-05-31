@@ -27,6 +27,68 @@ def get_db_path() -> Path:
     return DB_PATH
 
 
+def _compute_property_fingerprint(
+    postcode: str | None, surface: float | None, price: int | None
+) -> str | None:
+    """Empreinte cross-portail : CP + surface (±2.5 m²) + prix (±5 000 €)."""
+    pc = (postcode or "").strip()
+    if not pc or not surface or not price:
+        return None
+    try:
+        surf_bucket = round(float(surface) / 5) * 5
+        price_bucket = round(int(price) / 10000) * 10000
+    except (TypeError, ValueError):
+        return None
+    if surf_bucket < 5 or price_bucket < 1000:
+        return None
+    return f"{pc}_{surf_bucket}_{price_bucket}"
+
+
+def _annotate_dedup(leads: list[dict]) -> list[dict]:
+    """Groupe les doublons cross-portail et ne garde que la fiche canonique.
+
+    Règles :
+    - Empreinte = CP + surface + prix (buckets).
+    - Dans chaque groupe, la fiche avec le score le plus élevé est canonique.
+    - Les leads en pipeline actif (à_contacter, contacté, RDV, mandat) sont
+      toujours conservés même s'ils sont doublons.
+    - La fiche canonique reçoit _also_on (liste de portails) et _portal_count.
+    """
+    from collections import defaultdict
+
+    active_statuses = {"a_contacter", "contacte", "rdv", "mandat"}
+    groups: dict[str, list[dict]] = defaultdict(list)
+    no_fp: list[dict] = []
+
+    for lead in leads:
+        fp = lead.get("property_fingerprint")
+        if fp:
+            groups[fp].append(lead)
+        else:
+            no_fp.append(lead)
+
+    result: list[dict] = list(no_fp)
+    for group in groups.values():
+        if len(group) == 1:
+            result.append(group[0])
+            continue
+
+        active = [l for l in group if (l.get("status") or "") in active_statuses]
+        passive = [l for l in group if (l.get("status") or "") not in active_statuses]
+
+        if passive:
+            passive.sort(key=lambda l: l.get("mandate_score") or 0, reverse=True)
+            canonical = passive[0]
+            sources = list({l.get("source") or "Portail" for l in group})
+            canonical["_also_on"] = sources
+            canonical["_portal_count"] = len(group)
+            result.append(canonical)
+
+        result.extend(active)
+
+    return sorted(result, key=lambda l: l.get("created_at") or "", reverse=True)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1316,7 +1378,8 @@ def get_leads(agency_id: str) -> list[dict]:
             "SELECT * FROM leads WHERE agency_id = ? ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()
-        return [_row_to_lead(r) for r in rows]
+        leads = [_row_to_lead(r) for r in rows]
+    return _annotate_dedup(leads)
 
 
 def get_lead(lead_id: int, agency_id: str) -> dict | None:
@@ -1505,6 +1568,7 @@ def _row_to_lead(row: sqlite3.Row) -> dict:
         "price_change_count": row["price_change_count"] if "price_change_count" in keys else 0,
         "last_price_change_at": row["last_price_change_at"] if "last_price_change_at" in keys else None,
         "priority_tier": row["priority_tier"] if "priority_tier" in keys else None,
+        "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
     }
     if "score_explanation" in keys and row["score_explanation"]:
         try:
