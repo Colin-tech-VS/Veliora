@@ -704,6 +704,9 @@ function setupMobileNav() {
     overlay?.classList.toggle("open");
   });
   overlay?.addEventListener("click", close);
+  document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((btn) => {
+    btn.addEventListener("click", close);
+  });
 
   document.querySelectorAll(".mobile-bottom-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {

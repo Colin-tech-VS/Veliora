@@ -1,9 +1,9 @@
 /* Veliora CRM — PWA shell + surveillance crawl en arrière-plan */
-const CACHE = "veliora-crm-v4";
+const CACHE = "veliora-crm-v5";
 const SHELL = [
   "/crm",
-  "/crm/assets/css/styles.css",
-  "/crm/assets/css/mobile.css",
+  "/crm/assets/css/styles.css?v=38",
+  "/crm/assets/css/mobile.css?v=32",
   "/crm/assets/js/crawl-watch.js",
 ];
 
