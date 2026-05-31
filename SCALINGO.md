@@ -14,16 +14,15 @@ scalingo create Veliora --region osc-fr1
 # ou lier un repo GitHub depuis le dashboard Scalingo → Veliora → main
 ```
 
-## Volume persistant (SQLite)
+## Base Supabase (recommandé)
 
-Sans volume, la base est **effacée** à chaque redéploiement.
+Voir **[SUPABASE.md](SUPABASE.md)** — créez le projet **Veliora**, exécutez `velora_db/postgres_schema.sql`, puis :
 
 ```bash
-scalingo --app veliora addons-add scalingo-fs-standard
-scalingo --app veliora volume-add veliora-data --size 10 --path /var/lib/data
+scalingo --app veliora env-set DATABASE_URL="postgresql://postgres.xxx:PASSWORD@....pooler.supabase.com:6543/postgres"
 ```
 
-La variable `VELIORA_DB_PATH=/var/lib/data/propscout.db` est déjà définie dans `scalingo.json`.
+Sans `DATABASE_URL`, Veliora retombe sur SQLite (éphémère sur Scalingo sans volume).
 
 ## Variables d’environnement (dashboard ou CLI)
 

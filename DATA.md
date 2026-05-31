@@ -2,14 +2,18 @@
 
 ## Où sont stockées les données ?
 
-Tout est enregistré dans **SQLite** :
+| Mode | Configuration | Usage |
+|------|---------------|--------|
+| **Supabase** (en ligne) | `DATABASE_URL` dans `.env` | Production Scalingo, équipe, données partagées |
+| **SQLite** (local) | pas de `DATABASE_URL` | Développement sur PC |
 
-| Fichier | Contenu |
-|---------|---------|
-| `data/propscout.db` | Prospects, sources, crawls, agences, utilisateurs, abonnements |
-| `data/backups/` | Copies automatiques au démarrage du serveur (14 derniers jours) |
+| Fichier / service | Contenu |
+|-------------------|---------|
+| Supabase projet **Veliora** | Prospects, sources, crawls, agences, mandats… |
+| `data/propscout.db` | Même schéma en local si pas de `DATABASE_URL` |
+| `data/backups/` | Sauvegardes SQLite au démarrage (local uniquement) |
 
-Variable optionnelle : `VELIORA_DB_PATH` dans `.env` (chemin absolu en production).
+Guide Supabase : **[SUPABASE.md](SUPABASE.md)**
 
 ## Rechargement navigateur (F5)
 

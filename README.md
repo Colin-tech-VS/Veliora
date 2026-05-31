@@ -33,7 +33,7 @@ Ouvrir http://localhost:8000
 - Lancez un crawl puis **⤓ Arrière-plan** : vous pouvez changer d’onglet ou fermer l’app — le crawl continue **sur le serveur**.
 - Autorisez les **notifications** pour être alerté à la fin du crawl.
 
-Voir aussi : `STRIPE_SETUP.md`, `DATA.md`, `SCALINGO.md`
+Voir aussi : `STRIPE_SETUP.md`, `DATA.md`, `SCALINGO.md`, `SUPABASE.md`
 
 ## Déploiement Scalingo
 

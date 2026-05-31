@@ -8,7 +8,7 @@
     }
   },
   "env": {
-    "VELIORA_DB_PATH": "/var/lib/data/propscout.db",
+    "DATABASE_URL": "",
     "CRAWL_PLAYWRIGHT_ENABLED": "false",
     "AUTO_WARMUP_ANTIBOT": "false",
     "DOMAIN_WARMUP": "false",

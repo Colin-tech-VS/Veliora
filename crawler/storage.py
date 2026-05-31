@@ -1,4 +1,4 @@
-"""Persistance SQLite — schéma compatible Supabase."""
+"""Persistance Veliora — SQLite local ou Supabase PostgreSQL (DATABASE_URL)."""
 
 from __future__ import annotations
 
@@ -12,11 +12,13 @@ from pathlib import Path
 
 import os
 
+from velora_db import backup_database, checkpoint_database, db_status, get_connection
+from velora_db.config import is_postgres, sqlite_path
+
 from crawler.adapters import DEFAULT_SOURCES
 from crawler.extractors import LeadData
 
-_DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "propscout.db"
-DB_PATH = Path(os.getenv("VELIORA_DB_PATH", str(_DEFAULT_DB))).expanduser().resolve()
+DB_PATH = sqlite_path()
 
 logger = logging.getLogger(__name__)
 
@@ -25,82 +27,8 @@ def get_db_path() -> Path:
     return DB_PATH
 
 
-def db_status() -> dict:
-    """État du fichier SQLite (diagnostic persistance)."""
-    path = get_db_path()
-    exists = path.is_file()
-    size = path.stat().st_size if exists else 0
-    return {
-        "path": str(path),
-        "exists": exists,
-        "size_bytes": size,
-        "writable": os.access(path.parent, os.W_OK) if path.parent.exists() else False,
-    }
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def get_connection() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    return conn
-
-
-def checkpoint_database() -> None:
-    """Consolide le journal WAL sur disque (appel optionnel à l'arrêt)."""
-    try:
-        with get_connection() as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            conn.commit()
-    except sqlite3.Error:
-        pass
-
-
-def backup_database(max_backups: int = 14, min_hours_between: int = 6) -> Path | None:
-    """
-    Copie propscout.db dans data/backups/ (rotation).
-    Appelé au démarrage serveur — ne remplace pas le fichier actif.
-    """
-    import shutil
-
-    if not DB_PATH.is_file():
-        return None
-    backup_dir = DB_PATH.parent / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    existing = sorted(backup_dir.glob("propscout_*.db"), reverse=True)
-    if existing and min_hours_between > 0:
-        try:
-            age_h = (
-                datetime.now(timezone.utc)
-                - datetime.fromtimestamp(existing[0].stat().st_mtime, tz=timezone.utc)
-            ).total_seconds() / 3600
-            if age_h < min_hours_between:
-                return None
-        except OSError:
-            pass
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    dest = backup_dir / f"propscout_{stamp}.db"
-    shutil.copy2(DB_PATH, dest)
-    for wal in (DB_PATH.with_suffix(".db-wal"), DB_PATH.with_suffix(".db-shm")):
-        if wal.is_file():
-            try:
-                shutil.copy2(wal, backup_dir / f"{dest.stem}{wal.suffix}")
-            except OSError:
-                pass
-    backups = sorted(backup_dir.glob("propscout_*.db"), reverse=True)
-    for old in backups[max_backups:]:
-        try:
-            old.unlink()
-        except OSError:
-            pass
-    return dest
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -410,7 +338,7 @@ def _migrate_leads_drop_global_url_unique(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE leads_mt RENAME TO leads")
 
 
-def init_db() -> None:
+def _init_sqlite() -> None:
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS leads (
@@ -467,6 +395,21 @@ def init_db() -> None:
 
         ensure_mandate_tables(conn)
         conn.commit()
+
+
+def init_db() -> None:
+    """Initialise SQLite (local) ou Supabase PostgreSQL (DATABASE_URL)."""
+    if is_postgres():
+        from velora_db.connection import init_postgres_schema
+        from crm.mandates.storage import ensure_mandate_tables
+
+        if os.getenv("VELIORA_AUTO_SCHEMA", "").lower() in ("1", "true", "yes"):
+            init_postgres_schema()
+        with get_connection() as conn:
+            ensure_mandate_tables(conn)
+        logger.info("Base Supabase Veliora prête")
+        return
+    _init_sqlite()
 
 
 def scoped_source_id(agency_id: str, base_id: str) -> str:
