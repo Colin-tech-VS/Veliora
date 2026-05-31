@@ -1355,17 +1355,27 @@ class CrawlerEngine:
 
         lead = adapter.parse_listing(fetched.html, url)
         from crawler.extractors import deep_enhance_listing_contacts
-        from crawler.validation import missing_core_fields
+        from crawler.validation import _name_ok, missing_core_fields
+
+        def _needs_contact_pass(ld) -> bool:
+            # On veut récupérer obligatoirement contact + nom : on relance
+            # l'extraction profonde dès qu'il manque téléphone, email OU le nom
+            # du vendeur (le passage « révéler le contact » fait souvent
+            # apparaître le nom en même temps que le numéro/email).
+            miss = missing_core_fields(ld)
+            if any(f in miss for f in ("phone", "email")):
+                return True
+            return not _name_ok(ld.first_name, ld.last_name)
 
         core_miss = missing_core_fields(lead)
-        if core_miss and any(f in core_miss for f in ("phone", "email")):
+        if _needs_contact_pass(lead):
             lead = deep_enhance_listing_contacts(fetched.html, url, lead)
             core_miss = missing_core_fields(lead)
-        if core_miss and any(f in core_miss for f in ("phone", "email")) and not deep_refresh:
+        if _needs_contact_pass(lead) and not deep_refresh:
             if job_id:
                 update_crawl_job(
                     job_id,
-                    message="2e passage — révéler téléphone / email sur la fiche…",
+                    message="2e passage — révéler téléphone / email / nom sur la fiche…",
                 )
             micro_pause()
             fetched_contacts = fetch_page(
