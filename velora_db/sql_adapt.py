@@ -45,6 +45,39 @@ def _adapt_datetime(s: str) -> str:
     return s
 
 
+def _adapt_substr(s: str) -> str:
+    """substr(<expr>, …) → substr((<expr>)::text, …) pour Postgres.
+
+    En SQLite les dates sont stockées en TEXT et substr(created_at, 1, 10)
+    extrait 'YYYY-MM-DD'. En Postgres les colonnes sont TIMESTAMPTZ : on caste
+    le 1ᵉʳ argument en text (inoffensif s'il est déjà textuel). Gère les
+    parenthèses imbriquées (ex. COALESCE(a, b)).
+    """
+    low = s.lower()
+    out: list[str] = []
+    i = 0
+    while True:
+        idx = low.find("substr(", i)
+        if idx == -1:
+            out.append(s[i:])
+            return "".join(out)
+        start = idx + len("substr(")
+        out.append(s[i:start])
+        depth = 0
+        j = start
+        while j < len(s):
+            ch = s[j]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                break
+            j += 1
+        out.append(s[start:j] + "::text")
+        i = j
+
+
 def _adapt_insert_or_replace(s: str) -> str:
     """INSERT OR REPLACE INTO t (c1, c2, …) → INSERT … ON CONFLICT (c1) DO UPDATE …
 
@@ -74,6 +107,8 @@ def adapt_sql(sql: str, *, postgres: bool) -> str:
     s = re.sub(r"\bAUTOINCREMENT\b", "", s, flags=re.IGNORECASE)
     s = s.replace("INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY")
     s = _adapt_datetime(s)
+    if "substr(" in s.lower():
+        s = _adapt_substr(s)
     if re.search(r"\bINSERT\s+OR\s+REPLACE\b", s, re.IGNORECASE):
         s = _adapt_insert_or_replace(s)
     upper = s.upper()
