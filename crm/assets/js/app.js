@@ -113,7 +113,10 @@ function apiErrorMessage(status, path, body, res) {
     }
     return body.error || `Ressource introuvable (${path}).`;
   }
-  return `Erreur ${status}`;
+  if (status === 500) {
+    return body?.error || `Erreur serveur (${path}) — réessayez ou relancez python app.py`;
+  }
+  return `Erreur ${status}${path ? ` (${path})` : ""}`;
 }
 
 function getAuthHeaders() {
@@ -139,7 +142,7 @@ async function parseApiResponse(res, path) {
     window.location.href = "/crm/auth?next=" + encodeURIComponent(
       window.location.pathname + window.location.search
     );
-    throw new Error(body.error || "Abonnement requis");
+    throw new Error("SUBSCRIPTION_REDIRECT");
   }
   if (!res.ok) {
     throw new Error(apiErrorMessage(res.status, path, body, res));
@@ -1271,6 +1274,7 @@ async function init() {
     startPolling();
     await resumeActiveCrawlIfAny();
   } catch (err) {
+    if (err?.message === "SUBSCRIPTION_REDIRECT") return;
     showToast(err.message || "Impossible de charger les données — lancez python app.py", "error");
     renderAll();
   }
@@ -1874,7 +1878,16 @@ function setupDrawer() {
   });
 }
 
+function getSourcesGridRoots() {
+  return [
+    document.getElementById("sources-grid-reliable"),
+    document.getElementById("sources-grid-antibot"),
+    document.getElementById("sources-grid-custom"),
+  ].filter(Boolean);
+}
+
 function setupCrawler() {
+  const sourcesView = document.getElementById("view-crawler");
   document.getElementById("crawl-city-open-territory")?.addEventListener("click", () => {
     document.getElementById("radar-settings-btn")?.click();
   });
@@ -1892,7 +1905,8 @@ function setupCrawler() {
   });
   document.getElementById("add-source-form").addEventListener("submit", submitAddSource);
 
-  document.getElementById("sources-grid").addEventListener("change", async (e) => {
+  sourcesView?.addEventListener("change", async (e) => {
+    if (!e.target.closest(".sources-grid")) return;
     if (!e.target.matches(".toggle-switch input")) return;
     const sourceId = e.target.dataset.source;
     try {
@@ -1908,12 +1922,13 @@ function setupCrawler() {
     }
   });
 
-  document.getElementById("sources-grid").addEventListener("input", (e) => {
+  sourcesView?.addEventListener("input", (e) => {
     if (!e.target.matches(".source-url-input")) return;
     markSourceUrlDirty(e.target.dataset.source, e.target);
   });
 
-  document.getElementById("sources-grid").addEventListener("keydown", async (e) => {
+  sourcesView?.addEventListener("keydown", async (e) => {
+    if (!e.target.matches(".source-url-input")) return;
     if (e.key !== "Enter" || !e.target.matches(".source-url-input")) return;
     e.preventDefault();
     const sourceId = e.target.dataset.source;
@@ -1924,7 +1939,7 @@ function setupCrawler() {
     }
   });
 
-  document.getElementById("sources-grid").addEventListener(
+  sourcesView?.addEventListener(
     "focusout",
     async (e) => {
       if (!e.target.matches(".source-url-input")) return;
@@ -1948,7 +1963,8 @@ function setupCrawler() {
     true,
   );
 
-  document.getElementById("sources-grid").addEventListener("click", async (e) => {
+  sourcesView?.addEventListener("click", async (e) => {
+    if (!e.target.closest(".sources-grid")) return;
     const delBtn = e.target.closest(".source-delete-btn");
     if (delBtn) {
       const { source: sourceId, name } = delBtn.dataset;
@@ -4271,6 +4287,8 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
           <div class="source-name-text">
             <span class="source-title">${escapeHtml(s.name)}</span>
             ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
+            ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Anti-bot</span>' : ""}
+            ${s.is_default_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Recommandé</span>' : ""}
             ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur crawl</span>' : ""}
             ${saved ? '<span class="source-status-badge source-status-badge--ok">Lien enregistré</span>' : ""}
           </div>
@@ -4280,9 +4298,13 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
             <input type="checkbox" data-source="${s.id}" ${s.enabled ? "checked" : ""}>
             <span class="toggle-slider"></span>
           </label>
-          <button type="button" class="btn btn-ghost source-delete-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" title="Supprimer la source">
+          ${
+            s.is_default_portal
+              ? ""
+              : `<button type="button" class="btn btn-ghost source-delete-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" title="Supprimer la source">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
-          </button>
+          </button>`
+          }
         </div>
       </div>
       ${hasError ? `<p class="source-error-msg">${escapeHtml(s.last_error)}</p>` : ""}
@@ -4372,7 +4394,28 @@ function refreshSourceCard(sourceId, { saved = false } = {}) {
 }
 
 function renderCrawler() {
-  document.getElementById("sources-grid").innerHTML = SOURCES.map((s) => buildSourceCardHtml(s)).join("");
+  const reliable = SOURCES.filter((s) => !s.is_custom && !s.is_antibot);
+  const antibot = SOURCES.filter((s) => !s.is_custom && s.is_antibot);
+  const custom = SOURCES.filter((s) => s.is_custom);
+
+  const reliableEl = document.getElementById("sources-grid-reliable");
+  const antibotEl = document.getElementById("sources-grid-antibot");
+  const customEl = document.getElementById("sources-grid-custom");
+  const customWrap = document.getElementById("sources-custom-wrap");
+
+  if (reliableEl) {
+    reliableEl.innerHTML = reliable.length
+      ? reliable.map((s) => buildSourceCardHtml(s)).join("")
+      : '<p class="form-hint">Chargement des portails…</p>';
+  }
+  if (antibotEl) {
+    antibotEl.innerHTML = antibot.map((s) => buildSourceCardHtml(s)).join("");
+  }
+  if (customEl && customWrap) {
+    customWrap.hidden = custom.length === 0;
+    customEl.innerHTML = custom.map((s) => buildSourceCardHtml(s)).join("");
+  }
+
   updateCrawlerSummary();
   scheduleSourceUrlsForCity();
 }
@@ -4898,7 +4941,9 @@ function setupOnboarding() {
     document.getElementById("crawler-all-btn")?.click();
   });
   document.getElementById("onboarding-cta-crawl-one")?.addEventListener("click", () => {
-    const firstSource = document.querySelector("#sources-grid .source-crawl-btn");
+    const firstSource = document.querySelector(
+      "#sources-grid-reliable .source-crawl-btn, #sources-grid-antibot .source-crawl-btn",
+    );
     if (firstSource) firstSource.click();
     else showToast("Ajoutez d’abord une source, puis relancez le crawl", "info");
   });

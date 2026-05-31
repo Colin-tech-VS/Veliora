@@ -59,10 +59,12 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
         return search_url
 
     if portal == "seloger":
-        return city_search_url_candidates(search_url, source_id, city)[0]
+        cands = city_search_url_candidates(search_url, source_id, city)
+        return cands[0] if cands else search_url
 
     if portal == "logicimmo":
-        return city_search_url_candidates(search_url, source_id, city)[0]
+        cands = city_search_url_candidates(search_url, source_id, city)
+        return cands[0] if cands else search_url
 
     if portal == "bienici":
         parsed = urlparse(search_url)

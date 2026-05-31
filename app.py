@@ -771,22 +771,29 @@ def api_sources_preview_urls():
 
     city = (request.args.get("city") or request.args.get("ville") or "").strip() or None
     agency_id = _aid()
-    sources = get_sources(agency_id)
-    adapters = build_adapters(sources)
-    adapter_urls = {
-        sid: ad.config.search_url
-        for sid, ad in adapters.items()
-        if ad and getattr(ad, "config", None)
-    }
-    urls = preview_search_urls_for_sources(
-        sources, city, adapter_search_urls=adapter_urls
-    )
-    return jsonify({"ok": True, "city": city, "urls": urls})
+    try:
+        sources = get_sources(agency_id)
+        adapters = build_adapters(sources)
+        adapter_urls = {
+            sid: ad.config.search_url
+            for sid, ad in adapters.items()
+            if ad and getattr(ad, "config", None)
+        }
+        urls = preview_search_urls_for_sources(
+            sources, city, adapter_search_urls=adapter_urls
+        )
+        return jsonify({"ok": True, "city": city, "urls": urls})
+    except Exception as exc:
+        logging.exception("preview-urls agency=%s city=%s", agency_id, city)
+        return jsonify({"error": f"Aperçu des liens indisponible : {exc}"}), 500
 
 
 def _api_delete_source_impl(source_id: str):
-    if not delete_source(source_id, _aid()):
-        return jsonify({"error": "Source introuvable ou déjà supprimée"}), 404
+    try:
+        if not delete_source(source_id, _aid()):
+            return jsonify({"error": "Source introuvable ou déjà supprimée"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     engine.refresh_adapters(_aid())
     return jsonify({"ok": True, "sources": get_sources(_aid())})
 

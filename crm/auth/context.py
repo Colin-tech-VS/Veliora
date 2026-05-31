@@ -69,8 +69,7 @@ def require_api_auth():
                 jsonify(
                     {
                         "error": (
-                            "Abonnement Veliora requis (500 €/mois). "
-                            "Finalisez le paiement pour accéder au CRM."
+                            "Abonnement Veliora requis — finalisez le paiement pour accéder au CRM."
                         ),
                         "code": "subscription_required",
                     }

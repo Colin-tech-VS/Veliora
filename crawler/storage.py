@@ -479,25 +479,67 @@ def scoped_source_id(agency_id: str, base_id: str) -> str:
 
 
 def seed_default_sources_for_agency(agency_id: str) -> int:
-    """Portails par défaut — isolés par agence. Ajoute ceux manquants (ex. Le Figaro)."""
+    """Portails par défaut — ajoute les manquants et met à jour URLs de référence."""
+    return sync_default_sources_for_agency(agency_id)
+
+
+def sync_default_sources_for_agency(agency_id: str) -> int:
+    """Portails Veliora par agence : présents pour tout le monde, URLs à jour."""
+    from crawler.portals import resolve_base_portal_id
+
     now = _now()
-    added = 0
+    touched = 0
     with get_connection() as conn:
         for cfg in DEFAULT_SOURCES:
             sid = scoped_source_id(agency_id, cfg.id)
-            row = conn.execute("SELECT id FROM sources WHERE id = ?", (sid,)).fetchone()
+            row = conn.execute(
+                "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
+                (sid, agency_id),
+            ).fetchone()
             if row:
-                continue
-            conn.execute(
-                """INSERT INTO sources
-                   (id, name, base_url, search_url, enabled, is_custom,
-                    agency_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)""",
-                (sid, cfg.name, cfg.base_url, cfg.search_url, agency_id, now, now),
-            )
-            added += 1
+                conn.execute(
+                    """UPDATE sources SET name = ?, base_url = ?, search_url = ?,
+                       enabled = 1, is_custom = 0, updated_at = ?
+                       WHERE id = ? AND agency_id = ?""",
+                    (cfg.name, cfg.base_url, cfg.search_url, now, sid, agency_id),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO sources
+                       (id, name, base_url, search_url, enabled, is_custom,
+                        agency_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)""",
+                    (sid, cfg.name, cfg.base_url, cfg.search_url, agency_id, now, now),
+                )
+            touched += 1
         conn.commit()
-    return added
+    return touched
+
+
+def is_default_portal_source(source_id: str) -> bool:
+    from crawler.portals import resolve_base_portal_id
+
+    return resolve_base_portal_id(source_id) is not None
+
+
+# Affichage CRM : portails lents / DataDome (PAP reste en « recommandé »).
+ANTIBOT_UI_PORTALS = frozenset({"leboncoin", "seloger", "bienici", "logicimmo"})
+
+
+def is_antibot_source(src: dict) -> bool:
+    from crawler.portals import resolve_base_portal_id
+
+    base = resolve_base_portal_id(src.get("id") or "")
+    return bool(base and base in ANTIBOT_UI_PORTALS)
+
+
+def _source_sort_key(src: dict) -> tuple:
+    """Recommandés d'abord, anti-bot ensuite, sites perso en dernier."""
+    if src.get("is_custom"):
+        return (2, src.get("name") or "")
+    if is_antibot_source(src):
+        return (1, src.get("name") or "")
+    return (0, src.get("name") or "")
 
 
 # Portails à anti-bot fort (DataDome) — crawlés en dernier pour ne pas bloquer
@@ -1662,14 +1704,15 @@ def sync_lead_source_ids(agency_id: str) -> int:
 
 
 def get_sources(agency_id: str) -> list[dict]:
-    seed_default_sources_for_agency(agency_id)
+    sync_default_sources_for_agency(agency_id)
     sync_lead_source_ids(agency_id)
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM sources WHERE agency_id = ? ORDER BY name",
             (agency_id,),
         ).fetchall()
-        return [_row_to_source(r, conn, agency_id) for r in rows]
+        out = [_row_to_source(r, conn, agency_id) for r in rows]
+    return sorted(out, key=_source_sort_key)
 
 
 def get_source(source_id: str, agency_id: str) -> dict | None:
@@ -1724,6 +1767,10 @@ def _row_to_source(r: sqlite3.Row, conn: sqlite3.Connection | None = None, agenc
         "last_scan": r["last_scan"],
         "last_error": r["last_error"],
         "is_custom": is_custom,
+        "is_default_portal": is_default_portal_source(r["id"]),
+        "is_antibot": is_antibot_source(
+            {"id": r["id"], "base_url": r["base_url"], "search_url": r["search_url"]}
+        ),
         "logo_url": logo_url,
         "logo_fallback": logo_fallback,
     }
@@ -1895,6 +1942,11 @@ def update_source_fields(
 
 
 def delete_source(source_id: str, agency_id: str) -> bool:
+    if is_default_portal_source(source_id):
+        raise ValueError(
+            "Les portails Veliora (LeBonCoin, PAP, SeLoger…) ne peuvent pas être supprimés — "
+            "désactivez-les avec l’interrupteur si besoin."
+        )
     with get_connection() as conn:
         row = conn.execute(
             "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
@@ -1913,20 +1965,20 @@ def delete_source(source_id: str, agency_id: str) -> bool:
 
 def refresh_source_names_and_logos() -> None:
     """Recalcule noms et logos pour les sources custom (corrige anciens noms erronés)."""
+    from crawler.portals import resolve_base_portal_id
     from crawler.url_utils import parse_site_url
 
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM sources").fetchall()
         for row in rows:
+            if resolve_base_portal_id(row["id"]) and not row["is_custom"]:
+                continue
             try:
                 parsed = parse_site_url(row["search_url"] or row["base_url"])
             except ValueError:
                 continue
-            protected = {"leboncoin", "pap", "seloger", "logicimmo", "bienici", "paruvendu", "lefigaro"}
             bad_names = {"immobilier", "immo", "vente", "achat", "location", "annonces", "recherche"}
-            if row["id"] in protected and not row["is_custom"]:
-                continue
-            if row["name"].lower() not in bad_names and row["id"] in protected:
+            if row["name"].lower() not in bad_names and resolve_base_portal_id(row["id"]):
                 continue
             conn.execute(
                 """UPDATE sources SET name = ?, domain = ?, logo_url = ?, logo_fallback = ?,

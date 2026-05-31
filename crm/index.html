@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=40">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=41">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
 </head>
 <body>
@@ -580,7 +580,7 @@
           </aside>
 
           <div class="sources-section-header">
-            <h3>Sources configurées</h3>
+            <h3>Sites à crawler</h3>
             <div class="sources-section-actions">
               <button class="btn btn-secondary" id="crawler-all-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -592,7 +592,18 @@
               </button>
             </div>
           </div>
-          <div class="sources-grid" id="sources-grid"></div>
+          <p class="sources-section-intro form-hint" id="sources-section-intro">
+            Les portails Veliora sont installés par défaut pour chaque agence. Désactivez un site avec l’interrupteur si besoin — les portails anti-bot peuvent être plus lents.
+          </p>
+          <h4 class="sources-subsection-title">Portails recommandés</h4>
+          <div class="sources-grid" id="sources-grid-reliable"></div>
+          <h4 class="sources-subsection-title sources-subsection-title--muted">Portails protégés (anti-bot)</h4>
+          <p class="form-hint sources-subsection-hint">Crawl possible mais souvent plus lent ou bloqué — les portails recommandés passent en priorité.</p>
+          <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
+          <div id="sources-custom-wrap" hidden>
+            <h4 class="sources-subsection-title">Sites personnalisés</h4>
+            <div class="sources-grid" id="sources-grid-custom"></div>
+          </div>
         </div>
 
         <!-- Modal confirmation crawl par lien -->
