@@ -491,10 +491,57 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="notaires",
         name="Immobilier Notaires",
         base_url="https://www.immobilier.notaires.fr",
-        search_url="https://www.immobilier.notaires.fr/fr/ventes",
+        search_url="https://www.immobilier.notaires.fr/fr/annonces-immobilieres",
         listing_patterns=[
-            r"immobilier\.notaires\.fr/fr/annonce/\d+",
+            r"immobilier\.notaires\.fr/fr/annonce[^/\"'\s]*/\d+",
             r"immobilier\.notaires\.fr/[^/\"'\s]+/\d{5,}",
+        ],
+    ),
+    # Entre Particuliers — annonces de particuliers (idéal pour les mandats).
+    AdapterConfig(
+        id="entreparticuliers",
+        name="Entre Particuliers",
+        base_url="https://www.entreparticuliers.com",
+        search_url="https://www.entreparticuliers.com/annonces-immobilieres",
+        listing_patterns=[
+            r"entreparticuliers\.com/annonces-immobilieres/[^\"'\s]+/ref-\d+",
+        ],
+    ),
+    # Immonot — annonces des notaires (particuliers + études).
+    AdapterConfig(
+        id="immonot",
+        name="Immonot",
+        base_url="https://www.immonot.com",
+        search_url="https://www.immonot.com/annonces-immobilieres",
+        listing_patterns=[
+            r"immonot\.com/annonce-immobiliere/[^\"'\s]+",
+        ],
+    ),
+    AdapterConfig(
+        id="acheterlouer",
+        name="Acheter-Louer",
+        base_url="https://www.acheter-louer.fr",
+        search_url="https://www.acheter-louer.fr/annonces/immobilier/achat-appartement",
+        listing_patterns=[
+            r"acheter-louer\.fr/annonces-immobilier/[^\"'\s]+-\d{5,}",
+        ],
+    ),
+    AdapterConfig(
+        id="century21",
+        name="Century 21",
+        base_url="https://www.century21.fr",
+        search_url="https://www.century21.fr/annonces/achat-appartement/",
+        listing_patterns=[
+            r"century21\.fr/trouver_logement/detail/\d+",
+        ],
+    ),
+    AdapterConfig(
+        id="orpi",
+        name="Orpi",
+        base_url="https://www.orpi.com",
+        search_url="https://www.orpi.com/acheter/",
+        listing_patterns=[
+            r"orpi\.com/annonce-(?:vente|location)-[^\"'\s]+",
         ],
     ),
 ]
@@ -514,6 +561,11 @@ ADAPTER_CLASSES = {
     "ouestfranceimmo": GenericAdapter,
     "lesiteimmo": GenericAdapter,
     "notaires": GenericAdapter,
+    "entreparticuliers": GenericAdapter,
+    "immonot": GenericAdapter,
+    "acheterlouer": GenericAdapter,
+    "century21": GenericAdapter,
+    "orpi": GenericAdapter,
 }
 
 _DEFAULT_BY_ID = {c.id: c for c in DEFAULT_SOURCES}

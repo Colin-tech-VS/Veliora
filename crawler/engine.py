@@ -440,8 +440,22 @@ class CrawlerEngine:
             logger.warning("Préchauffage anti-bot: %s", exc)
 
     def _job_scan_source(self, job_id: str, source_id: str, city: str | None = None) -> None:
+        from crawler.portals import is_premium_portal_id
+
         src = next((s for s in get_sources(self._agency_id) if s["id"] == source_id), None)
         label = src["name"] if src else source_id
+        # Portails premium (anti-bot fort) : réservés à l'offre payante à venir,
+        # jamais crawlés par défaut — on termine proprement sans tenter (évite les
+        # échecs en boucle / blocages DataDome).
+        if is_premium_portal_id(source_id):
+            update_crawl_job(
+                job_id,
+                status="completed",
+                progress=100,
+                message=f"{label} — portail protégé (offre Premium à venir), non crawlé.",
+                finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            )
+            return
         if city:
             label = f"{label} — {city}"
             update_crawl_job(job_id, message=f"Préparation crawl {city}…")

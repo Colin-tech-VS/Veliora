@@ -5,11 +5,13 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 PORTAL_IDS = (
+    # ─── Premium / anti-bot fort (offre payante à venir — pas crawlés par défaut) ───
     "leboncoin",
-    "pap",
     "seloger",
     "logicimmo",
     "bienici",
+    # ─── Recommandés (HTML serveur, sans anti-bot fort — crawlés par « Crawler tout ») ───
+    "pap",
     "paruvendu",
     "lefigaro",
     "superimmo",
@@ -19,6 +21,21 @@ PORTAL_IDS = (
     "ouestfranceimmo",
     "lesiteimmo",
     "notaires",
+    "entreparticuliers",
+    "immonot",
+    "acheterlouer",
+    "century21",
+    "orpi",
+)
+
+# ─── Source unique de vérité : portails « premium » (anti-bot fort, DataDome /
+# Cloudflare). Réservés à une offre payante ultérieure : on les garde visibles
+# mais on ne les crawl PAS par défaut (ni dans « Crawler tout », ni en unitaire). ───
+PREMIUM_PORTAL_IDS = (
+    "leboncoin",
+    "seloger",
+    "logicimmo",
+    "bienici",
 )
 
 # Portails payants / anti-bot fort — Playwright souvent requis.
@@ -28,6 +45,12 @@ PROTECTED_HOSTS = (
     "logic-immo.com",
     "bienici.com",
 )
+
+
+def is_premium_portal_id(source_id: str | None) -> bool:
+    """True si la source est un portail premium / anti-bot (offre à venir)."""
+    base = resolve_base_portal_id(source_id)
+    return bool(base and base in PREMIUM_PORTAL_IDS)
 
 
 def resolve_base_portal_id(source_id: str | None) -> str | None:

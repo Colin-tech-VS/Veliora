@@ -7,7 +7,7 @@ import logging
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import os
@@ -522,15 +522,19 @@ def is_default_portal_source(source_id: str) -> bool:
     return resolve_base_portal_id(source_id) is not None
 
 
-# Affichage CRM : portails lents / DataDome (PAP reste en « recommandé »).
-ANTIBOT_UI_PORTALS = frozenset({"leboncoin", "seloger", "bienici", "logicimmo"})
+# Affichage CRM : portails premium / anti-bot fort (DataDome). Source unique de
+# vérité dans crawler.portals — réservés à une offre payante à venir.
+from crawler.portals import PREMIUM_PORTAL_IDS as ANTIBOT_UI_PORTALS
 
 
 def is_antibot_source(src: dict) -> bool:
-    from crawler.portals import resolve_base_portal_id
+    from crawler.portals import is_premium_portal_id
 
-    base = resolve_base_portal_id(src.get("id") or "")
-    return bool(base and base in ANTIBOT_UI_PORTALS)
+    return is_premium_portal_id(src.get("id") or "")
+
+
+# Alias explicite (offre Premium à venir).
+is_premium_source = is_antibot_source
 
 
 def _source_sort_key(src: dict) -> tuple:
@@ -2087,6 +2091,97 @@ def get_source_stats(agency_id: str) -> list[dict]:
             }
             for r in rows
         ]
+
+
+def get_crawl_data(agency_id: str, days: int = 30) -> dict:
+    """Données agrégées des crawls : runs, leads trouvés/enregistrés, sources.
+
+    Sert au tableau de bord et à l'export (« récupérer des données sur les crawl »).
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, days))).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    with get_connection() as conn:
+        agg = conn.execute(
+            """SELECT
+                 COUNT(*) AS runs,
+                 SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                 COALESCE(SUM(leads_found), 0) AS leads_found,
+                 COALESCE(SUM(leads_saved), 0) AS leads_saved,
+                 COALESCE(SUM(COALESCE(leads_updated, 0)), 0) AS leads_updated,
+                 COALESCE(SUM(COALESCE(listings_done, 0)), 0) AS listings_done
+               FROM crawl_jobs
+               WHERE agency_id = ? AND created_at >= ?""",
+            (agency_id, cutoff),
+        ).fetchone()
+
+        recent = conn.execute(
+            """SELECT id, job_type, source_id, city, status, leads_found, leads_saved,
+                      COALESCE(leads_updated, 0) AS leads_updated,
+                      COALESCE(listings_done, 0) AS listings_done,
+                      message, created_at, finished_at
+               FROM crawl_jobs
+               WHERE agency_id = ?
+               ORDER BY created_at DESC
+               LIMIT 50""",
+            (agency_id,),
+        ).fetchall()
+
+        daily = conn.execute(
+            """SELECT substr(created_at, 1, 10) AS day,
+                      COUNT(*) AS runs,
+                      COALESCE(SUM(leads_saved), 0) AS leads_saved,
+                      COALESCE(SUM(COALESCE(leads_updated, 0)), 0) AS leads_updated
+               FROM crawl_jobs
+               WHERE agency_id = ? AND created_at >= ?
+               GROUP BY substr(created_at, 1, 10)
+               ORDER BY day DESC""",
+            (agency_id, cutoff),
+        ).fetchall()
+
+    sources = []
+    for s in get_sources(agency_id):
+        tier = (
+            "premium"
+            if s.get("is_antibot")
+            else ("custom" if s.get("is_custom") else "recommended")
+        )
+        sources.append(
+            {
+                "id": s["id"],
+                "name": s["name"],
+                "tier": tier,
+                "enabled": bool(s.get("enabled")),
+                "leads_count": int(s.get("leads_count", 0) or 0),
+                "leads_today": int(s.get("leads_updated_today", 0) or 0),
+                "last_scan": s.get("last_scan"),
+                "last_error": s.get("last_error"),
+            }
+        )
+
+    def _int(row, key):
+        try:
+            return int(row[key] or 0)
+        except (KeyError, TypeError, ValueError):
+            return 0
+
+    return {
+        "window_days": days,
+        "generated_at": _now(),
+        "totals": {
+            "runs": _int(agg, "runs"),
+            "completed": _int(agg, "completed"),
+            "failed": _int(agg, "failed"),
+            "leads_found": _int(agg, "leads_found"),
+            "leads_saved": _int(agg, "leads_saved"),
+            "leads_updated": _int(agg, "leads_updated"),
+            "listings_done": _int(agg, "listings_done"),
+        },
+        "daily": [dict(r) for r in daily],
+        "recent_runs": [dict(r) for r in recent],
+        "sources": sources,
+    }
 
 
 def _relative_time(iso: str) -> str:

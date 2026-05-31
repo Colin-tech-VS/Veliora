@@ -184,7 +184,30 @@ PORTAL_DISCOVER_URLS: dict[str, list[str]] = {
         "https://www.lesiteimmo.com/recherche/vente/maison",
     ],
     "notaires": [
-        "https://www.immobilier.notaires.fr/fr/ventes",
+        "https://www.immobilier.notaires.fr/fr/annonces-immobilieres",
+        "https://www.immobilier.notaires.fr/fr/annonces-immobilieres-liste?typeTransaction=VENTE,VNI,VAE",
+    ],
+    "entreparticuliers": [
+        "https://www.entreparticuliers.com/annonces-immobilieres",
+        "https://www.entreparticuliers.com/annonces-immobilieres/appartement",
+        "https://www.entreparticuliers.com/annonces-immobilieres/maison",
+    ],
+    "immonot": [
+        "https://www.immonot.com/annonces-immobilieres",
+        "https://www.immonot.com/",
+    ],
+    "acheterlouer": [
+        "https://www.acheter-louer.fr/annonces/immobilier/achat-appartement",
+        "https://www.acheter-louer.fr/annonces/immobilier/achat-maison",
+    ],
+    "century21": [
+        "https://www.century21.fr/annonces/achat-appartement/",
+        "https://www.century21.fr/annonces/achat-maison/",
+        "https://www.century21.fr/annonces/location-appartement/",
+    ],
+    "orpi": [
+        "https://www.orpi.com/acheter/",
+        "https://www.orpi.com/louer/",
     ],
 }
 

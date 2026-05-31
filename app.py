@@ -32,6 +32,7 @@ from crawler.storage import (
     get_agency_primary_city,
     get_crawl_job,
     get_crawl_logs_for_job,
+    get_crawl_data,
     delete_all_leads,
     delete_lead,
     get_lead,
@@ -915,6 +916,72 @@ def api_crawler_status():
     })
 
 
+@app.route("/api/crawler/data")
+def api_crawler_data():
+    """Données agrégées des crawls (runs, leads, sources) — pour le dashboard."""
+    try:
+        days = int(request.args.get("days", "30"))
+    except (TypeError, ValueError):
+        days = 30
+    days = max(1, min(days, 365))
+    try:
+        return jsonify(get_crawl_data(_aid(), days=days))
+    except Exception as exc:
+        logging.exception("crawl data")
+        return jsonify({"error": f"Données de crawl indisponibles : {exc}"}), 500
+
+
+@app.route("/api/crawler/data.csv")
+def api_crawler_data_csv():
+    """Export CSV des derniers crawls (téléchargeable)."""
+    import csv
+    import io
+    import time
+
+    try:
+        days = int(request.args.get("days", "30"))
+    except (TypeError, ValueError):
+        days = 30
+    days = max(1, min(days, 365))
+    data = get_crawl_data(_aid(), days=days)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "date",
+            "type",
+            "source",
+            "ville",
+            "statut",
+            "annonces_analysees",
+            "leads_nouveaux",
+            "leads_mis_a_jour",
+            "message",
+        ]
+    )
+    for run in data["recent_runs"]:
+        writer.writerow(
+            [
+                run.get("created_at", ""),
+                run.get("job_type", ""),
+                run.get("source_id", "") or "tous",
+                run.get("city", "") or "",
+                run.get("status", ""),
+                run.get("listings_done", 0),
+                run.get("leads_saved", 0),
+                run.get("leads_updated", 0),
+                (run.get("message", "") or "").replace("\n", " "),
+            ]
+        )
+
+    csv_bytes = buf.getvalue().encode("utf-8-sig")
+    stamp = time.strftime("%Y%m%d-%H%M")
+    resp = Response(csv_bytes, mimetype="text/csv; charset=utf-8")
+    resp.headers["Content-Disposition"] = f'attachment; filename="veliora-crawls-{stamp}.csv"'
+    return resp
+
+
 @app.route("/api/crawler/live-frame")
 def api_crawler_live_frame():
     """Dernière capture d'écran du crawler (heatmap live) — JPEG récent ou 204."""
@@ -1021,8 +1088,25 @@ def api_crawler_scan():
 
 @app.route("/api/crawler/scan/<source_id>", methods=["POST"])
 def api_crawler_scan_source(source_id):
-    if not get_source(source_id, _aid()):
+    src = get_source(source_id, _aid())
+    if not src:
         return jsonify({"error": "Source introuvable pour votre agence"}), 404
+    from crawler.portals import is_premium_portal_id
+
+    if is_premium_portal_id(source_id):
+        return (
+            jsonify(
+                {
+                    "error": (
+                        f"{src.get('name', 'Ce portail')} est un portail protégé (anti-bot). "
+                        "Il sera disponible dans l’offre Premium à venir — il n’est pas crawlé "
+                        "pour l’instant."
+                    ),
+                    "premium": True,
+                }
+            ),
+            402,
+        )
     try:
         city = _resolve_crawl_city(_aid())
     except ValueError as exc:
