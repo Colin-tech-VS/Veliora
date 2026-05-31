@@ -157,6 +157,59 @@ function isNetworkFetchError(err) {
 
 const API_FETCH_TIMEOUT_MS = 20000;
 
+/** "il y a 14 min" / "il y a 3h" pour un lead récent (retourne null si > 48h). */
+function leadFreshness(isoStr) {
+  if (!isoStr) return null;
+  try {
+    const dt = new Date(isoStr.endsWith("Z") ? isoStr : isoStr + "Z");
+    const mins = Math.round((Date.now() - dt.getTime()) / 60000);
+    if (mins < 1) return "à l'instant";
+    if (mins < 60) return `il y a ${mins} min`;
+    const h = Math.round(mins / 60);
+    if (h < 24) return `il y a ${h}h`;
+    if (h < 48) return "hier";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRoiStats() {
+  try {
+    const data = await api("/roi/stats");
+    if (data?.ok) renderRoiBanner(data);
+  } catch {
+    /* ignore — non-bloquant */
+  }
+}
+
+function renderRoiBanner(stats) {
+  const banner = document.getElementById("roi-banner");
+  if (!banner) return;
+  const calls = stats.calls ?? 0;
+  const rdvs = stats.rdvs ?? 0;
+  const mandats = stats.mandats ?? 0;
+  const roi = stats.roi_multiple ?? 0;
+
+  document.getElementById("roi-calls").textContent = calls;
+  document.getElementById("roi-rdvs").textContent = rdvs;
+  document.getElementById("roi-mandats").textContent = mandats;
+
+  const multipleEl = document.getElementById("roi-multiple");
+  const verdictEl = document.getElementById("roi-verdict");
+  if (mandats > 0) {
+    multipleEl.textContent = roi + " ×";
+    verdictEl.classList.add("roi-verdict-active");
+  } else if (calls > 0 || rdvs > 0) {
+    multipleEl.textContent = "—";
+    verdictEl.classList.remove("roi-verdict-active");
+  } else {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+}
+
 function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -1229,6 +1282,7 @@ async function init() {
     await checkServerLeadRefreshCapability();
     renderAll();
     syncCrawlerUI();
+    fetchRoiStats();
     await syncAccountBillingButton();
     await refreshOnboardingUi();
     if (!onboardingDidAutoNav && onboardingCache && !onboardingCache.settings?.onboarding_completed) {
@@ -1268,6 +1322,9 @@ async function switchView(view) {
   const meta = viewTitles[view] || { title: view, subtitle: "" };
   document.getElementById("header-title").textContent = meta.title;
   document.getElementById("header-subtitle").textContent = meta.subtitle;
+  if (view === "dashboard") {
+    fetchRoiStats();
+  }
   if (view === "crawler") {
     refreshAgencySettings().catch(() => {
       applyAgencyCityToCrawl(true);
@@ -3593,12 +3650,19 @@ function renderRadarBriefing() {
         .map(
           (l) => {
             const ms = l.mandate_score || 0;
+            const fresh = leadFreshness(l.created_at);
+            const freshBadge = fresh
+              ? `<span class="freshness-badge" title="Date de détection">⚡ Détecté ${fresh}</span>`
+              : "";
+            const alsoOn = (l._also_on && l._portal_count > 1)
+              ? `<span class="also-on-badge" title="Même bien détecté sur plusieurs portails">Aussi sur ${l._portal_count} portails</span>`
+              : "";
             return `
         <div class="radar-priority-row" data-id="${l.id}">
           <div class="radar-priority-main">
             ${renderMandatePill(l, { large: true })}
             <div>
-              <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)}</div>
+              <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)} ${freshBadge}${alsoOn}</div>
               <div class="radar-priority-meta">${escapeHtml(l.mandate_score_reason || "")} · ${formatPrice(l)} ${renderDvfBadge(l)}</div>
               <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
             </div>
@@ -4055,6 +4119,13 @@ function getLeadDeleteButtonHtml(lead) {
 
 function renderLeadRow(lead) {
   const ms = lead.mandate_score || 0;
+  const fresh = leadFreshness(lead.created_at);
+  const freshBadge = fresh
+    ? `<span class="freshness-badge freshness-badge-sm" title="Détecté ${fresh}">⚡ ${fresh}</span>`
+    : "";
+  const alsoOnBadge = lead._portal_count > 1
+    ? `<span class="also-on-badge also-on-badge-sm" title="Détecté sur ${lead._portal_count} portails">${lead._portal_count} portails</span>`
+    : "";
   return `
     <tr data-id="${lead.id}">
       <td class="col-score-mandat">
@@ -4075,7 +4146,7 @@ function renderLeadRow(lead) {
       </td>
       <td>
         <div class="lead-property">
-          <div class="address">${escapeHtml(lead.property_title || lead.address)}</div>
+          <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}</div>
           <div class="details">${escapeHtml(lead.property_detail || lead.property)} · Publié ${formatPublishedDate(lead)}</div>
         </div>
       </td>

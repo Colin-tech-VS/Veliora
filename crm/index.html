@@ -203,6 +203,32 @@
             </div>
           </div>
 
+          <!-- Tableau de bord ROI mensuel -->
+          <div class="roi-banner" id="roi-banner" hidden>
+            <div class="roi-banner-inner">
+              <div class="roi-banner-funnel">
+                <div class="roi-funnel-step">
+                  <span class="roi-funnel-n" id="roi-calls">—</span>
+                  <span class="roi-funnel-l">appels ce mois</span>
+                </div>
+                <span class="roi-funnel-arrow" aria-hidden="true">→</span>
+                <div class="roi-funnel-step">
+                  <span class="roi-funnel-n" id="roi-rdvs">—</span>
+                  <span class="roi-funnel-l">RDV</span>
+                </div>
+                <span class="roi-funnel-arrow" aria-hidden="true">→</span>
+                <div class="roi-funnel-step hot">
+                  <span class="roi-funnel-n" id="roi-mandats">—</span>
+                  <span class="roi-funnel-l">mandats signés</span>
+                </div>
+              </div>
+              <div class="roi-banner-verdict" id="roi-verdict">
+                <span class="roi-multiple" id="roi-multiple">—</span>
+                <span class="roi-multiple-label">× abonnement remboursé ce mois</span>
+              </div>
+            </div>
+          </div>
+
           <div class="stats-grid radar-stats">
             <div class="stat-card sky radar-stat" data-filter="sans-agence">
               <div class="stat-header">

@@ -5572,3 +5572,105 @@ body:has(.crawl-dock.open) .script-dock.open {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ── ROI Banner ──────────────────────────────────────────── */
+.roi-banner {
+  background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(16,185,129,0.08) 100%);
+  border: 1px solid rgba(99,102,241,0.25);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+.roi-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.roi-banner-funnel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.roi-funnel-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 60px;
+}
+.roi-funnel-step.hot .roi-funnel-n { color: #10b981; }
+.roi-funnel-n {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.roi-funnel-l {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: 0.2rem;
+}
+.roi-funnel-arrow {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.roi-banner-verdict {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.roi-multiple {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-muted);
+}
+.roi-verdict-active .roi-multiple { color: #10b981; }
+.roi-multiple-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Freshness Badge ─────────────────────────────────────── */
+.freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.12);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: 20px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.freshness-badge-sm {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+}
+
+/* ── Also-on Badge (dédup cross-portail) ─────────────────── */
+.also-on-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #818cf8;
+  background: rgba(129,140,248,0.1);
+  border: 1px solid rgba(129,140,248,0.2);
+  border-radius: 20px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.also-on-badge-sm {
+  font-size: 0.62rem;
+  padding: 0.1rem 0.35rem;
+}

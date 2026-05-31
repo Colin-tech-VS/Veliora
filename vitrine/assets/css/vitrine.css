@@ -2136,3 +2136,129 @@ body.vitrine-legal {
   margin-top: 0.5rem;
 }
 .v-price-actions { display: flex; flex-direction: column; gap: 0.65rem; }
+
+/* ── ROI Calculator ─────────────────────────────────────── */
+.v-roi-calc-widget {
+  max-width: 600px;
+  margin: 0 auto;
+  background: var(--card-bg, #111827);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  border-radius: 16px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.v-roi-calc-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-bottom: 0.75rem;
+}
+.v-roi-calc-num {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #6366f1;
+}
+.v-roi-slider {
+  width: 100%;
+  accent-color: #6366f1;
+  height: 6px;
+  cursor: pointer;
+}
+.v-roi-slider-marks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-muted, #64748b);
+  margin-top: 0.25rem;
+}
+.v-roi-calc-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.v-roi-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.95rem;
+  color: var(--text-secondary, #94a3b8);
+}
+.v-roi-result-row strong { color: var(--text-primary, #f1f5f9); }
+.v-roi-net {
+  background: rgba(16,185,129,0.08);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  border-bottom: none;
+}
+.v-roi-net strong { color: #10b981; font-size: 1.1rem; }
+.v-roi-x { border-bottom: none; opacity: 0.8; }
+.v-roi-x strong { color: #6366f1; }
+.v-roi-calc-note {
+  font-size: 0.78rem;
+  color: var(--text-muted, #64748b);
+  margin: 0;
+}
+
+/* ── RGPD Section ───────────────────────────────────────── */
+.v-rgpd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+.v-rgpd-item {
+  background: var(--card-bg, #111827);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 1.25rem 1.25rem 1rem;
+}
+.v-rgpd-item h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary, #f1f5f9);
+  margin: 0 0 0.5rem;
+}
+.v-rgpd-item p {
+  font-size: 0.875rem;
+  color: var(--text-secondary, #94a3b8);
+  margin: 0;
+  line-height: 1.55;
+}
+.v-rgpd-item a { color: #818cf8; }
+.v-rgpd-footer {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted, #64748b);
+}
+.v-rgpd-footer a { color: #818cf8; margin: 0 0.25rem; }
+
+/* ── Hero mockup freshness/portals badges ───────────────── */
+.v-mock-fresh {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.12);
+  border-radius: 20px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.3rem;
+  white-space: nowrap;
+}
+.v-mock-portals {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #818cf8;
+  background: rgba(129,140,248,0.12);
+  border-radius: 20px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.3rem;
+  white-space: nowrap;
+}
