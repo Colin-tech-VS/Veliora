@@ -552,20 +552,27 @@ def _crawl_priority(src: dict) -> int:
     return 1 if any(h in blob for h in HARD_ANTIBOT_HOSTS) else 0
 
 
-def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
-    """Sources ACTIVÉES et crawlables d'une agence — pour un crawl global.
+def is_recommended_crawl_source(src: dict) -> bool:
+    """Portail recommandé — inclus dans « Crawler tout » (hors anti-bot et sites perso)."""
+    if not src.get("enabled"):
+        return False
+    if src.get("is_custom"):
+        return False
+    if is_antibot_source(src):
+        return False
+    url = (src.get("search_url") or src.get("base_url") or "").strip()
+    return url.startswith("http")
 
-    Une source désactivée (enabled=0) n'est jamais crawlée. Les portails accessibles
-    sont placés en tête ; ceux à anti-bot fort (DataDome/Cloudflare) passent en dernier.
+
+def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
+    """Portails recommandés activés — pour « Crawler tout ».
+
+    Les portails protégés (anti-bot) et les sites personnalisés sont exclus :
+    crawl unitaire par source, offre payante ultérieure pour les protégés.
     """
     seed_default_sources_for_agency(agency_id)
-    sources = [
-        s
-        for s in get_sources(agency_id)
-        if s.get("enabled")
-        and (s.get("search_url") or s.get("base_url") or "").startswith("http")
-    ]
-    return sorted(sources, key=_crawl_priority)
+    sources = [s for s in get_sources(agency_id) if is_recommended_crawl_source(s)]
+    return sorted(sources, key=_source_sort_key)
 
 
 # ─── Crawl jobs ───
@@ -1990,7 +1997,8 @@ def refresh_source_names_and_logos() -> None:
             except ValueError:
                 continue
             bad_names = {"immobilier", "immo", "vente", "achat", "location", "annonces", "recherche"}
-            if row["name"].lower() not in bad_names and resolve_base_portal_id(row["id"]):
+            name = (row["name"] or "").strip()
+            if name.lower() not in bad_names and resolve_base_portal_id(row["id"]):
                 continue
             conn.execute(
                 """UPDATE sources SET name = ?, domain = ?, logo_url = ?, logo_fallback = ?,
@@ -2073,8 +2081,8 @@ def get_source_stats(agency_id: str) -> list[dict]:
         total = sum(r["found_total"] for r in rows) or 1
         return [
             {
-                "name": r["name"],
-                "key": r["name"].lower().replace("'", "").replace(" ", ""),
+                "name": r["name"] or "Source",
+                "key": (r["name"] or "source").lower().replace("'", "").replace(" ", ""),
                 "count": r["found_total"],
                 "pct": round((r["found_total"] / total) * 100) if total else 0,
             }

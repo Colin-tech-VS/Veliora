@@ -349,8 +349,8 @@ class CrawlerEngine:
             update_crawl_job(
                 job_id,
                 status="failed",
-                errors=[CrawlError.issue(CrawlError.NO_LISTINGS, "Aucune source configurée")],
-                message="Ajoutez au moins un site à crawler",
+                errors=[CrawlError.issue(CrawlError.NO_LISTINGS, "Aucun portail recommandé activé")],
+                message="Activez au moins un portail recommandé (section du haut)",
                 finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             )
             return
@@ -362,7 +362,7 @@ class CrawlerEngine:
         update_crawl_job(
             job_id,
             progress=10,
-            message=f"Crawl global — {len(sources)} site(s) : {names_preview}{extra}…",
+            message=f"Crawl portails recommandés — {len(sources)} site(s) : {names_preview}{extra}…",
         )
         from crawler.storage import get_crawl_job
 

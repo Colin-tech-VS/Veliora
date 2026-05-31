@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -60,6 +61,7 @@ CRM_INDEX = CRM_DIR / "index.html"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+_db_init_lock = threading.Lock()
 
 
 @app.before_request
@@ -100,13 +102,20 @@ def add_cors_headers(response):
 
 @app.before_request
 def ensure_db():
-    if not getattr(app, "_db_ready", False):
+    if getattr(app, "_db_ready", False):
+        return
+    with _db_init_lock:
+        if getattr(app, "_db_ready", False):
+            return
         init_db()
         try:
             backup_database()
         except OSError as exc:
             logging.warning("Sauvegarde SQLite ignorée : %s", exc)
-        refresh_source_names_and_logos()
+        try:
+            refresh_source_names_and_logos()
+        except Exception as exc:
+            logging.warning("Mise à jour logos sources ignorée : %s", exc)
         from crawler.storage import mark_crawl_jobs_interrupted_on_startup
 
         mark_crawl_jobs_interrupted_on_startup()
@@ -692,11 +701,16 @@ def api_delete_all_leads():
 
 @app.route("/api/stats")
 def api_stats():
-    return jsonify({
-        "stats": get_stats(_aid()),
-        "source_stats": get_source_stats(_aid()),
-        "activities": get_activities(_aid()),
-    })
+    try:
+        agency_id = _aid()
+        return jsonify({
+            "stats": get_stats(agency_id),
+            "source_stats": get_source_stats(agency_id),
+            "activities": get_activities(agency_id),
+        })
+    except Exception as exc:
+        logging.exception("GET /api/stats")
+        return jsonify({"error": f"Stats indisponibles : {exc}"}), 500
 
 
 @app.route("/api/roi/stats")
@@ -889,13 +903,14 @@ def _job_response(job: dict) -> dict:
 
 @app.route("/api/crawler/status")
 def api_crawler_status():
-    sources = get_sources(_aid())
+    agency_id = _aid()
+    sources = get_sources(agency_id)
     status = engine.status()
     return jsonify({
         **status,
         "found_today": sum(s.get("leads_updated_today", s.get("today", 0)) for s in sources),
         "active_sources": sum(1 for s in sources if s["enabled"]),
-        "total_leads": len(get_leads(_aid())),
+        "total_leads": get_stats(agency_id)["total"],
         "prospects_in_db": sum(s.get("leads_count", s.get("found", 0)) for s in sources),
     })
 

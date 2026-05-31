@@ -581,18 +581,33 @@ function buildClientBriefing() {
 }
 
 async function loadData() {
-  const [leads, statsData, sources, crawlerStatus] = await Promise.all([
+  const [leadsResult, statsResult, sourcesResult, crawlerResult] = await Promise.allSettled([
     api("/leads"),
     api("/stats"),
     api("/sources"),
     api("/crawler/status"),
   ]);
 
-  LEADS = leads;
-  ACTIVITIES = statsData.activities || [];
-  SOURCE_STATS = statsData.source_stats || [];
-  SOURCES = sources;
-  state.crawlerRunning = crawlerStatus.running;
+  if (leadsResult.status === "rejected") throw leadsResult.reason;
+  if (sourcesResult.status === "rejected") throw sourcesResult.reason;
+
+  LEADS = leadsResult.value;
+  SOURCES = sourcesResult.value;
+
+  if (statsResult.status === "fulfilled") {
+    ACTIVITIES = statsResult.value.activities || [];
+    SOURCE_STATS = statsResult.value.source_stats || [];
+  } else {
+    console.warn("Stats indisponibles", statsResult.reason);
+    ACTIVITIES = ACTIVITIES || [];
+    SOURCE_STATS = SOURCE_STATS || [];
+  }
+
+  if (crawlerResult.status === "fulfilled") {
+    state.crawlerRunning = crawlerResult.value.running;
+  } else {
+    console.warn("État crawl indisponible", crawlerResult.reason);
+  }
 
   await refreshAgencySettings().catch(() => {
     applyAgencyCityToCrawl();
@@ -692,6 +707,17 @@ function countEnabledCrawlSources(list = SOURCES) {
   ).length;
 }
 
+/** Portails recommandés — seuls inclus dans « Crawler tout ». */
+function countRecommendedCrawlSources(list = SOURCES) {
+  return (list || []).filter(
+    (s) =>
+      s.enabled !== false &&
+      !s.is_custom &&
+      !s.is_antibot &&
+      String(s.search_url || s.base_url || "").trim().startsWith("http"),
+  ).length;
+}
+
 /** Met à jour le titre du modal si le job serveur indique le nombre de sites. */
 function applyCrawlLabelFromJobMessage(label, jobMessage) {
   if (!jobMessage) return label;
@@ -699,7 +725,7 @@ function applyCrawlLabelFromJobMessage(label, jobMessage) {
   if (!m) return label;
   const n = m[1];
   const city = getCrawlCity();
-  return city ? `Tous les sites (${n}) — ${city}` : `Tous les sites (${n})`;
+  return city ? `Portails recommandés (${n}) — ${city}` : `Portails recommandés (${n})`;
 }
 
 function setCrawlModalTitles(label, { prefix = "Crawl — " } = {}) {
@@ -2311,28 +2337,20 @@ async function crawlSingleSource(sourceId, sourceName) {
 
 async function runManualScan() {
   const city = getCrawlCity();
-  let count = countEnabledCrawlSources();
+  let count = countRecommendedCrawlSources();
   if (!count) {
     try {
       const fresh = await api("/sources");
       if (Array.isArray(fresh)) SOURCES = fresh;
-      count = countEnabledCrawlSources();
+      count = countRecommendedCrawlSources();
     } catch {
       /* garde le label sans (0) */
     }
   }
-  if (!count) {
-    try {
-      const st = await api("/crawler/status");
-      count = st.active_sources || 0;
-    } catch {
-      /* ignore */
-    }
-  }
   const countLabel = count > 0 ? String(count) : "…";
   const label = city
-    ? `Tous les sites (${countLabel}) — ${city}`
-    : `Tous les sites (${countLabel})`;
+    ? `Portails recommandés (${countLabel}) — ${city}`
+    : `Portails recommandés (${countLabel})`;
   await runCrawlJob("/crawler/scan", crawlBodyExtra(), label);
 }
 
@@ -3703,9 +3721,13 @@ function syncCrawlerUI() {
 }
 
 async function refreshStats() {
-  const statsData = await api("/stats");
-  ACTIVITIES = statsData.activities || [];
-  SOURCE_STATS = statsData.source_stats || [];
+  try {
+    const statsData = await api("/stats");
+    ACTIVITIES = statsData.activities || [];
+    SOURCE_STATS = statsData.source_stats || [];
+  } catch (err) {
+    console.warn("refreshStats", err);
+  }
 }
 
 /** Recharge leads, sources, stats et met à jour toute l’interface. */
