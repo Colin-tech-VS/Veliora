@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="Offre Veliora — radar mandats : crawl, CRM mandats, Score Mandat™, Analyse IA. 500 € HT/mois. Priorisation du matin pour agences immobilières.">
+  <meta name="description" content="Offre Veliora pour agences immobilières — 500 € HT/mois. Liste priorisée chaque matin, veille portails, Score Mandat™, CRM mandats. Un mandat suffit.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://veliora.fr/offre">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="fr_FR">
-  <meta property="og:title" content="Veliora — Radar mandat · 500 € HT/mois">
-  <meta property="og:description" content="Crawl, CRM mandats, Score Mandat™ et Analyse IA — pour une liste priorisée chaque matin. 500 € HT/mois par agence.">
+  <meta property="og:title" content="Veliora — Offre agence · 500 € HT/mois">
+  <meta property="og:description" content="Priorisez vos mandats chaque matin. Veille, scoring, CRM — un plan unique pour votre agence.">
   <meta property="og:url" content="https://veliora.fr/offre">
-  <meta name="twitter:card" content="summary">
-  <meta name="theme-color" content="#0B1220">
+  <meta property="og:image" content="https://veliora.fr/vitrine/assets/img/hero-facade.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#f6f4f0">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
-  <title>Veliora — Offre & tarifs agence immobilière</title>
-  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=32">
+  <title>Veliora — Offre & tarifs pour agences immobilières</title>
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=35">
 </head>
 <body class="vitrine vitrine-offre">
   <header class="v-nav" id="top">
@@ -31,268 +32,255 @@
       </button>
       <nav class="v-nav-links" id="nav-links">
         <a href="/">Accueil</a>
+        <a href="#livrable">Le livrable</a>
         <a href="#inclus">Inclus</a>
         <a href="#tarif">Tarif</a>
         <a href="#faq">FAQ</a>
         <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion</a>
-        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Créer un compte</a>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">S’abonner</a>
       </nav>
     </div>
   </header>
 
   <main>
-    <!-- Résumé en 30 secondes -->
-    <section class="v-offre-hero v-reveal">
-      <div class="v-offre-hero-inner">
-        <span class="v-badge">Veliora = Radar de mandats immobiliers</span>
-        <h1>Offre agence :<br><em>la priorisation qui justifie 500 €.</em></h1>
-        <p class="lead">
-          Veliora identifie et classe chaque jour les vendeurs les plus susceptibles de signer un mandat dans votre secteur.
-          Vous payez la <strong>priorisation du matin</strong> — avec crawl, CRM mandats et analyse intelligente inclus pour l’obtenir.
-        </p>
-        <p class="v-tagline-commercial" style="text-align:center;margin:1rem auto 0;">
-          «&nbsp;Voici les 12 vendeurs qui valent votre temps aujourd’hui.&nbsp;» — à partir de milliers d’annonces analysées.
-        </p>
-        <div class="v-offre-pillars">
-          <div class="v-offre-pillar"><strong>1.</strong> Score Mandat™ + raisons</div>
-          <div class="v-offre-pillar"><strong>2.</strong> Liste priorisée chaque matin</div>
-          <div class="v-offre-pillar"><strong>3.</strong> Suivi jusqu’au mandat signé</div>
+    <!-- Hero -->
+    <section class="v-offre-hero v-reveal" aria-labelledby="offre-title">
+      <div class="v-offre-hero-grid">
+        <div class="v-offre-hero-copy">
+          <p class="v-eyebrow">Offre agence · Un seul plan</p>
+          <h1 id="offre-title">Votre matinée mandat,<br><em>sans passer la matinée sur les portails.</em></h1>
+          <p class="v-lead">
+            Veliora surveille vos annonces, classe les vendeurs à contacter et vous donne les arguments pour l’appel.
+            <strong>Un mandat exclusif</strong> rentabilise largement l’abonnement.
+          </p>
+          <p class="v-offre-hero-quote">«&nbsp;Voici qui appeler en premier aujourd’hui&nbsp;» — avec le pourquoi, pas une liste brute.</p>
+          <div class="v-offre-hero-price">
+            <span class="v-offre-hero-price-num"><span id="price-ht-hero">500</span> €</span>
+            <span class="v-offre-hero-price-meta">HT / mois / agence · collaborateurs illimités</span>
+          </div>
+          <div class="v-hero-actions">
+            <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">Créer mon espace agence</a>
+            <a href="#" id="demo-cta" class="v-btn v-btn-secondary v-btn-lg">Démo 20 min</a>
+          </div>
         </div>
+        <figure class="v-offre-hero-photo">
+          <img src="/vitrine/assets/img/hero-facade.jpg" alt="Façade d'immeuble — marché immobilier de votre secteur" width="1200" height="800" loading="eager" decoding="async" fetchpriority="high">
+        </figure>
       </div>
     </section>
 
-    <!-- Ce que Veliora est / n'est pas -->
-    <section class="v-section v-reveal" id="positionnement">
-      <h2>Ce que vous achetez — et ce que ce n’est pas</h2>
-      <div class="v-split-2 v-offre-compare">
-        <div class="v-offre-box yes">
-          <h3>Vous achetez</h3>
-          <ul class="v-check-list">
-            <li><strong>La priorisation</strong> : 12 vendeurs, pas 10 000 annonces</li>
-            <li><strong>Score Mandat™</strong> expliqué (sans agence, baisse, DVF…)</li>
-            <li>Liste prête le matin · raisons de contacter · script d’appel</li>
-            <li>Crawl / veille (Leboncoin, PAP, SeLoger, Bien’ici, ParuVendu…)</li>
-            <li>CRM mandats · comparatif DVF · Analyse IA · espace par agence</li>
+    <!-- 3 promesses -->
+    <section class="v-offre-promises v-reveal" aria-label="Ce que vous obtenez">
+      <div class="v-offre-promises-inner">
+        <article class="v-offre-promise">
+          <img src="/vitrine/assets/img/agency-office.jpg" alt="Équipe d'agence au bureau" width="600" height="400" loading="lazy" decoding="async">
+          <div class="v-offre-promise-body">
+            <h2>Liste du matin</h2>
+            <p>Vendeurs classés par potentiel mandat — vous savez par où commencer la journée.</p>
+          </div>
+        </article>
+        <article class="v-offre-promise">
+          <img src="/vitrine/assets/img/apartment-interior.jpg" alt="Appartement en vente" width="600" height="400" loading="lazy" decoding="async">
+          <div class="v-offre-promise-body">
+            <h2>Arguments au téléphone</h2>
+            <p>Score expliqué, DVF, synthèse d’appel et scripts selon le profil vendeur.</p>
+          </div>
+        </article>
+        <article class="v-offre-promise">
+          <img src="/vitrine/assets/img/mandate-keys.jpg" alt="Clés remises après mandat" width="600" height="400" loading="lazy" decoding="async">
+          <div class="v-offre-promise-body">
+            <h2>Jusqu’au mandat signé</h2>
+            <p>Pipeline, fiches, modèles de mandats vente & location — tout le suivi prospection.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Livrable -->
+    <section class="v-section v-offre-livrable v-reveal" id="livrable">
+      <div class="v-offre-livrable-grid">
+        <figure class="v-offre-livrable-photo">
+          <img src="/vitrine/assets/img/house-exterior.jpg" alt="Maison en vente — secteur pavillonnaire" width="1000" height="750" loading="lazy" decoding="async">
+          <figcaption>Objectif : le rendez-vous, puis le mandat.</figcaption>
+        </figure>
+        <div class="v-offre-livrable-copy">
+          <span class="v-label">Ce que vous achetez</span>
+          <h2>La priorisation — pas « encore un outil »</h2>
+          <p class="v-offre-lead">
+            Vous ne payez pas pour accumuler des fonctions. Vous payez pour <strong>ne plus trier 10 000 annonces à la main</strong>
+            et concentrer vos appels sur les vendeurs qui ont le plus de chances de vous confier un mandat.
+          </p>
+          <ul class="v-offre-highlights">
+            <li><strong>12 vendeurs utiles</strong> plutôt qu’une masse d’annonces</li>
+            <li><strong>Score Mandat™</strong> + raisons visibles (particulier, baisse, DVF…)</li>
+            <li><strong>Veille</strong> Leboncoin, PAP, SeLoger, Bien’ici, ParuVendu…</li>
+            <li><strong>CRM mandats</strong> dédié — complète Hektor / Apimo, ne les remplace pas</li>
           </ul>
-        </div>
-        <div class="v-offre-box no">
-          <h3>Ce que Veliora n’est pas</h3>
-          <ul class="v-check-list negative">
-            <li>Un <strong>crawler</strong> vendu seul (la veille est un moyen, pas la fin)</li>
-            <li>Un <strong>CRM généraliste</strong> qui remplace Hektor / Apimo</li>
-            <li>Une <strong>boîte noire</strong> : score et synthèse IA s’appuient sur des signaux affichés</li>
-            <li>Une garantie « mandat signé ou remboursé »</li>
-          </ul>
-          <p class="v-offre-note">Transparence : crawl + CRM mandats + IA au service d’une liste du matin actionnable.</p>
+          <p class="v-offre-aside">Veliora n’est pas une garantie « mandat ou remboursé ». C’est un radar honnête, avec signaux affichés.</p>
         </div>
       </div>
     </section>
 
     <!-- Inclus -->
-    <section class="v-section v-offre-inclus v-reveal" id="inclus">
-      <h2>Tout ce qui est inclus à 500 € HT / mois</h2>
-      <p class="sub">Un seul plan. Pas de modules cachés. Collaborateurs illimités.</p>
-      <div class="v-offre-grid">
-        <article class="v-offre-item">
-          <h3>Score Mandat™</h3>
-          <p>Feature n°1 : 0–100, raisons (sans agence, jours en ligne, baisse, DVF), recommandation « Appeler aujourd’hui ».</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Liste du matin</h3>
-          <p>Briefing quotidien : vendeurs classés par potentiel, alertes, scripts d’appel contextuels.</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Veille portails</h3>
-          <p>Crawl manuel + automatique par agence sur vos sources (jusqu’à <span id="max-sources">25</span> URLs).</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Comparatif DVF</h3>
-          <p>Prix/m² vs médiane communale (données ouvertes DGFiP / Etalab) pour argumenter au 1<sup>er</sup> appel.</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Pipeline mandat</h3>
-          <p>Nouveau → À contacter → Contacté → RDV → Mandat. Export CSV des prospects.</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Mandats</h3>
-          <p>Modèles vente & location, préremplissage depuis un prospect, aperçu, envoi email, impression PDF.</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Fiches clients</h3>
-          <p>Registre acheteurs / locataires + import CSV/Excel.</p>
-        </article>
-        <article class="v-offre-item">
-          <h3>Équipe & support</h3>
-          <p>Collaborateurs illimités, données isolées, support email (réponse visée sous <span id="sla-h">24</span> h).</p>
-        </article>
+    <section class="v-offre-inclus-block v-reveal" id="inclus">
+      <div class="v-offre-inclus-head">
+        <span class="v-label">Tout inclus</span>
+        <h2>Un abonnement, zéro module caché</h2>
+        <p class="sub">Collaborateurs illimités · données isolées par agence</p>
       </div>
-    </section>
-
-    <!-- Limites -->
-    <section class="v-section v-reveal" id="limites">
-      <h2>Limites connues — sans surprise</h2>
-      <div class="v-offre-limits">
-        <div class="v-offre-limit"><strong>Sources</strong> — max <span class="max-sources-dup">25</span> URLs de recherche par agence</div>
-        <div class="v-offre-limit"><strong>Portails</strong> — dépendance aux sites crawlés (blocages possibles, surtout Leboncoin)</div>
-        <div class="v-offre-limit"><strong>DVF</strong> — vente uniquement ; hors Alsace-Moselle / Mayotte</div>
-        <div class="v-offre-limit"><strong>Essai</strong> — pas d’essai gratuit illimité sans carte ; abonnement Stripe actif requis</div>
-        <div class="v-offre-limit"><strong>Prospection</strong> — vous restez responsable du respect CNIL et CGU des portails</div>
+      <div class="v-offre-bento">
+        <article class="v-offre-bento-card v-offre-bento-card--wide">
+          <img src="/vitrine/assets/img/hero-facade.jpg" alt="" width="800" height="500" loading="lazy" decoding="async" aria-hidden="true">
+          <div>
+            <h3>Score Mandat™</h3>
+            <p>Note 0–100, critères affichés, recommandation d’appel (« aujourd’hui », « cette semaine »…).</p>
+          </div>
+        </article>
+        <article class="v-offre-bento-card">
+          <h3>Veille portails</h3>
+          <p>Crawl manuel ou programmé · jusqu’à <span id="max-sources">25</span> URLs par agence.</p>
+        </article>
+        <article class="v-offre-bento-card">
+          <h3>Comparatif DVF</h3>
+          <p>Prix/m² vs ventes récentes de la commune pour argumenter dès le 1<sup>er</sup> contact.</p>
+        </article>
+        <article class="v-offre-bento-card">
+          <h3>Synthèse & scripts</h3>
+          <p>Paragraphes et angles d’appel à partir des signaux de la fiche.</p>
+        </article>
+        <article class="v-offre-bento-card">
+          <h3>Pipeline & mandats</h3>
+          <p>Du nouveau prospect au mandat signé · modèles PDF · export CSV.</p>
+        </article>
+        <article class="v-offre-bento-card">
+          <h3>Équipe & support</h3>
+          <p>Collaborateurs illimités · réponse visée sous <span id="sla-h">24</span> h · <a href="mailto:support@veliora.fr">support@veliora.fr</a></p>
+        </article>
       </div>
     </section>
 
     <!-- Tarif -->
-    <section class="v-pricing v-reveal" id="tarif">
-      <div class="v-section">
-        <h2>Tarif unique — simple à comprendre</h2>
-        <div class="v-price-card v-price-card-detailed">
-          <div class="v-price-badge">Offre Pro · Radar mandat</div>
-          <div class="amount"><span id="price-ht">500</span> € HT <span>/ mois / agence</span></div>
-          <p class="v-price-ttc">Soit <strong><span id="price-ttc">600</span> € TTC</strong> / mois (TVA <span id="vat-rate">20</span> %)</p>
-          <p class="v-price-tagline">Collaborateurs illimités · facturation Stripe · résiliation fin de période</p>
-          <ul>
-            <li>Tout le tableau « inclus » ci-dessus</li>
-            <li>Configuration initiale de vos 1<sup>res</sup> sources</li>
-            <li>Portail client Stripe (factures, CB)</li>
+    <section class="v-offre-tarif v-reveal" id="tarif">
+      <div class="v-offre-tarif-grid">
+        <figure class="v-offre-tarif-photo">
+          <img src="/vitrine/assets/img/mandate-keys.jpg" alt="Signature de mandat — objectif commercial" width="800" height="1000" loading="lazy" decoding="async">
+        </figure>
+        <div class="v-offre-tarif-card">
+          <span class="v-label">Tarif unique</span>
+          <div class="v-offre-tarif-amount">
+            <span id="price-ht">500</span> € <span class="v-offre-tarif-unit">HT / mois</span>
+          </div>
+          <p class="v-offre-tarif-ttc">Soit <strong><span id="price-ttc">600</span> € TTC</strong> / mois (TVA <span id="vat-rate">20</span> %)</p>
+          <p class="v-offre-tarif-tag">Facturation Stripe · résiliation en fin de période</p>
+          <ul class="v-offre-tarif-list">
+            <li>Tout le pack ci-dessus</li>
+            <li>Configuration de vos premières sources</li>
+            <li>Portail client (factures, CB)</li>
             <li>Mises à jour produit incluses</li>
           </ul>
-          <div class="v-roi-inline">
-            <p><strong>ROI :</strong> 1 mandat exclusif ≈ 3 000 € de commission → rentabilisé dès le <strong>1<sup>er</sup> mandat</strong> grâce à la <strong>priorisation</strong>, pas grâce à plus d’outils admin.</p>
+          <div class="v-offre-tarif-roi">
+            <strong>1 mandat exclusif ≈ 3 000 €</strong> de commission — l’abonnement est rentabilisé dès le premier mandat supplémentaire.
           </div>
-          <div class="v-price-actions">
-            <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">S’abonner — créer mon espace agence</a>
-            <a href="#" id="demo-cta" class="v-btn v-btn-outline v-btn-lg">Réserver une démo (20 min)</a>
+          <div class="v-hero-actions v-offre-tarif-actions">
+            <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">S’abonner maintenant</a>
+            <a href="/crm/auth" class="v-btn v-btn-secondary">Déjà client</a>
           </div>
-          <p class="v-price-alt"><a href="/crm/auth">Déjà client ? Se connecter</a> · <a href="/legal#cgv">Voir les CGV</a></p>
+          <p class="v-offre-tarif-legal"><a href="/legal#cgv">CGV</a> · <a href="/legal#dpa">Données & DPA</a></p>
         </div>
       </div>
+      <details class="v-offre-limits-fold">
+        <summary>Transparence — limites connues</summary>
+        <ul>
+          <li>Max <span class="max-sources-dup">25</span> URLs de recherche par agence</li>
+          <li>Dépendance aux portails crawlés (blocages possibles, surtout Leboncoin)</li>
+          <li>DVF : vente uniquement, hors Alsace-Moselle / Mayotte</li>
+          <li>Pas d’essai illimité sans carte — démo 20 min recommandée avant engagement</li>
+          <li>Vous restez responsable du respect CNIL et des CGU des portails</li>
+        </ul>
+      </details>
     </section>
 
-    <!-- Feuille de route -->
-    <section class="v-section v-offre-roadmap v-reveal" id="roadmap">
-      <h2>Feuille de route — ce qui arrive</h2>
-      <p class="sub">Priorités produit pour renforcer la valeur à 500 €/mois</p>
-      <ol class="v-roadmap">
-        <li class="done"><span class="v-roadmap-tag">Disponible</span> Score mandat + briefing + DVF + mandats + crawl multi-portails</li>
-        <li class="done"><span class="v-roadmap-tag">Disponible</span> Filtre briefing par villes cibles (paramètres Radar)</li>
-        <li class="soon"><span class="v-roadmap-tag">Bientôt</span> Alertes email (nouvelle annonce chaude, baisse de prix)</li>
-        <li class="soon"><span class="v-roadmap-tag">Bientôt</span> PDF mandat en pièce jointe automatique</li>
-        <li class="planned"><span class="v-roadmap-tag">Prévu</span> Matching acheteurs ↔ annonces détectées</li>
-        <li class="planned"><span class="v-roadmap-tag">Prévu</span> Séquences de relance (J+0, J+3, J+7)</li>
-        <li class="planned"><span class="v-roadmap-tag">Prévu</span> Export / sync CRM tiers</li>
-      </ol>
-    </section>
-
-    <!-- Calculateur ROI interactif -->
-    <section class="v-section v-roi-calc v-reveal" id="roi-calc">
-      <h2>Calculez votre ROI en 10 secondes</h2>
-      <p class="sub">Un mandat suffit à rentabiliser l'abonnement — voyez par vous-même.</p>
-      <div class="v-roi-calc-widget">
-        <div class="v-roi-calc-slider-wrap">
-          <label for="roi-mandats-slider" class="v-roi-calc-label">
-            Mandats exclusifs visés par mois :
-            <strong id="roi-mandats-val" class="v-roi-calc-num">2</strong>
+    <!-- ROI -->
+    <section class="v-offre-roi v-reveal" id="roi">
+      <div class="v-offre-roi-grid">
+        <div class="v-offre-roi-copy">
+          <span class="v-label">Rentabilité</span>
+          <h2>Combien de mandats par mois ?</h2>
+          <p>Ajustez le curseur avec votre réalité terrain. Estimation à ~3 000 € de commission par mandat exclusif.</p>
+        </div>
+        <div class="v-offre-roi-widget">
+          <label for="roi-mandats-slider" class="v-offre-roi-label">
+            Mandats exclusifs / mois : <strong id="roi-mandats-val">2</strong>
           </label>
-          <input type="range" id="roi-mandats-slider" class="v-roi-slider" min="1" max="10" value="2" step="1">
-          <div class="v-roi-slider-marks"><span>1</span><span>5</span><span>10</span></div>
+          <input type="range" id="roi-mandats-slider" class="v-offre-roi-slider" min="1" max="10" value="2" step="1">
+          <div class="v-offre-roi-results">
+            <div class="v-offre-roi-row"><span>Commissions</span><strong id="roi-commission">6 000 €</strong></div>
+            <div class="v-offre-roi-row"><span>Abonnement</span><strong id="roi-subscription">− 500 € HT</strong></div>
+            <div class="v-offre-roi-row v-offre-roi-row--net"><span>Net estimé</span><strong id="roi-net">+ 5 500 €</strong></div>
+          </div>
+          <p class="v-offre-roi-note">* Indicatif — votre marché et vos taux de conversion peuvent varier.</p>
         </div>
-        <div class="v-roi-calc-result">
-          <div class="v-roi-result-row">
-            <span>Commission estimée</span>
-            <strong id="roi-commission">6 000 €</strong>
-          </div>
-          <div class="v-roi-result-row">
-            <span>Abonnement Veliora</span>
-            <strong>− 500 € HT</strong>
-          </div>
-          <div class="v-roi-result-row v-roi-net">
-            <span>Net mensuel</span>
-            <strong id="roi-net">+ 5 500 €</strong>
-          </div>
-          <div class="v-roi-result-row v-roi-x">
-            <span>Abonnement remboursé</span>
-            <strong id="roi-x">12 ×</strong>
-          </div>
-        </div>
-        <p class="v-roi-calc-note">* Estimation : ~3 000 € de commission par mandat exclusif. Vos chiffres peuvent varier selon le marché local.</p>
-        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">Démarrer — 1 mandat suffit à rentabiliser</a>
       </div>
     </section>
 
-    <!-- RGPD & conformité -->
-    <section class="v-section v-rgpd v-reveal" id="rgpd">
-      <h2>Données & conformité RGPD</h2>
-      <p class="sub">Le frein n°1 à la signature, c'est la question des données. Voici les réponses claires.</p>
-      <div class="v-rgpd-grid">
-        <div class="v-rgpd-item">
-          <h3>Base légale</h3>
-          <p>Le traitement repose sur l'<strong>intérêt légitime</strong> de votre agence (prospection commerciale B2B, conformément aux lignes directrices CNIL sur la prospection directe).</p>
+    <!-- Confiance -->
+    <section class="v-offre-trust v-reveal">
+      <div class="v-offre-trust-inner">
+        <div class="v-offre-trust-copy">
+          <span class="v-label">Confiance</span>
+          <h2>Données : clair et conforme</h2>
+          <p>Annonces publiques uniquement · espace isolé par agence · hébergement EU · DPA à l’inscription.</p>
+          <a href="/legal#dpa" class="v-offre-trust-link">Détails RGPD & DPA →</a>
         </div>
-        <div class="v-rgpd-item">
-          <h3>Sources publiques uniquement</h3>
-          <p>Veliora analyse exclusivement des <strong>annonces visibles de tout internaute</strong> sur des portails publics (LBC, PAP, SeLoger…). Aucun accès à une base privée ou opaque.</p>
-        </div>
-        <div class="v-rgpd-item">
-          <h3>Isolation stricte par agence</h3>
-          <p>Chaque agence a un espace <strong>entièrement isolé</strong> : aucun prospect, aucune source ne sont partagés entre agences concurrentes. Vos données restent vôtres.</p>
-        </div>
-        <div class="v-rgpd-item">
-          <h3>Opt-out vendeur</h3>
-          <p>Tout vendeur peut demander la suppression de ses données. La fiche prospect se supprime en un clic, sans justification requise.</p>
-        </div>
-        <div class="v-rgpd-item">
-          <h3>Hébergement européen</h3>
-          <p>Données hébergées en Europe (Scalingo, région EU). Aucun transfert hors UE. Sous-traitants listés dans notre <a href="/legal#dpa">DPA</a>.</p>
-        </div>
-        <div class="v-rgpd-item">
-          <h3>Sous-traitant RGPD</h3>
-          <p>Vous êtes <strong>responsable de traitement</strong> ; Veliora est votre sous-traitant. Le contrat DPA est intégré aux CGV et signé à l'inscription.</p>
-        </div>
-      </div>
-      <p class="v-rgpd-footer">Des questions sur votre situation ? <a href="mailto:support@veliora.fr">Contactez-nous</a> · <a href="/legal#dpa">Lire le DPA complet →</a></p>
-    </section>
-
-    <!-- FAQ commerciale -->
-    <section class="v-section v-faq" id="faq">
-      <h2>Questions avant de s’abonner</h2>
-      <div class="v-faq-grid">
-        <details open>
-          <summary>Pourquoi 500 € / mois ?</summary>
-          <p>Parce que vous achetez la <strong>priorisation du matin</strong> — le livrable qui compte — avec tout l’outillage pour l’obtenir : crawl multi-portails, CRM mandats, Score Mandat™ et synthèse IA. Un mandat exclusif (~3 000 €) couvre plusieurs mois d’abonnement.</p>
-        </details>
-        <details>
-          <summary>HT ou TTC ?</summary>
-          <p>Le prix affiché est <strong>hors taxes</strong> (500 € HT). La TVA s’ajoute selon votre statut (20 % en France métropolitaine pour les sociétés). Le montant TTC exact est indiqué à l’inscription Stripe.</p>
-        </details>
-        <details>
-          <summary>Essai gratuit ?</summary>
-          <p>Pas d’essai illimité sans carte bancaire. Une période d’essai peut être activée ponctuellement (voir page d’inscription). La démo de 20 min permet de valider l’adéquation avant engagement.</p>
-        </details>
-        <details>
-          <summary>Veliora remplace mon CRM (Hektor, Apimo…) ?</summary>
-          <p>Non pour la relation client globale. Veliora inclut un <strong>CRM mandats</strong> (pipeline, fiches vendeurs, mandats, équipe) dédié à la prospection mandat. Gardez votre CRM historique pour le reste du parc et du suivi long terme.</p>
-        </details>
-        <details>
-          <summary>Le score et l’« Analyse IA », comment ça marche ?</summary>
-          <p>Le <strong>Score Mandat™</strong> = règles métier transparentes (particulier, baisse, DVF…). L’<strong>Analyse IA</strong> = synthèse en langage naturel à partir des signaux détectés sur l’annonce. L’assistance IA continue de s’enrichir dans le produit.</p>
-        </details>
-        <details>
-          <summary>Combien de temps pour démarrer ?</summary>
-          <p>Environ 10 minutes : compte agence, ajout d’une source, première veille. Le briefing se remplit dès les premières opportunités détectées.</p>
-        </details>
-        <details>
-          <summary>Mes données sont-elles partagées ?</summary>
-          <p>Non. Chaque agence a un espace strictement isolé (sources, leads, crawls, collaborateurs).</p>
-        </details>
+        <ul class="v-offre-trust-list">
+          <li><strong>Prospection légitime</strong> — intérêt légitime de l’agence, lignes CNIL</li>
+          <li><strong>Opt-out vendeur</strong> — suppression de fiche en un clic</li>
+          <li><strong>Pas de partage</strong> — vos prospects ne sont jamais revendus</li>
+        </ul>
       </div>
     </section>
 
-    <section class="v-cta-final">
+    <!-- FAQ -->
+    <section class="v-offre-faq-block v-reveal" id="faq">
+      <div class="v-offre-faq-grid">
+        <figure class="v-offre-faq-photo">
+          <img src="/vitrine/assets/img/agency-office.jpg" alt="Réunion en agence immobilière" width="800" height="600" loading="lazy" decoding="async">
+        </figure>
+        <div class="v-offre-faq-content">
+          <h2>Questions avant de signer</h2>
+          <div class="v-faq-grid">
+            <details open>
+              <summary>Pourquoi 500 € / mois ?</summary>
+              <p>Vous achetez la <strong>priorisation du matin</strong> et tout l’outillage pour l’obtenir. Un mandat exclusif couvre plusieurs mois d’abonnement.</p>
+            </details>
+            <details>
+              <summary>Veliora remplace Hektor ou Apimo ?</summary>
+              <p>Non pour la gestion globale. Veliora est le <strong>CRM mandats</strong> de la prospection — gardez votre CRM historique pour le parc.</p>
+            </details>
+            <details>
+              <summary>Le score, comment ça marche ?</summary>
+              <p>Règles métier transparentes (particulier, baisse, DVF…). La synthèse d’appel reformule ces signaux — rien de caché.</p>
+            </details>
+            <details>
+              <summary>Démarrage ?</summary>
+              <p>~10 minutes : compte, sources, première veille. Le briefing se remplit dès les premières détections.</p>
+            </details>
+            <details>
+              <summary>Essai gratuit ?</summary>
+              <p>Pas d’essai illimité sans carte. La démo permet de valider l’adéquation sur votre secteur avant de s’engager.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="v-cta-final v-reveal">
       <div class="v-cta-inner">
-        <h2>Prêt à prioriser vos mandats ?</h2>
-        <p>Tout est sur cette page. Pas de surprise à l’inscription.</p>
+        <h2>Prêt à signer plus de mandats ?</h2>
+        <p>Configurez vos portails — recevez votre première liste priorisée.</p>
         <div class="v-hero-actions">
           <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">Créer mon espace agence</a>
-          <a href="/" class="v-btn v-btn-outline">Retour à l’accueil</a>
+          <a href="/" class="v-btn v-btn-secondary">Retour à l’accueil</a>
         </div>
       </div>
     </section>
@@ -302,7 +290,7 @@
     <div class="v-footer-grid v-footer-grid-4">
       <div>
         <strong class="v-footer-brand">Veliora</strong>
-        <p>Radar de mandats immobiliers — 500 € HT/mois.</p>
+        <p>Radar de mandats immobiliers — <span id="footer-price-ht">500</span> € HT/mois.</p>
       </div>
       <div>
         <strong>Produit</strong>
@@ -325,32 +313,7 @@
     <p class="v-footer-copy">© 2026 Veliora. Données DVF : DGFiP / Etalab.</p>
   </footer>
 
-  <script src="/vitrine/assets/js/vitrine.js?v=28" defer></script>
-  <script src="/vitrine/assets/js/offre.js?v=1" defer></script>
-  <script>
-    (function() {
-      var slider = document.getElementById("roi-mandats-slider");
-      var valEl = document.getElementById("roi-mandats-val");
-      var commissionEl = document.getElementById("roi-commission");
-      var netEl = document.getElementById("roi-net");
-      var xEl = document.getElementById("roi-x");
-      var COMMISSION = 3000;
-      var SUBSCRIPTION = 500;
-      function updateRoi() {
-        var n = parseInt(slider.value, 10);
-        var gross = n * COMMISSION;
-        var net = gross - SUBSCRIPTION;
-        var multiple = Math.round(gross / SUBSCRIPTION * 10) / 10;
-        valEl.textContent = n;
-        commissionEl.textContent = gross.toLocaleString("fr-FR") + " €";
-        netEl.textContent = "+ " + net.toLocaleString("fr-FR") + " €";
-        xEl.textContent = multiple + " ×";
-      }
-      if (slider) {
-        slider.addEventListener("input", updateRoi);
-        updateRoi();
-      }
-    })();
-  </script>
+  <script src="/vitrine/assets/js/vitrine.js?v=30" defer></script>
+  <script src="/vitrine/assets/js/offre.js?v=2" defer></script>
 </body>
 </html>

@@ -3,20 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0B1220">
+  <meta name="theme-color" content="#f6f4f0">
   <title>Veliora — Connexion & abonnement agence</title>
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=38">
-  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=32">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=39">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
   <style>
     .auth-pricing {
-      background: rgba(59, 130, 246, 0.08);
-      border: 1px solid rgba(59, 130, 246, 0.25);
+      background: var(--v-sand, #ebe6de);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--v-brass-light, #c4a574);
       border-radius: 12px;
       padding: 1rem 1.15rem;
       margin-bottom: 1.25rem;
       text-align: center;
     }
-    .auth-pricing .price { font-size: 1.75rem; font-weight: 800; color: var(--brand-blue, #3b82f6); }
+    .auth-pricing .price {
+      font-family: var(--font-serif, Georgia, serif);
+      font-size: 1.85rem;
+      font-weight: 600;
+      color: var(--v-ink, #1e3340);
+    }
     .auth-pricing .price span { font-size: 0.95rem; font-weight: 500; color: var(--text-muted, #64748b); }
     .auth-pricing p { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b); line-height: 1.45; }
     .auth-checkout-banner {

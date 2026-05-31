@@ -38,7 +38,7 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.55);
+    background: rgba(36, 59, 71, 0.45);
     z-index: 195;
     -webkit-tap-highlight-color: transparent;
   }
@@ -940,21 +940,42 @@
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: linear-gradient(160deg, var(--brand-night) 0%, var(--brand-night-soft) 45%, #1e1b4b 100%);
+  background: var(--v-cream, #f6f4f0);
+  position: relative;
+}
+
+.auth-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: url("/vitrine/assets/img/hero-facade.jpg") center / cover no-repeat;
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-page .auth-card {
+  position: relative;
+  z-index: 1;
 }
 
 .auth-card {
   width: 100%;
   max-width: min(420px, 100%);
   background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--v-brass-light, #c4a574);
   border-radius: var(--radius-lg);
   padding: 1.75rem;
   box-shadow: var(--shadow-lg);
 }
 
 .auth-card h1 {
-  font-size: 1.5rem;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.75rem;
+  font-weight: 600;
   margin-bottom: 0.25rem;
+  color: var(--text-primary);
 }
 
 .auth-sub {
@@ -982,7 +1003,7 @@
 .auth-tab.active {
   background: var(--brand-blue);
   color: #fff;
-  border-color: var(--brand-blue);
+  border-color: var(--brand-blue-dark);
 }
 
 .auth-panel {

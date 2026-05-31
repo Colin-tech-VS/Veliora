@@ -2,8 +2,8 @@
 const CACHE = "veliora-crm-v5";
 const SHELL = [
   "/crm",
-  "/crm/assets/css/styles.css?v=38",
-  "/crm/assets/css/mobile.css?v=32",
+  "/crm/assets/css/styles.css?v=39",
+  "/crm/assets/css/mobile.css?v=33",
   "/crm/assets/js/crawl-watch.js",
 ];
 
