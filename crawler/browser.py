@@ -260,16 +260,20 @@ class _PlaywrightSession:
         self._ensure_context()
         return True
 
-    def _wait_rendered_content(self, page, *, min_chars: int = 400) -> None:
+    def _wait_rendered_content(self, page, *, min_chars: int = 400, timeout_ms: int | None = None) -> None:
         """SPA / anti-bot : attendre du texte visible (évite captures et HTML vides)."""
+        from crawler.config import active_speed_preset
+
+        if timeout_ms is None:
+            timeout_ms = int(active_speed_preset().get("content_wait_ms", 12_000))
         try:
             page.wait_for_function(
                 "() => document.body && (document.body.innerText || '').trim().length >= "
                 + str(min_chars),
-                timeout=16_000,
+                timeout=timeout_ms,
             )
         except Exception:
-            page.wait_for_timeout(1200)
+            page.wait_for_timeout(600 if min_chars <= 300 else 1200)
 
     def _page_looks_empty(self, html: str) -> bool:
         if not html:
@@ -367,6 +371,7 @@ class _PlaywrightSession:
         scroll_lazy: bool = False,
         click_contacts: bool = False,
         referer: str | None = None,
+        fast_mode: bool = False,
     ) -> FetchResult:
         if not _playwright_available():
             return FetchResult(error_code=CrawlError.PLAYWRIGHT_MISSING, method="playwright")
@@ -382,8 +387,15 @@ class _PlaywrightSession:
         ]
         referers = [r for r in referers if r]
 
+        from crawler.config import active_speed_preset
+
+        preset = active_speed_preset()
         max_retries = getattr(self, "_page_retries", PLAYWRIGHT_RETRIES)
+        if fast_mode:
+            max_retries = min(max_retries, 3)
         page_timeout = getattr(self, "_page_timeout_ms", PLAYWRIGHT_TIMEOUT_MS)
+        networkidle_ms = int(preset.get("networkidle_ms", 12_000))
+        content_min = 280 if fast_mode else 400
         for attempt in range(max_retries):
             try:
                 page = self._ensure_context()
@@ -421,11 +433,11 @@ class _PlaywrightSession:
                 self._dismiss_cookies(page)
 
                 try:
-                    page.wait_for_load_state("networkidle", timeout=12_000)
+                    page.wait_for_load_state("networkidle", timeout=networkidle_ms)
                 except Exception:
-                    page.wait_for_timeout(800 + attempt * 300)
+                    page.wait_for_timeout(500 + attempt * 200 if fast_mode else 800 + attempt * 300)
 
-                self._wait_rendered_content(page)
+                self._wait_rendered_content(page, min_chars=content_min)
 
                 if is_blocked_html(page.content(), min_len=1200):
                     if self._wait_out_challenge(page):
@@ -442,7 +454,7 @@ class _PlaywrightSession:
 
                 capture_live_frame(page)
 
-                if scroll_lazy:
+                if scroll_lazy and not fast_mode:
                     self._human_scroll(page)
                     capture_live_frame(page)
 
@@ -464,12 +476,13 @@ class _PlaywrightSession:
 
                 if self._page_looks_empty(html):
                     if attempt + 1 < max_retries:
-                        page.wait_for_timeout(1500 + attempt * 500)
-                        self._wait_rendered_content(page, min_chars=600)
+                        page.wait_for_timeout(800 + attempt * 400)
+                        self._wait_rendered_content(page, min_chars=500)
                         html = page.content()
-                    if self._page_looks_empty(html):
+                    if self._page_looks_empty(html) and not fast_mode:
                         if self._switch_to_headed():
                             continue
+                    if self._page_looks_empty(html):
                         last_result = FetchResult(
                             error_code=CrawlError.FETCH_FAILED,
                             error_detail=f"page vide ({len(html)} o)",
@@ -637,6 +650,16 @@ def warmup_domain(base_url: str, search_url: str | None = None) -> None:
         session.fetch(search_url, referer=base_url, scroll_lazy=True)
 
 
+def _html_has_contact_hints(html: str) -> bool:
+    low = (html or "").lower()
+    return (
+        "tel:" in low
+        or "mailto:" in low
+        or "data-phone" in low
+        or "phone" in low and "@" in low
+    )
+
+
 def fetch_page(
     url: str,
     *,
@@ -644,6 +667,7 @@ def fetch_page(
     click_contacts: bool = False,
     referer: str | None = None,
     prefer_browser: bool = False,
+    fast_mode: bool = False,
 ) -> FetchResult:
     """
     Stratégie anti-bot :
@@ -664,6 +688,7 @@ def fetch_page(
             scroll_lazy=scroll_lazy,
             click_contacts=click_contacts,
             referer=referer,
+            fast_mode=fast_mode,
         )
         if result.ok:
             return result

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import quote, urlencode, urlparse, parse_qs, urlunparse
 
@@ -58,13 +59,10 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
         return search_url
 
     if portal == "seloger":
-        # list.htm?places=[…] renvoie souvent une page vide / erreur HTTP — chemin stable.
-        path_slug = _city_path_slug(city)
-        return f"https://www.seloger.com/immobilier/achat/bien/ile-de-france/{path_slug}/"
+        return city_search_url_candidates(search_url, source_id, city)[0]
 
     if portal == "logicimmo":
-        path_slug = _city_path_slug(city)
-        return f"https://www.logic-immo.com/vente-immobilier/{path_slug}/liste-1"
+        return city_search_url_candidates(search_url, source_id, city)[0]
 
     if portal == "bienici":
         parsed = urlparse(search_url)
@@ -81,6 +79,97 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
     parsed = urlparse(search_url)
     sep = "&" if parsed.query else "?"
     return f"{search_url}{sep}ville={q_city}&city={q_city}"
+
+
+def city_search_url_candidates(
+    search_url: str,
+    source_id: str,
+    city: str | None,
+) -> list[str]:
+    """URLs de liste ville, du plus fiable au repli (testées par le moteur au crawl)."""
+    city = (city or "").strip()
+    if not city:
+        return [search_url] if search_url else []
+
+    portal = resolve_base_portal_id(source_id) or (source_id or "").lower()
+    slug = _slug(city)
+    path_slug = _city_path_slug(city)
+    q_city = quote(city)
+    out: list[str] = []
+
+    def _add(u: str | None) -> None:
+        if u and u.startswith("http") and u not in out:
+            out.append(u.split("#")[0].rstrip("/") or u)
+
+    if portal == "seloger":
+        places = json.dumps([{"label": city}], ensure_ascii=False, separators=(",", ":"))
+        base = (
+            search_url
+            if "seloger.com" in (search_url or "").lower()
+            else "https://www.seloger.com/list.htm"
+        )
+        parsed = urlparse(base)
+        qs = {"types": "1", "projects": "2", "places": places}
+        _add(f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(qs)}")
+        _add(f"https://www.seloger.com/immobilier/achat/bien/ile-de-france/{path_slug}/")
+        _add(f"https://www.seloger.com/immobilier/achat/ile-de-france/{path_slug}/")
+        return out
+
+    if portal == "logicimmo":
+        _add(f"https://www.logic-immo.com/vente-appartement/{path_slug}")
+        _add(f"https://www.logic-immo.com/vente-maison/{path_slug}")
+        _add(f"https://www.logic-immo.com/vente-immobilier/{path_slug}/liste-1")
+        base = (search_url or "https://www.logic-immo.com/vente-appartement").rstrip("/")
+        _add(f"{base}/{slug}" if slug else base)
+        return out
+
+    if portal == "leboncoin":
+        _add(apply_city_to_search_url(search_url, source_id, city))
+        return out
+
+    if portal == "pap":
+        base = (search_url or "https://www.pap.fr/annonce/vente-appartements").rstrip("/")
+        if "/annonce/" in base and slug:
+            _add(f"{base}/{slug}")
+        _add(f"{base}?ville={q_city}")
+        return out
+
+    if portal == "bienici":
+        parsed = urlparse(search_url or "https://www.bienici.com/recherche/achat/appartement")
+        path = parsed.path.rstrip("/")
+        if slug:
+            _add(f"{parsed.scheme}://{parsed.netloc}{path}/{slug}")
+        _add(search_url or "")
+        return out or [search_url]
+
+    if portal == "lefigaro" or "figaro" in (search_url or ""):
+        ps = path_slug.replace("-", "+")
+        _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{ps}.html")
+        _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement-{ps}.html")
+        return out
+
+    _add(apply_city_to_search_url(search_url, source_id, city))
+    parsed = urlparse(search_url)
+    if parsed.scheme and parsed.netloc:
+        sep = "&" if parsed.query else "?"
+        _add(f"{search_url}{sep}ville={q_city}&city={q_city}")
+    return out or [search_url]
+
+
+def pick_working_city_search_url(
+    search_url: str,
+    source_id: str,
+    city: str | None,
+    probe,
+) -> str:
+    """Choisit la première URL ville pour laquelle `probe(url)` renvoie True."""
+    for url in city_search_url_candidates(search_url, source_id, city):
+        try:
+            if probe(url):
+                return url
+        except Exception:
+            continue
+    return apply_city_to_search_url(search_url, source_id, city)
 
 
 # Gabarits de chemins « ville » fréquents sur les sites immobiliers génériques.
@@ -124,8 +213,8 @@ def build_city_seed_urls(
             if u not in out:
                 out.append(u)
 
-    # 1) URL ville native du portail / fallback ?ville= sur l’URL configurée
-    _add(apply_city_to_search_url(search_url, source_id, city))
+    for u in city_search_url_candidates(search_url, source_id, city)[:3]:
+        _add(u)
 
     portal = resolve_base_portal_id(source_id)
     if portal:

@@ -13,6 +13,8 @@
     "AUTO_WARMUP_ANTIBOT": "false",
     "DOMAIN_WARMUP": "false",
     "CRAWL_SPEED_PROFILE": "balanced",
+    "CITY_CRAWL_MAX_LISTINGS": "90",
+    "CITY_DISCOVERY_STOP_LINKS": "28",
     "STRIPE_REQUIRE_PAYMENT": "true"
   }
 }

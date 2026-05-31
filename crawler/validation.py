@@ -191,12 +191,21 @@ def sanitize_lead(lead: LeadData) -> LeadData:
     return lead
 
 
+_BAD_ADDRESS_RE = re.compile(
+    r"masqu[ée]|formulaire|votre\s+adresse|champ\s+est\s+masqu|placeholder|"
+    r"saisissez\s+votre|exemple\s*:|lorem\s+ipsum",
+    re.IGNORECASE,
+)
+
+
 def _address_ok(address: str | None) -> bool:
     if not address or address == "—":
         return False
     if is_hub_listing_address(address):
         return False
     a = address.strip()
+    if _BAD_ADDRESS_RE.search(a):
+        return False
     return len(a) >= 8 and re.search(r"\d|[A-Za-zÀ-ÿ]{3,}", a)
 
 

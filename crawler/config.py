@@ -12,7 +12,14 @@ _IS_DESKTOP = sys.platform in ("win32", "darwin")
 # le profil : le profil ne change que les délais de politesse, jamais la validité.
 # « quality » = comportement humain max (délais longs, scroll/pauses réalistes) →
 # réduit fortement les bannissements anti-bot, au prix de la vitesse.
+# balanced = rapide + fiable (défaut). quality = lent, turbo = agressif.
 CRAWL_SPEED_PROFILE = os.getenv("CRAWL_SPEED_PROFILE", "balanced").strip().lower()
+
+# Crawl local : arrêt découverte dès N liens (évite 35 pages vides)
+CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "28"))
+
+# Plafond annonces traitées par source quand une ville est ciblée (0 = illimité)
+CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "90"))
 
 # Scalingo / PaaS : pas de Chrome embarqué par défaut
 IS_SCALINGO = bool(os.getenv("SCALINGO_APP", "").strip())
@@ -72,6 +79,8 @@ CRAWL_SPEED_PRESETS: dict[str, dict[str, float]] = {
         "listing_max": 6.5,
         "search_min": 3.0,
         "search_max": 8.0,
+        "networkidle_ms": 12_000,
+        "content_wait_ms": 16_000,
         "extra_pause_chance": 0.18,
         "extra_pause_min": 8.0,
         "extra_pause_max": 22.0,
@@ -85,27 +94,31 @@ CRAWL_SPEED_PRESETS: dict[str, dict[str, float]] = {
         "playwright_retries": 6,
     },
     "balanced": {
-        "listing_min": 1.0,
-        "listing_max": 2.8,
-        "search_min": 1.2,
-        "search_max": 3.2,
-        "extra_pause_chance": 0.05,
-        "extra_pause_min": 3.0,
-        "extra_pause_max": 8.0,
-        "recrawl_delay_factor": 0.35,
-        "warmup_sec": 1.8,
-        "source_gap_min": 0.25,
-        "source_gap_max": 0.65,
-        "scroll_min": 3,
-        "scroll_max": 7,
-        "playwright_timeout_ms": 35_000,
-        "playwright_retries": 5,
+        "listing_min": 0.65,
+        "listing_max": 2.0,
+        "search_min": 0.5,
+        "search_max": 1.8,
+        "extra_pause_chance": 0.03,
+        "extra_pause_min": 2.0,
+        "extra_pause_max": 5.0,
+        "recrawl_delay_factor": 0.28,
+        "warmup_sec": 0.8,
+        "source_gap_min": 0.15,
+        "source_gap_max": 0.45,
+        "scroll_min": 2,
+        "scroll_max": 5,
+        "playwright_timeout_ms": 32_000,
+        "playwright_retries": 4,
+        "networkidle_ms": 6_000,
+        "content_wait_ms": 10_000,
     },
     "fast": {
         "listing_min": 0.45,
         "listing_max": 1.5,
-        "search_min": 0.7,
-        "search_max": 2.0,
+        "search_min": 0.35,
+        "search_max": 1.2,
+        "networkidle_ms": 4_000,
+        "content_wait_ms": 7_000,
         "extra_pause_chance": 0.02,
         "extra_pause_min": 1.5,
         "extra_pause_max": 4.0,
@@ -121,8 +134,10 @@ CRAWL_SPEED_PRESETS: dict[str, dict[str, float]] = {
     "turbo": {
         "listing_min": 0.2,
         "listing_max": 0.9,
-        "search_min": 0.4,
-        "search_max": 1.2,
+        "search_min": 0.2,
+        "search_max": 0.8,
+        "networkidle_ms": 2_500,
+        "content_wait_ms": 5_000,
         "extra_pause_chance": 0.0,
         "extra_pause_min": 0.0,
         "extra_pause_max": 0.0,

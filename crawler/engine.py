@@ -12,7 +12,11 @@ from urllib.parse import urlparse
 from crawler.adapters import BaseAdapter, build_adapters, resolve_adapter
 from crawler.browser import close_browser_session, fetch_page
 from crawler.browser import warmup_domain
-from crawler.city_urls import apply_city_to_search_url
+from crawler.city_urls import (
+    apply_city_to_search_url,
+    build_city_seed_urls,
+    pick_working_city_search_url,
+)
 from crawler.listing_guard import (
     filter_listing_urls,
     should_withdraw_incoherent,
@@ -532,13 +536,27 @@ class CrawlerEngine:
                 errors=[CrawlError.issue(CrawlError.SOURCE_UNKNOWN, source_id)],
             )
 
-        search_url = apply_city_to_search_url(
-            adapter.config.search_url,
-            source_id,
-            city,
-        )
+        base_search = adapter.config.search_url
+        if city:
+
+            def _probe_city_list_url(u: str) -> bool:
+                fetched = fetch_page(
+                    u,
+                    referer=adapter.config.base_url,
+                    prefer_browser=url_needs_browser(u),
+                    fast_mode=True,
+                )
+                if not fetched.ok:
+                    return False
+                return bool(adapter.find_listings(fetched.html or "", u, limit=4))
+
+            search_url = pick_working_city_search_url(
+                base_search, source_id, city, _probe_city_list_url
+            )
+        else:
+            search_url = apply_city_to_search_url(base_search, source_id, city)
+
         from crawler.site_discovery import get_portal_discover_urls
-        from crawler.city_urls import build_city_seed_urls
 
         discover_url = search_url
         if self._looks_like_listing(search_url) and adapter.config.base_url:
@@ -657,6 +675,11 @@ class CrawlerEngine:
 
         if listing_urls:
             cap = MAX_LISTINGS_PER_SCAN if MAX_LISTINGS_PER_SCAN > 0 else len(listing_urls)
+            if self._crawl_city:
+                from crawler.config import CITY_CRAWL_MAX_LISTINGS
+
+                if CITY_CRAWL_MAX_LISTINGS > 0:
+                    cap = min(cap, CITY_CRAWL_MAX_LISTINGS) if cap else CITY_CRAWL_MAX_LISTINGS
             targets = listing_urls[:cap]
             if job_id:
                 pages_est = max(1, min(MAX_SEARCH_PAGES, (len(listing_urls) // 25) + 1))
@@ -831,11 +854,13 @@ class CrawlerEngine:
                 )
 
             use_browser = url_needs_browser(page_url)
+            fast_discover = not discovery_scroll
             fetched = fetch_page(
                 page_url,
                 scroll_lazy=discovery_scroll,
                 referer=search_referer,
                 prefer_browser=use_browser,
+                fast_mode=fast_discover,
             )
             if not fetched.ok:
                 fetched = fetch_page(
@@ -843,6 +868,7 @@ class CrawlerEngine:
                     scroll_lazy=discovery_scroll,
                     referer=search_referer,
                     prefer_browser=True,
+                    fast_mode=fast_discover,
                 )
             elif use_browser is False:
                 batch_probe = adapter.find_listings(fetched.html or "", page_url, limit=5)
@@ -852,6 +878,7 @@ class CrawlerEngine:
                         scroll_lazy=discovery_scroll,
                         referer=search_referer,
                         prefer_browser=True,
+                        fast_mode=False,
                     )
             if not fetched.ok:
                 if not all_links and not pages_to_visit:
@@ -916,6 +943,12 @@ class CrawlerEngine:
 
             if MAX_LISTINGS_PER_SCAN > 0 and len(all_links) >= MAX_LISTINGS_PER_SCAN:
                 break
+
+            if city_slug:
+                from crawler.config import CITY_DISCOVERY_STOP_LINKS
+
+                if CITY_DISCOVERY_STOP_LINKS > 0 and len(all_links) >= CITY_DISCOVERY_STOP_LINKS:
+                    break
 
             pagination = [
                 n
@@ -1176,6 +1209,46 @@ class CrawlerEngine:
             )
         return True
 
+    def _fetch_listing_page(
+        self,
+        url: str,
+        *,
+        referer: str | None,
+        deep_refresh: bool,
+        scroll_lazy: bool,
+    ):
+        """curl_cffi d'abord (rapide) ; Playwright + contacts si données manquantes."""
+        from crawler.browser import _html_has_contact_hints
+        from crawler.portals import url_needs_browser
+
+        if deep_refresh:
+            return fetch_page(
+                url,
+                click_contacts=True,
+                referer=referer,
+                prefer_browser=True,
+                scroll_lazy=True,
+            )
+        quick = fetch_page(url, referer=referer, prefer_browser=False, fast_mode=True)
+        if quick.ok:
+            html = quick.html or ""
+            if _html_has_contact_hints(html):
+                return quick
+            if not url_needs_browser(url) and len(html) > 10_000:
+                low = html.lower()
+                if any(
+                    tok in low
+                    for tok in ("surface", "m²", "m2", "prix", "€", "adresse", "detail", "annonce")
+                ):
+                    return quick
+        return fetch_page(
+            url,
+            click_contacts=True,
+            referer=referer,
+            prefer_browser=True,
+            scroll_lazy=scroll_lazy,
+        )
+
     def _process_listing(
         self,
         url: str,
@@ -1232,11 +1305,10 @@ class CrawlerEngine:
 
         listing_referer = adapter.config.search_url or adapter.config.base_url
         scroll = deep_refresh
-        fetched = fetch_page(
+        fetched = self._fetch_listing_page(
             url,
-            click_contacts=True,
             referer=listing_referer,
-            prefer_browser=True,
+            deep_refresh=deep_refresh,
             scroll_lazy=scroll,
         )
         if not fetched.ok:
