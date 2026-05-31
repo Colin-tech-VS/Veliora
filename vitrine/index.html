@@ -11,11 +11,12 @@
   <meta property="og:title" content="Veliora — Radar de mandats immobiliers">
   <meta property="og:description" content="Chaque matin, la liste priorisée des vendeurs les plus susceptibles de signer un mandat dans votre secteur. Score Mandat™ expliqué.">
   <meta property="og:url" content="https://veliora.fr/">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://veliora.fr/vitrine/assets/img/hero-facade.jpg">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#0B1220">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <title>Veliora — Radar de mandats immobiliers</title>
-  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=30">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=31">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -51,6 +52,7 @@
         <span></span><span></span><span></span>
       </button>
       <nav class="v-nav-links" id="nav-links">
+        <a href="#agences">Agences</a>
         <a href="#score-mandat">Score Mandat™</a>
         <a href="#produit">Le produit</a>
         <a href="#comment">Comment ça marche</a>
@@ -64,11 +66,15 @@
 
   <main>
     <!-- Hero -->
-    <section class="v-hero v-hero-split v-reveal">
+    <section class="v-hero v-hero-immobilier v-hero-split v-reveal" aria-labelledby="hero-title">
+      <div class="v-hero-photo" aria-hidden="true">
+        <img src="/vitrine/assets/img/hero-facade.jpg" alt="" width="1920" height="1080" loading="eager" decoding="async" fetchpriority="high">
+      </div>
+      <div class="v-hero-scrim" aria-hidden="true"></div>
       <div class="v-hero-grid">
         <div class="v-hero-copy">
-          <span class="v-badge">Veliora = Radar de mandats immobiliers</span>
-          <h1>Chaque matin,<br><em>les vendeurs qui valent votre temps.</em></h1>
+          <span class="v-badge v-badge-agency">Pour agences immobilières · Radar mandats</span>
+          <h1 id="hero-title">Chaque matin,<br><em>les vendeurs qui valent votre temps.</em></h1>
           <p class="lead v-hero-punch">
             Veliora identifie et classe chaque jour les vendeurs les plus susceptibles de signer un mandat dans votre secteur — pas une usine à annonces.
           </p>
@@ -123,7 +129,81 @@
             </div>
           </div>
           <div class="v-glow"></div>
+          <figure class="v-hero-thumb">
+            <img src="/vitrine/assets/img/mandate-keys.jpg" alt="Clés et dossier mandat — signature chez le vendeur" width="400" height="400" loading="lazy" decoding="async">
+            <figcaption>Mandats signés, pas annonces consultées</figcaption>
+          </figure>
         </div>
+      </div>
+      <div class="v-hero-chips" aria-label="Signaux immobiliers détectés">
+        <span>Particuliers</span>
+        <span>Baisses de prix</span>
+        <span>Sous marché DVF</span>
+        <span>Sans agence</span>
+        <span>1er appel</span>
+      </div>
+    </section>
+
+    <!-- Agences immobilières -->
+    <section class="v-re-agencies v-reveal" id="agences">
+      <div class="v-re-agencies-inner">
+        <div class="v-re-agencies-media">
+          <img src="/vitrine/assets/img/agency-office.jpg" alt="Équipe d'agence immobilière au bureau, priorisation des mandats du matin" width="1200" height="675" loading="lazy" decoding="async">
+          <div class="v-re-agencies-badge">Directeurs & négociateurs</div>
+        </div>
+        <div class="v-re-agencies-copy">
+          <span class="v-label">Conçu pour les agences</span>
+          <h2>Votre métier, c’est le mandat — pas la pige</h2>
+          <p>
+            Veliora s’adresse aux <strong>agences immobilières</strong> qui veulent transformer la veille portails
+            en appels utiles : maisons, appartements, biens de caractère — dans <em>votre</em> secteur.
+          </p>
+          <ul class="v-check-list">
+            <li>Indépendants, réseaux, franchises urbaines</li>
+            <li>Équipes de 2 à 30 négociateurs</li>
+            <li>Vente & location — mandats exclusifs ou simples</li>
+            <li>Focus métropoles & villes moyennes</li>
+          </ul>
+          <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Configurer mon secteur</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Typologies de biens -->
+    <section class="v-re-properties v-reveal" aria-labelledby="properties-title">
+      <div class="v-section v-re-properties-head">
+        <span class="v-label">Sur le terrain</span>
+        <h2 id="properties-title">Du bien en vitrine au mandat signé</h2>
+        <p class="sub">Veliora détecte les vendeurs sur tous types de biens — vous vous concentrez sur la prise de mandat.</p>
+      </div>
+      <div class="v-re-properties-grid">
+        <article class="v-re-property-card">
+          <div class="v-re-property-img">
+            <img src="/vitrine/assets/img/apartment-interior.jpg" alt="Appartement lumineux en vente" width="800" height="600" loading="lazy" decoding="async">
+          </div>
+          <div class="v-re-property-body">
+            <h3>Appartements & immeubles</h3>
+            <p>T3 centre-ville, studios investissement, duplex — signaux particuliers et baisses de prix.</p>
+          </div>
+        </article>
+        <article class="v-re-property-card">
+          <div class="v-re-property-img">
+            <img src="/vitrine/assets/img/house-exterior.jpg" alt="Maison individuelle avec jardin" width="800" height="600" loading="lazy" decoding="async">
+          </div>
+          <div class="v-re-property-body">
+            <h3>Maisons & terrains</h3>
+            <p>Pavillons, villas, constructeurs — opportunités souvent sans agence au premier passage.</p>
+          </div>
+        </article>
+        <article class="v-re-property-card v-re-property-card--accent">
+          <div class="v-re-property-img">
+            <img src="/vitrine/assets/img/mandate-keys.jpg" alt="Remise des clés après signature de mandat" width="400" height="400" loading="lazy" decoding="async">
+          </div>
+          <div class="v-re-property-body">
+            <h3>L’objectif : le mandat</h3>
+            <p>Chaque alerte Veliora vise un contact vendeur, un RDV, une signature — pas une ligne de plus dans un CRM.</p>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -188,21 +268,24 @@
 
     <!-- Urgence premier appel -->
     <section class="v-section v-urgency v-reveal" id="urgence">
-      <div class="v-urgency-grid">
-        <div>
+      <div class="v-urgency-grid v-urgency-grid--photo">
+        <div class="v-urgency-photo">
+          <img src="/vitrine/assets/img/agency-office.jpg" alt="Négociateur immobilier préparant ses appels du matin" width="1200" height="675" loading="lazy" decoding="async">
+        </div>
+        <div class="v-urgency-main">
           <span class="v-label">Urgence mandat</span>
           <h2>Le premier contact gagne souvent le mandat</h2>
           <p class="sub left">
             Quand une opportunité de mandat apparaît, ce n’est pas celui qui a le plus gros CRM qui gagne —
             c’est celui qui <strong>appelle en premier</strong> avec le bon angle.
           </p>
-        </div>
         <div class="v-urgency-card">
           <ul class="v-urgency-list">
             <li><strong>08h00</strong> — Veliora vous livre la liste des vendeurs à appeler aujourd’hui</li>
             <li><strong>08h15</strong> — Votre équipe sait pourquoi le score est à 92 (pas un chiffre magique)</li>
             <li><strong>08h30</strong> — Premier appel lancé pendant que les autres scrollent encore les portails</li>
           </ul>
+        </div>
         </div>
       </div>
     </section>
@@ -441,19 +524,28 @@
     </section>
 
     <!-- Cible -->
-    <section class="v-section">
+    <section class="v-section v-audience-section v-reveal">
       <h2>Pour qui ?</h2>
       <p class="sub">Agences qui veulent signer plus de mandats sans recruter une armée de pigeurs</p>
-      <div class="v-audience">
+      <div class="v-audience v-audience--visual">
         <div class="v-audience-item">
+          <div class="v-audience-photo">
+            <img src="/vitrine/assets/img/agency-office.jpg" alt="" width="400" height="300" loading="lazy" decoding="async">
+          </div>
           <strong>Directeurs d'agence</strong>
           <p>Priorités mandat visibles, ROI clair : combien d’appels, combien de mandats en cours.</p>
         </div>
         <div class="v-audience-item">
+          <div class="v-audience-photo">
+            <img src="/vitrine/assets/img/apartment-interior.jpg" alt="" width="400" height="300" loading="lazy" decoding="async">
+          </div>
           <strong>Négociateurs</strong>
           <p>Qui appeler, pourquoi le score est haut, quoi dire — avant que le concurrent décroche.</p>
         </div>
         <div class="v-audience-item">
+          <div class="v-audience-photo">
+            <img src="/vitrine/assets/img/mandate-keys.jpg" alt="" width="400" height="400" loading="lazy" decoding="async">
+          </div>
           <strong>Équipes prospection</strong>
           <p>Fin de la veille manuelle : focus sur les opportunités de mandat à fort potentiel.</p>
         </div>
