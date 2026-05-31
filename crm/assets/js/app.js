@@ -47,6 +47,8 @@ const crawlState = {
   sourceId: null,
   label: "",
   pollTimer: null,
+  pagePollPaused: false,
+  pollOptions: {},
   startedAt: null,
   lastSavedCount: 0,
   lastFoundCount: 0,
@@ -860,10 +862,63 @@ function setupScriptPanel() {
   });
 }
 
+function pausePageCrawlPoll() {
+  if (crawlState.pollTimer) {
+    clearTimeout(crawlState.pollTimer);
+    crawlState.pollTimer = null;
+  }
+}
+
+async function handoffCrawlToBackground() {
+  if (!crawlState.active || !crawlState.jobId) return;
+  crawlState.pagePollPaused = true;
+  pausePageCrawlPoll();
+  minimizeCrawlUI({ notify: true });
+  if (window.CrawlWatch) {
+    await CrawlWatch.start(crawlState.jobId, crawlState.label);
+  }
+}
+
+async function finishCrawlFromJob(job, label, options = {}) {
+  if (crawlState._finishing) return;
+  if (!crawlState.active && !job?.id) return;
+  crawlState._finishing = true;
+  try {
+    const jobId = job?.id || crawlState.jobId;
+    const lbl = label || crawlState.label;
+    setCrawlLoaderStep(job?.message || "Terminé");
+    const finalJob = jobId
+      ? await api(`/crawler/jobs/${jobId}`).catch(() => job)
+      : job;
+    await refreshAppData();
+    notifyCrawlResult(finalJob, lbl);
+    if (window.CrawlWatch) {
+      CrawlWatch.showLocalNotification(finalJob, lbl);
+      await CrawlWatch.stop();
+    }
+    if (options.goToAnalyze && options.importUrl) {
+      clearUrlSearchInputs();
+      switchView("analyze");
+      await completeOnDemandAnalysisAfterImport(options.importUrl);
+    } else if (options.goToLeads) {
+      clearUrlSearchInputs();
+      switchView("leads");
+    }
+    if (options.openImportedLead && options.importUrl && !options.goToAnalyze) {
+      const target = normalizeUrlKey(options.importUrl);
+      const lead = LEADS.find((l) => normalizeUrlKey(l.source_url || "") === target);
+      if (lead) openDrawer(lead.id);
+    }
+    hideCrawlLoader();
+  } finally {
+    crawlState._finishing = false;
+  }
+}
+
 function setupCrawlBackground() {
   document.getElementById("crawl-minimize-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    minimizeCrawlUI();
+    minimizeCrawlUI({ notify: true });
   });
   document.getElementById("crawl-cancel-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -879,14 +934,124 @@ function setupCrawlBackground() {
     if (e.target.closest(".crawl-dock-close")) return;
     expandCrawlUI();
   });
+
+  if (window.CrawlWatch) {
+    CrawlWatch.setupClientListener((job, label, eventType) => {
+      if (!job) return;
+      if (eventType === "progress") {
+        updateCrawlLoaderUI(job, `Crawl — ${label || crawlState.label}`);
+        return;
+      }
+      finishCrawlFromJob(job, label, crawlState.pollOptions || {});
+    });
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!crawlState.active || !crawlState.jobId || !window.CrawlWatch) return;
+    if (document.hidden) {
+      crawlState.pagePollPaused = true;
+      pausePageCrawlPoll();
+      CrawlWatch.start(crawlState.jobId, crawlState.label);
+    } else {
+      CrawlWatch.stop();
+      crawlState.pagePollPaused = false;
+      if (!crawlState.pollTimer) {
+        startCrawlPolling(
+          crawlState.jobId,
+          crawlState.label,
+          crawlState.pollOptions || {},
+        );
+      }
+    }
+  });
+
+  window.addEventListener("pagehide", () => {
+    if (crawlState.active && crawlState.jobId && window.CrawlWatch) {
+      CrawlWatch.start(crawlState.jobId, crawlState.label);
+    }
+  });
+
+  setupPwaInstallBanner();
 }
 
-function minimizeCrawlUI() {
+function setupPwaInstallBanner() {
+  const banner = document.getElementById("pwa-install-banner");
+  const btn = document.getElementById("pwa-install-btn");
+  const dismiss = document.getElementById("pwa-install-dismiss");
+  if (!banner || !btn) return;
+
+  let deferredPrompt = null;
+  const isStandalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    banner.hidden = false;
+  });
+
+  btn.addEventListener("click", async () => {
+    if (!deferredPrompt) {
+      showToast(
+        "Installez Veliora depuis le menu du navigateur (Ajouter à l’écran d’accueil)",
+        "info",
+        6000,
+      );
+      return;
+    }
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    banner.hidden = true;
+  });
+
+  dismiss?.addEventListener("click", () => {
+    banner.hidden = true;
+    try {
+      localStorage.setItem("veliora_pwa_install_dismissed", "1");
+    } catch {
+      /* ignore */
+    }
+  });
+
+  try {
+    if (localStorage.getItem("veliora_pwa_install_dismissed") === "1") return;
+  } catch {
+    /* ignore */
+  }
+
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    banner.hidden = false;
+    btn.textContent = "Comment installer";
+  }
+}
+
+async function minimizeCrawlUI(opts = {}) {
   if (!crawlState.active) return;
   crawlState.minimized = true;
   document.getElementById("crawl-loader")?.classList.add("minimized");
   document.getElementById("crawl-loader")?.classList.remove("open");
   document.getElementById("crawl-dock")?.classList.add("open");
+
+  if (opts.notify !== false && window.CrawlWatch && crawlState.jobId) {
+    const perm = await CrawlWatch.requestPermission();
+    await CrawlWatch.start(crawlState.jobId, crawlState.label);
+    if (perm === "granted") {
+      showToast(
+        "Crawl en arrière-plan — vous pouvez quitter l’app, notification à la fin",
+        "info",
+        5500,
+      );
+    } else {
+      showToast(
+        "Le crawl continue sur le serveur — revenez sur Veliora ou autorisez les notifications",
+        "info",
+        7000,
+      );
+    }
+  }
 }
 
 function expandCrawlUI() {
@@ -2924,17 +3089,17 @@ function hideCrawlLoader() {
   crawlState.sourceId = null;
   crawlState.lastJob = null;
   crawlState.startedAt = null;
+  crawlState.pagePollPaused = false;
+  crawlState.pollOptions = {};
   stopCrawlWaitAnimation();
   stopLiveFramePolling();
   setLeadsLiveIndicator(false);
+  if (window.CrawlWatch) CrawlWatch.stop();
   if (crawlState.leadsRefreshTimer) {
     clearTimeout(crawlState.leadsRefreshTimer);
     crawlState.leadsRefreshTimer = null;
   }
-  if (crawlState.pollTimer) {
-    clearTimeout(crawlState.pollTimer);
-    crawlState.pollTimer = null;
-  }
+  pausePageCrawlPoll();
   document.getElementById("crawl-loader")?.classList.remove("open", "minimized");
   document.getElementById("crawl-dock")?.classList.remove("open");
   state.loading = false;
@@ -2961,9 +3126,11 @@ async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
 function startCrawlPolling(jobId, label, options = {}) {
   let networkFails = 0;
   let lastLogsFetch = 0;
+  crawlState.pollOptions = options;
 
   const tick = async () => {
     if (!crawlState.active || crawlState.jobId !== jobId) return;
+    if (crawlState.pagePollPaused) return;
 
     try {
       const { job, lastLogsFetch: lf } = await pollCrawlJobOnce(jobId, label, lastLogsFetch);
@@ -2977,28 +3144,7 @@ function startCrawlPolling(jobId, label, options = {}) {
       }
 
       if (job.status === "completed" || job.status === "failed") {
-        setCrawlLoaderStep(job.message || "Terminé");
-        const finalJob = await api(`/crawler/jobs/${jobId}`).catch(() => job);
-        await refreshAppData();
-        notifyCrawlResult(finalJob, label);
-        if (options.goToAnalyze && options.importUrl) {
-          clearUrlSearchInputs();
-          switchView("analyze");
-          await completeOnDemandAnalysisAfterImport(options.importUrl);
-        } else if (options.goToLeads) {
-          clearUrlSearchInputs();
-          switchView("leads");
-        }
-        if (options.openImportedLead && options.importUrl && !options.goToAnalyze) {
-          const target = normalizeUrlKey(options.importUrl);
-          const lead = LEADS.find(
-            (l) => normalizeUrlKey(l.source_url || "") === target,
-          );
-          if (lead) {
-            openDrawer(lead.id);
-          }
-        }
-        hideCrawlLoader();
+        await finishCrawlFromJob(job, label, options);
         return;
       }
 
@@ -3006,16 +3152,17 @@ function startCrawlPolling(jobId, label, options = {}) {
     } catch (err) {
       if (isNetworkFetchError(err) || err.message?.includes("Connexion perdue")) {
         networkFails += 1;
-        const msg = `Connexion interrompue (${networkFails}/40)…`;
+        const msg = `Connexion interrompue (${networkFails}/40) — crawl serveur actif…`;
         setCrawlLoaderStep(msg);
-        document.getElementById("crawl-dock-step").textContent = msg;
-        if (networkFails >= 40) {
+        const dockStep = document.getElementById("crawl-dock-step");
+        if (dockStep) dockStep.textContent = msg;
+        if (networkFails >= 8) {
+          await handoffCrawlToBackground();
           showToast(
-            "Connexion perdue — le crawl peut continuer côté serveur. Rechargez la page plus tard.",
-            "error",
-            10000,
+            "Connexion coupée — le crawl continue. Notification à la fin du crawl.",
+            "warning",
+            9000,
           );
-          hideCrawlLoader();
           return;
         }
         crawlState.pollTimer = setTimeout(tick, 1500);
@@ -3026,10 +3173,12 @@ function startCrawlPolling(jobId, label, options = {}) {
     }
   };
 
+  crawlState.pagePollPaused = false;
   crawlState.pollTimer = setTimeout(tick, 400);
 }
 
 async function cancelStaleCrawlUi() {
+  if (window.CrawlWatch) await CrawlWatch.stop();
   hideCrawlLoader();
   try {
     await api("/crawler/jobs/cancel", { method: "POST" });
@@ -3061,12 +3210,12 @@ async function resumeActiveCrawlIfAny() {
     state.loading = true;
     document.querySelectorAll(".source-crawl-btn").forEach((b) => (b.disabled = true));
 
-    minimizeCrawlUI();
+    minimizeCrawlUI({ notify: true });
     startCrawlWaitAnimation();
     startLiveFramePolling();
     updateCrawlLoaderUI(job, `Crawl — reprise`);
     startCrawlPolling(job.id, crawlState.label);
-    showToast("Crawl en cours repris en arrière-plan", "info", 4000);
+    showToast("Crawl en cours — arrière-plan + notification à la fin", "info", 4500);
   } catch {
     if (crawlState.active) hideCrawlLoader();
   }
@@ -3101,6 +3250,10 @@ async function runCrawlJob(endpoint, body, label, options = {}) {
     crawlState.jobId = jobId;
     crawlState.label = label;
     crawlState.startedAt = Date.now();
+
+    if (window.CrawlWatch) {
+      CrawlWatch.requestPermission();
+    }
 
     if (start.job?.eta_seconds) {
       updateEtaDisplay(start.job);

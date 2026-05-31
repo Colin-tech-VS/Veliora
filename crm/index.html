@@ -477,6 +477,14 @@
             </div>
           </aside>
 
+          <div class="pwa-install-banner" id="pwa-install-banner" hidden>
+            <div class="pwa-install-inner">
+              <p><strong>App Veliora</strong> — installez pour crawler en arrière-plan et recevoir une notification à la fin.</p>
+              <button type="button" class="btn btn-primary btn-sm" id="pwa-install-btn">Installer l’app</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="pwa-install-dismiss">Plus tard</button>
+            </div>
+          </div>
+
           <div class="crawler-hero">
             <div class="crawler-hero-content">
               <h2>Surveillance automatique des annonces</h2>
@@ -777,7 +785,7 @@
           <div class="crawl-scene-key">🔑</div>
         </div>
         <div class="crawl-loader-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Continuer en arrière-plan">⤓ Arrière-plan</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — crawl continue, notification à la fin">⤓ Arrière-plan</button>
           <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter le crawl">Arrêter</button>
         </div>
       </div>
@@ -1055,10 +1063,11 @@
   <script src="/crm/assets/js/clients.js?v=28"></script>
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
-  <script src="/crm/assets/js/app.js?v=48"></script>
+  <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
+  <script src="/crm/assets/js/app.js?v=49"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/crm/sw.js").then((reg) => {
+      navigator.serviceWorker.register("/crm/sw.js?v=4").then((reg) => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }

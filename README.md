@@ -26,6 +26,13 @@ python app.py
 
 Ouvrir http://localhost:8000
 
+### App web (PWA)
+
+- Ouvrez **http://localhost:8000/crm** (de préférence pas Live Server seul).
+- **Installer l’app** (bannière Sources ou menu navigateur) pour une expérience plein écran.
+- Lancez un crawl puis **⤓ Arrière-plan** : vous pouvez changer d’onglet ou fermer l’app — le crawl continue **sur le serveur**.
+- Autorisez les **notifications** pour être alerté à la fin du crawl.
+
 Voir aussi : `STRIPE_SETUP.md`, `DATA.md`, `SCALINGO.md`
 
 ## Déploiement Scalingo

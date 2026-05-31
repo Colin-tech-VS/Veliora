@@ -3590,6 +3590,29 @@ body:has(.crawl-dock.open) .script-dock.open {
 
 .toast svg { flex-shrink: 0; margin-top: 0.1rem; }
 
+/* PWA install */
+.pwa-install-banner {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface-elevated, rgba(30, 41, 59, 0.6));
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.25));
+  border-radius: 12px;
+}
+
+.pwa-install-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.pwa-install-inner p {
+  flex: 1 1 220px;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
 /* Crawl loader */
 .crawl-loader {
   position: fixed;

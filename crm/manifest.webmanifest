@@ -1,12 +1,19 @@
 {
   "name": "Veliora — Score Mandat™",
   "short_name": "Veliora",
-  "description": "Radar mandats — opportunités du marché classées par Score Mandat™.",
+  "description": "CRM mandats — crawl en arrière-plan et notifications.",
   "start_url": "/crm",
-  "scope": "/crm",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0B1220",
   "theme_color": "#3B82F6",
   "orientation": "any",
-  "icons": []
+  "icons": [
+    {
+      "src": "/vitrine/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }
