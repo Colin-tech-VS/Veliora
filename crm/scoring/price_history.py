@@ -1,0 +1,51 @@
+"""Historique des prix — comptage des baisses pour le scoring."""
+
+from __future__ import annotations
+
+
+def count_price_drops_from_history(
+    rows: list[dict],
+    *,
+    current_price: int | None,
+    previous_price: int | None,
+) -> tuple[int, int | None]:
+    """
+    Retourne (nombre_de_baisses, pct_dernière_baisse).
+    Inclut previous_price → current_price si applicable.
+    """
+    prices: list[tuple[int, str]] = []
+    for r in rows:
+        p = r.get("price")
+        if p and int(p) > 0:
+            prices.append((int(p), r.get("recorded_at") or ""))
+    prices.sort(key=lambda x: x[1])
+
+    drops = 0
+    last_drop_pct: int | None = None
+
+    if len(prices) >= 2:
+        for i in range(1, len(prices)):
+            prev_p, cur_p = prices[i - 1][0], prices[i][0]
+            if cur_p < prev_p:
+                drops += 1
+                last_drop_pct = int((prev_p - cur_p) / prev_p * 100)
+
+    if previous_price and current_price and int(previous_price) > int(current_price):
+        pct = int((int(previous_price) - int(current_price)) / int(previous_price) * 100)
+        if not prices or prices[-1][0] != int(current_price):
+            drops += 1
+            last_drop_pct = pct
+        elif last_drop_pct is None:
+            last_drop_pct = pct
+
+    return drops, last_drop_pct
+
+
+def fetch_price_history_rows(conn, lead_id: int, agency_id: str) -> list[dict]:
+    cur = conn.execute(
+        """SELECT price, recorded_at FROM lead_price_history
+           WHERE lead_id = ? AND agency_id = ?
+           ORDER BY recorded_at ASC""",
+        (lead_id, agency_id),
+    )
+    return [{"price": r["price"], "recorded_at": r["recorded_at"]} for r in cur.fetchall()]

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1220">
+  <title>Veliora — Connexion & abonnement agence</title>
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=22">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=22">
+  <style>
+    .auth-pricing {
+      background: rgba(59, 130, 246, 0.08);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      margin-bottom: 1.25rem;
+      text-align: center;
+    }
+    .auth-pricing .price { font-size: 1.75rem; font-weight: 800; color: var(--brand-blue, #3b82f6); }
+    .auth-pricing .price span { font-size: 0.95rem; font-weight: 500; color: var(--text-muted, #64748b); }
+    .auth-pricing p { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b); line-height: 1.45; }
+    .auth-checkout-banner {
+      background: rgba(214, 178, 94, 0.12);
+      border: 1px solid rgba(214, 178, 94, 0.35);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+    .auth-checkout-banner.ok {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .auth-checkout-banner.err {
+      background: rgba(244, 63, 94, 0.08);
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+    .btn-secondary-outline {
+      background: transparent;
+      border: 1px solid var(--border, #e2e8f0);
+      color: inherit;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <h1>Veliora</h1>
+    <p class="auth-sub">Pour les agences immobilières</p>
+    <p class="auth-sub" style="margin-top:-0.5rem;font-size:0.85rem;opacity:0.85">Priorité mandat · espace agence isolé</p>
+
+    <div class="auth-pricing" id="auth-pricing" hidden>
+      <div class="price"><span id="price-amount">500</span> € HT <span>/ mois</span></div>
+      <p id="price-ttc-line">Soit <strong><span id="price-ttc-auth">600</span> € TTC</strong> · abonnement professionnel par agence · collaborateurs illimités</p>
+    </div>
+
+    <div id="checkout-banner" class="auth-checkout-banner" hidden></div>
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">Connexion</button>
+      <button type="button" class="auth-tab" data-tab="register">Créer un compte agence</button>
+    </div>
+
+    <form id="form-login" class="auth-panel active">
+      <label class="form-field"><span>Email</span><input type="email" id="login-email" required autocomplete="email"></label>
+      <label class="form-field"><span>Mot de passe</span><input type="password" id="login-password" required autocomplete="current-password"></label>
+      <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+      <p style="margin-top:0.75rem;text-align:center;font-size:0.85rem">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-show-forgot">Mot de passe oublié ?</button>
+      </p>
+      <button type="button" class="btn btn-secondary-outline btn-block" id="btn-login-portal" hidden>Gérer mon abonnement (Stripe)</button>
+    </form>
+
+    <form id="form-forgot" class="auth-panel">
+      <p class="form-hint">Entrez votre email administrateur — lien valable 1 h.</p>
+      <label class="form-field"><span>Email</span><input type="email" id="forgot-email" required></label>
+      <button type="submit" class="btn btn-primary btn-block">Envoyer le lien</button>
+      <button type="button" class="btn btn-ghost btn-block" id="btn-back-login">Retour connexion</button>
+    </form>
+
+    <form id="form-reset" class="auth-panel">
+      <p class="form-hint">Choisissez un nouveau mot de passe (8 caractères min.).</p>
+      <label class="form-field"><span>Nouveau mot de passe</span><input type="password" id="reset-password" required minlength="8"></label>
+      <button type="submit" class="btn btn-primary btn-block">Enregistrer</button>
+    </form>
+
+    <form id="form-register" class="auth-panel">
+      <label class="form-field"><span>Nom de l'agence</span><input type="text" id="reg-agency" required></label>
+      <label class="form-field"><span>Ville de l'agence</span><input type="text" id="reg-city" placeholder="Ex. Lyon, Clamart, Bordeaux…" autocomplete="address-level2" required></label>
+      <label class="form-field"><span>Votre email (administrateur)</span><input type="email" id="reg-email" required></label>
+      <label class="form-field"><span>Mot de passe</span><input type="password" id="reg-password" required minlength="8"></label>
+      <label class="form-field"><span>Prénom</span><input type="text" id="reg-first"></label>
+      <label class="form-field"><span>Nom</span><input type="text" id="reg-last"></label>
+      <p class="form-hint">Réservé aux agences immobilières. Après création du compte, activation de l'abonnement (paiement sécurisé Stripe).</p>
+      <p class="form-hint" style="font-size:0.78rem;margin-top:0.35rem">
+        <a href="/legal#cgv" target="_blank" rel="noopener">CGV</a> ·
+        <a href="/legal#confidentialite" target="_blank" rel="noopener">Confidentialité</a>
+      </p>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-register-submit">Créer mon compte agence</button>
+    </form>
+
+    <div id="auth-toast" class="auth-toast" hidden></div>
+    <p style="margin-top:1.25rem;font-size:0.75rem;text-align:center;opacity:0.7">
+      <a href="/">← Retour au site</a>
+    </p>
+  </div>
+  <script>
+    const API = "/api";
+    const AUTH_TOKEN_KEY = "propscout_token";
+    const AUTH_USER_KEY = "propscout_user";
+
+    const params = new URLSearchParams(window.location.search);
+    const nextUrl = params.get("next") || "/crm";
+    let billingConfig = { enabled: false, require_payment: false, amount_eur: 500 };
+
+    const checkoutBanner = document.getElementById("checkout-banner");
+    const pricingEl = document.getElementById("auth-pricing");
+
+    function showBanner(msg, type) {
+      checkoutBanner.textContent = msg;
+      checkoutBanner.hidden = false;
+      checkoutBanner.className = "auth-checkout-banner " + (type || "");
+    }
+
+    async function loadBillingConfig() {
+      try {
+        const [billR, pubR] = await Promise.all([
+          fetch(API + "/billing/config"),
+          fetch("/api/public/config"),
+        ]);
+        const d = await billR.json();
+        const pub = pubR.ok ? await pubR.json() : {};
+        if (d.ok !== false) {
+          billingConfig = { ...billingConfig, ...d };
+          const ht = pub.subscription_amount_ht || d.amount_eur || 500;
+          const ttc = pub.subscription_amount_ttc || Math.round(ht * 1.2);
+          document.getElementById("price-amount").textContent = ht;
+          const ttcEl = document.getElementById("price-ttc-auth");
+          if (ttcEl) ttcEl.textContent = ttc;
+          if (d.require_payment) {
+            pricingEl.hidden = false;
+          }
+        }
+      } catch (_) { /* dev sans API */ }
+    }
+
+    function authHeaders() {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      return token
+        ? { Authorization: "Bearer " + token, "Content-Type": "application/json" }
+        : { "Content-Type": "application/json" };
+    }
+
+    async function startCheckout() {
+      const r = await fetch(API + "/billing/create-checkout-session", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Impossible de démarrer le paiement");
+      if (d.checkout_url) {
+        window.location.href = d.checkout_url;
+        return;
+      }
+      throw new Error("URL de paiement manquante");
+    }
+
+    async function openBillingPortal() {
+      const r = await fetch(API + "/billing/create-portal-session", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Portail indisponible");
+      window.location.href = d.portal_url;
+    }
+
+    async function verifyCheckoutSession(sessionId) {
+      const r = await fetch(API + "/billing/verify-session", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Vérification paiement échouée");
+      return d;
+    }
+
+    async function redirectIfActive() {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (!token) return;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(API + "/auth/me", {
+          headers: { Authorization: "Bearer " + token },
+          signal: ctrl.signal,
+        });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.billing?.active || !d.billing?.requires_payment) {
+          window.location.href = nextUrl;
+        } else {
+          document.getElementById("btn-login-portal").hidden = false;
+        }
+      } catch (_) {}
+      finally { clearTimeout(t); }
+    }
+
+    async function handleCheckoutReturn() {
+      const checkout = params.get("checkout");
+      const sessionId = params.get("session_id");
+      if (checkout === "cancel") {
+        showBanner("Paiement annulé. Vous pouvez réessayer quand vous voulez.", "err");
+        return;
+      }
+      if (checkout !== "success") return;
+      if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
+        showBanner("Connectez-vous pour finaliser l'activation.", "err");
+        return;
+      }
+      showBanner("Validation du paiement en cours…", "");
+      try {
+        if (sessionId) await verifyCheckoutSession(sessionId);
+        const me = await fetch(API + "/auth/me", {
+          headers: { Authorization: "Bearer " + localStorage.getItem(AUTH_TOKEN_KEY) },
+        }).then((r) => r.json());
+        if (me.billing?.active) {
+          showBanner("Paiement confirmé — bienvenue sur Veliora !", "ok");
+          setTimeout(() => { window.location.href = nextUrl; }, 1200);
+        } else {
+          showBanner(
+            "Paiement reçu — activation en cours (quelques secondes). Réessayez de vous connecter.",
+            "ok"
+          );
+        }
+      } catch (err) {
+        showBanner(err.message, "err");
+      }
+    }
+
+    const tabs = document.querySelectorAll(".auth-tab");
+    const panels = {
+      login: document.getElementById("form-login"),
+      register: document.getElementById("form-register"),
+      forgot: document.getElementById("form-forgot"),
+      reset: document.getElementById("form-reset"),
+    };
+
+    function showPanel(name) {
+      tabs.forEach((x) => x.classList.remove("active"));
+      Object.values(panels).forEach((p) => p?.classList.remove("active"));
+      if (panels[name]) panels[name].classList.add("active");
+    }
+
+    const resetToken = params.get("reset");
+    if (resetToken) showPanel("reset");
+    tabs.forEach((t) => t.addEventListener("click", () => {
+      tabs.forEach((x) => x.classList.toggle("active", x === t));
+      showPanel(t.dataset.tab);
+    }));
+
+    document.getElementById("btn-show-forgot")?.addEventListener("click", () => showPanel("forgot"));
+    document.getElementById("btn-back-login")?.addEventListener("click", () => {
+      tabs[0].click();
+    });
+
+    document.getElementById("form-forgot")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await fetch(API + "/auth/forgot-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: document.getElementById("forgot-email").value }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Erreur");
+        toast(d.message || "Email envoyé si le compte existe", true);
+        tabs[0].click();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    document.getElementById("form-reset")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const token = resetToken || params.get("reset");
+      if (!token) { toast("Lien invalide", false); return; }
+      try {
+        const r = await fetch(API + "/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            password: document.getElementById("reset-password").value,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Erreur");
+        toast(d.message || "Mot de passe mis à jour", true);
+        tabs[0].click();
+      } catch (err) { toast(err.message, false); }
+    });
+
+    if (params.get("tab") === "register") tabs[1].click();
+
+    function toast(msg, ok) {
+      const el = document.getElementById("auth-toast");
+      el.textContent = msg;
+      el.hidden = false;
+      el.className = "auth-toast " + (ok ? "ok" : "err");
+      setTimeout(() => { el.hidden = true; }, 6000);
+    }
+
+    function saveSession(d) {
+      if (d.token) localStorage.setItem(AUTH_TOKEN_KEY, d.token);
+      if (d.user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(d.user));
+    }
+
+    document.getElementById("form-login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await fetch(API + "/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: document.getElementById("login-email").value,
+            password: document.getElementById("login-password").value,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Erreur");
+        saveSession(d);
+        const me = await fetch(API + "/auth/me", {
+          headers: { Authorization: "Bearer " + d.token },
+        }).then((res) => res.json());
+        if (me.billing?.requires_payment && !me.billing?.active) {
+          showBanner("Abonnement requis — redirection vers le paiement…", "");
+          await startCheckout();
+          return;
+        }
+        window.location.href = nextUrl;
+      } catch (err) { toast(err.message, false); }
+    });
+
+    document.getElementById("form-register").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("btn-register-submit");
+      btn.disabled = true;
+      try {
+        const r = await fetch(API + "/auth/register-agency", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agency_name: document.getElementById("reg-agency").value,
+            city: document.getElementById("reg-city").value,
+            email: document.getElementById("reg-email").value,
+            password: document.getElementById("reg-password").value,
+            first_name: document.getElementById("reg-first").value,
+            last_name: document.getElementById("reg-last").value,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Erreur");
+        saveSession(d);
+        if (billingConfig.require_payment && billingConfig.enabled) {
+          showBanner("Compte créé — redirection vers le paiement sécurisé Stripe…", "ok");
+          await startCheckout();
+        } else if (d.token) {
+          window.location.href = nextUrl;
+        } else {
+          toast("Agence créée — connectez-vous", true);
+          tabs[0].click();
+        }
+      } catch (err) {
+        toast(err.message, false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("btn-login-portal")?.addEventListener("click", () => {
+      openBillingPortal().catch((err) => toast(err.message, false));
+    });
+
+    loadBillingConfig().then(() => {
+      handleCheckoutReturn();
+      redirectIfActive();
+    });
+  </script>
+</body>
+</html>

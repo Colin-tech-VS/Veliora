@@ -1,0 +1,4778 @@
+/* Veliora — Application Logic */
+
+const PROPSCOUT_PORT = 8000;
+
+/** URL API : même origine si Flask (port 8000), sinon http://127.0.0.1:8000/api */
+function getApiBase() {
+  const { protocol, hostname, port } = window.location;
+  if (protocol === "file:") {
+    return `http://127.0.0.1:${PROPSCOUT_PORT}/api`;
+  }
+  const devPorts = new Set(["5500", "5501", "5173", "3000", "8080", "4173"]);
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  if (isLocal && devPorts.has(port)) {
+    return `http://${hostname}:${PROPSCOUT_PORT}/api`;
+  }
+  if (isLocal && port && port !== String(PROPSCOUT_PORT)) {
+    return `http://${hostname}:${PROPSCOUT_PORT}/api`;
+  }
+  return "/api";
+}
+
+const API = getApiBase();
+const AUTH_TOKEN_KEY = "propscout_token";
+const AUTH_USER_KEY = "propscout_user";
+const DVF_APP_URL = "https://app.dvf.etalab.gouv.fr/";
+
+const state = {
+  user: null,
+  settings: null,
+  currentView: "dashboard",
+  leadsFilter: "all",
+  leadsView: "table",
+  searchQuery: "",
+  selectedLead: null,
+  crawlerRunning: false,
+  loading: false,
+  pendingCrawlUrl: null,
+  sourceCityPreview: {},
+  sourceCityPreviewCity: "",
+};
+
+/** Crawl en arrière-plan — navigation libre pendant le job */
+const crawlState = {
+  active: false,
+  minimized: false,
+  jobId: null,
+  sourceId: null,
+  label: "",
+  pollTimer: null,
+  startedAt: null,
+  lastSavedCount: 0,
+  lastFoundCount: 0,
+  lastLeadCount: 0,
+  leadsRefreshTimer: null,
+  lastJob: null,
+  drawerShowAllFields: false,
+};
+
+/** Script d'appel — panneau repliable (fermer / arrière-plan / rouvrir) */
+const scriptPanelState = {
+  visible: false,
+  minimized: false,
+  leadId: null,
+  copyText: "",
+};
+
+const viewTitles = {
+  dashboard: { title: "Radar automatique", subtitle: "Mode 1 — opportunités, alertes, briefing du matin" },
+  analyze: { title: "Analyse à la demande", subtitle: "Mode 2 — Score Mandat™ sur une URL" },
+  playbook: { title: "Scripts d'appel", subtitle: "Opportunités du marché et discours à tenir" },
+  leads: { title: "Opportunités", subtitle: "Classées par Score Mandat™ (vendeurs détectés)" },
+  crawler: { title: "Sources", subtitle: "Alimenter le radar (Mode 1)" },
+  pipeline: { title: "Pipeline", subtitle: "Suivi commercial de vos mandats" },
+  mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
+  clients: {
+    title: "Acheteurs / Locataires",
+    subtitle: "Ajout manuel ou import CSV / Excel",
+  },
+};
+
+function apiErrorMessage(status, path, body, res) {
+  if (body?.error) return body.error;
+  if (status === 405) {
+    return (
+      "Erreur 405 — le serveur n’accepte pas cette action. " +
+      "Arrêtez l’ancien serveur (Ctrl+C) puis relancez : python app.py"
+    );
+  }
+  const notJson = res && !(res.headers.get("content-type") || "").includes("application/json");
+  if (status === 404) {
+    if (notJson) {
+      const onWrongPort =
+        window.location.port &&
+        window.location.port !== String(PROPSCOUT_PORT) &&
+        window.location.protocol !== "file:";
+      if (onWrongPort) {
+        return (
+          `Page ouverte sur le port ${window.location.port} — l’API est sur http://localhost:${PROPSCOUT_PORT}. ` +
+          "Lancez python app.py (ou demarrer.bat) puis ouvrez ce lien."
+        );
+      }
+      return (
+        "API inaccessible (404). Lancez python app.py puis ouvrez http://localhost:8000 — " +
+        "pas Live Server ni python -m http.server."
+      );
+    }
+    if (body?.error?.includes("Route API introuvable")) {
+      return (
+        "Serveur obsolète sur le port 8000 — dans le terminal : Ctrl+C, puis python app.py (ou demarrer.bat)."
+      );
+    }
+    return body.error || `Ressource introuvable (${path}).`;
+  }
+  return `Erreur ${status}`;
+}
+
+function getAuthHeaders() {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function redirectToLogin() {
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.href = `/crm/auth?next=${next}`;
+}
+
+async function parseApiResponse(res, path) {
+  const isJson = (res.headers.get("content-type") || "").includes("application/json");
+  const body = isJson ? await res.json().catch(() => ({})) : {};
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    redirectToLogin();
+    throw new Error("Session expirée — reconnectez-vous");
+  }
+  if (res.status === 402 && body.code === "subscription_required") {
+    window.location.href = "/crm/auth?next=" + encodeURIComponent(
+      window.location.pathname + window.location.search
+    );
+    throw new Error(body.error || "Abonnement requis");
+  }
+  if (!res.ok) {
+    throw new Error(apiErrorMessage(res.status, path, body, res));
+  }
+  return body;
+}
+
+function isNetworkFetchError(err) {
+  return (
+    err instanceof TypeError ||
+    err?.name === "AbortError" ||
+    (err?.message && /failed to fetch|networkerror|load failed|aborted/i.test(err.message))
+  );
+}
+
+const API_FETCH_TIMEOUT_MS = 20000;
+
+function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const { signal: _ignored, ...rest } = options;
+  return fetch(url, { ...rest, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+async function api(path, options = {}) {
+  const url = `${API}${path}`;
+  const isPost = (options.method || "GET").toUpperCase() !== "GET";
+  const maxAttempts = isPost ? 3 : 2;
+  let lastError;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+          ...(options.headers || {}),
+        },
+      });
+      return parseApiResponse(res, path);
+    } catch (err) {
+      lastError = err;
+      if (isNetworkFetchError(err) && attempt < maxAttempts - 1) {
+        await sleep(400 + attempt * 300);
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (isNetworkFetchError(lastError)) {
+    throw new Error(
+      `Connexion perdue avec le serveur — gardez http://localhost:${PROPSCOUT_PORT} ouvert ` +
+        `et vérifiez que python app.py tourne encore (pas d’erreur dans le terminal).`,
+    );
+  }
+  throw lastError;
+}
+
+async function deleteLeadApi(leadId) {
+  const id = encodeURIComponent(leadId);
+  const headers = { "Content-Type": "application/json", ...getAuthHeaders() };
+  let res = await fetch(`${API}/leads/${id}`, { method: "DELETE", headers });
+  if (res.status === 405) {
+    res = await fetch(`${API}/leads/${id}/delete`, { method: "POST", headers });
+  }
+  return parseApiResponse(res, `/leads/${id}`);
+}
+
+async function deleteAllLeadsApi() {
+  return api("/leads/delete-all", {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
+async function deleteLeadById(leadId, ownerName) {
+  const name = ownerName || "ce prospect";
+  if (!confirm(`Supprimer « ${name} » ?`)) return;
+  try {
+    const result = await deleteLeadApi(leadId);
+    LEADS = result.leads;
+    if (state.selectedLead?.id === leadId) closeDrawer();
+    await refreshAppData();
+    showToast(`${name} supprimé`, "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function deleteSourceApi(sourceId) {
+  const id = encodeURIComponent(sourceId);
+  const headers = { "Content-Type": "application/json", ...getAuthHeaders() };
+  const path = `/sources/${id}`;
+
+  let res = await fetch(`${API}${path}`, { method: "DELETE", headers });
+  if (res.status === 405) {
+    res = await fetch(`${API}/sources/${id}/delete`, { method: "POST", headers });
+  }
+  if (res.status === 404) {
+    const probe = await res.clone().json().catch(() => ({}));
+    if (!probe.error) {
+      res = await fetch(`${API}/sources/remove`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ id: sourceId }),
+      });
+    }
+  }
+  return parseApiResponse(res, path);
+}
+
+const sourceUrlDirty = new Set();
+const sourceUrlSaving = new Set();
+
+function applySourcesFromApi(sources, updatedSource) {
+  SOURCES = sources || SOURCES;
+  if (updatedSource) {
+    const idx = SOURCES.findIndex((s) => s.id === updatedSource.id);
+    if (idx >= 0) SOURCES[idx] = updatedSource;
+    else SOURCES.push(updatedSource);
+  }
+}
+
+async function saveSourceUrl(sourceId, url) {
+  const id = encodeURIComponent(sourceId);
+  const body = JSON.stringify({ url });
+  let result;
+
+  try {
+    result = await api(`/sources/${id}`, { method: "PATCH", body });
+  } catch (err) {
+    const msg = err.message || "";
+    const retry =
+      msg.includes("405") ||
+      msg.includes("Route API introuvable") ||
+      msg.includes("Ressource introuvable");
+    if (!retry) throw err;
+    result = await api(`/sources/${id}/url`, { method: "POST", body });
+  }
+
+  applySourcesFromApi(result.sources, result.source);
+  sourceUrlDirty.delete(sourceId);
+  refreshSourceCard(sourceId, { saved: true });
+  updateCrawlerSummary();
+  return result;
+}
+
+function updateCrawlerSummary() {
+  const inDb = SOURCES.reduce((a, s) => a + (s.leads_count ?? s.found ?? 0), 0);
+  const updatedToday = SOURCES.reduce((a, s) => a + (s.leads_updated_today ?? s.today ?? 0), 0);
+  const active = SOURCES.filter((s) => s.enabled).length;
+  const elToday = document.getElementById("crawler-found-today");
+  const elActive = document.getElementById("crawler-active-sources");
+  const elTotal = document.getElementById("crawler-total-leads");
+  if (elToday) elToday.textContent = updatedToday;
+  if (elActive) elActive.textContent = active;
+  if (elTotal) elTotal.textContent = LEADS.length || inDb;
+  updateSidebarCount();
+}
+
+function countLeadsForSource(source) {
+  if (!source) return 0;
+  const id = source.id;
+  const name = (source.name || "").trim().toLowerCase();
+  const domain = (source.domain || "").replace(/^www\./, "").toLowerCase();
+  return LEADS.filter((l) => {
+    if (l.source_id && l.source_id === id) return true;
+    if (!l.source_id && name && (l.source || "").trim().toLowerCase() === name) return true;
+    const url = (l.source_url || "").toLowerCase();
+    if (domain && url.includes(domain)) return true;
+    return false;
+  }).length;
+}
+
+function getSourceDisplayStats(source, job = null) {
+  const inDb = Math.max(source.leads_count ?? source.found ?? 0, countLeadsForSource(source));
+  const updatedToday = source.leads_updated_today ?? source.today ?? 0;
+  const createdToday = source.leads_created_today ?? 0;
+  const isActiveSource =
+    crawlState.active && job?.source_id && job.source_id === source.id && job.status === "running";
+  return { inDb, updatedToday, createdToday, isActiveSource, job: isActiveSource ? job : null };
+}
+
+function getSourceSavedUrl(source) {
+  return (source?.search_url || source?.base_url || "").trim();
+}
+
+function getSourceDisplayUrl(source) {
+  const saved = getSourceSavedUrl(source);
+  if (!source?.id || sourceUrlDirty.has(source.id)) {
+    const input = document.getElementById(`source-url-${source.id}`);
+    if (input?.value?.trim()) return input.value.trim();
+    return saved;
+  }
+  const city = getCrawlCity();
+  if (
+    city &&
+    state.sourceCityPreviewCity &&
+    state.sourceCityPreviewCity.toLowerCase() === city.toLowerCase() &&
+    state.sourceCityPreview[source.id]
+  ) {
+    return state.sourceCityPreview[source.id];
+  }
+  return saved;
+}
+
+let sourcePreviewUrlsTimer = null;
+
+async function refreshSourceUrlsForCity() {
+  const city = getCrawlCity();
+  if (!city) {
+    state.sourceCityPreview = {};
+    state.sourceCityPreviewCity = "";
+    updateAllSourceCardUrls();
+    return;
+  }
+  try {
+    const data = await api(`/sources/preview-urls?city=${encodeURIComponent(city)}`);
+    state.sourceCityPreview = data.urls || {};
+    state.sourceCityPreviewCity = city;
+    updateAllSourceCardUrls();
+  } catch {
+    /* garde l’aperçu précédent */
+  }
+}
+
+function scheduleSourceUrlsForCity() {
+  clearTimeout(sourcePreviewUrlsTimer);
+  sourcePreviewUrlsTimer = setTimeout(() => refreshSourceUrlsForCity(), 180);
+}
+
+function updateSourceCardUrlDom(sourceId, url) {
+  const card = document.querySelector(
+    `.source-card[data-source-id="${CSS.escape(sourceId)}"]`,
+  );
+  if (!card || sourceUrlDirty.has(sourceId)) return;
+  const trimmed = (url || "").trim();
+  card.dataset.searchUrl = trimmed;
+  const input = card.querySelector(".source-url-input");
+  if (input && !sourceUrlSaving.has(sourceId)) {
+    input.value = trimmed;
+  }
+  const meta = card.querySelector(".source-url-meta");
+  if (!meta) return;
+  let openLink = meta.querySelector(".source-url-open");
+  const city = getCrawlCity();
+  const hint = meta.querySelector(".source-url-hint");
+  if (trimmed) {
+    if (!openLink) {
+      openLink = document.createElement("a");
+      openLink.className = "source-url-open";
+      openLink.target = "_blank";
+      openLink.rel = "noopener noreferrer";
+      openLink.textContent = "Ouvrir le lien";
+      meta.insertBefore(openLink, hint || null);
+    }
+    openLink.href = trimmed;
+    openLink.hidden = false;
+  } else if (openLink) {
+    openLink.hidden = true;
+  }
+  if (hint) {
+    hint.textContent = city
+      ? `Recherche ${city} — lien mis à jour (utilisé au prochain crawl)`
+      : "Modifiez puis Entrée, clic dehors ou Enregistrer";
+  }
+}
+
+function updateAllSourceCardUrls() {
+  for (const s of SOURCES) {
+    updateSourceCardUrlDom(s.id, getSourceDisplayUrl(s));
+  }
+}
+
+function markSourceUrlDirty(sourceId, inputEl) {
+  const saved = getSourceSavedUrl(SOURCES.find((s) => s.id === sourceId));
+  const current = (inputEl?.value || "").trim();
+  const card = inputEl?.closest(".source-card");
+  if (current && current !== saved) {
+    sourceUrlDirty.add(sourceId);
+    card?.classList.add("source-card--dirty");
+    card?.classList.remove("source-card--saved");
+  } else {
+    sourceUrlDirty.delete(sourceId);
+    card?.classList.remove("source-card--dirty");
+  }
+}
+
+async function saveSourceUrlFromInput(sourceId, inputEl, { quiet = false } = {}) {
+  const url = (inputEl?.value || "").trim();
+  if (!url) {
+    if (!quiet) showToast("Collez un lien de liste ou de recherche", "warning");
+    return null;
+  }
+  const saved = getSourceSavedUrl(SOURCES.find((s) => s.id === sourceId));
+  if (url === saved) {
+    sourceUrlDirty.delete(sourceId);
+    inputEl?.closest(".source-card")?.classList.remove("source-card--dirty");
+    return null;
+  }
+  if (sourceUrlSaving.has(sourceId)) return null;
+
+  sourceUrlSaving.add(sourceId);
+  const card = inputEl?.closest(".source-card");
+  const saveBtn = card?.querySelector(".source-save-url-btn");
+  if (saveBtn) saveBtn.disabled = true;
+  inputEl.disabled = true;
+  card?.classList.add("source-card--saving");
+
+  try {
+    const result = await saveSourceUrl(sourceId, url);
+    if (!quiet) {
+      showToast(`Lien enregistré — ${result.source.search_url}`, "success");
+    }
+    return result;
+  } catch (err) {
+    if (!quiet) showToast(err.message, "error");
+    throw err;
+  } finally {
+    sourceUrlSaving.delete(sourceId);
+    if (saveBtn) saveBtn.disabled = false;
+    inputEl.disabled = false;
+    card?.classList.remove("source-card--saving");
+  }
+}
+
+function isMobileLayout() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function applyMobileLeadsLayout() {
+  if (!isMobileLayout()) return;
+  state.leadsView = "grid";
+  document.querySelectorAll(".view-toggle button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === "grid");
+  });
+}
+
+/** Briefing radar — silencieux si route absente (ancien serveur). */
+async function fetchRadarBriefing() {
+  try {
+    const res = await fetchWithTimeout(`${API}/radar/briefing`, {
+      headers: { ...getAuthHeaders(), Accept: "application/json" },
+    }, 12000);
+    if (!res.ok) return buildClientBriefing();
+    const body = await res.json().catch(() => null);
+    if (!body || body.error) return buildClientBriefing();
+    return body;
+  } catch {
+    return buildClientBriefing();
+  }
+}
+
+function buildClientBriefing() {
+  const enriched = [...LEADS].sort(
+    (a, b) => (b.mandate_score || b.score || 0) - (a.mandate_score || a.score || 0),
+  );
+  const particuliers = enriched.filter((l) => l.type !== "agence");
+  const today = new Date().toISOString().slice(0, 10);
+
+  return {
+    agency_name: state.user?.agency_name || "",
+    date: today,
+    counts: {
+      new_without_agency: particuliers.filter((l) => l.status === "nouveau").length,
+      price_drops: enriched.filter((l) => (l.alert_tags || []).includes("baisse_prix")).length,
+      hot_mandate: enriched.filter((l) => (l.mandate_score || 0) >= 85).length,
+      old_listings: 0,
+      total_opportunities: enriched.length,
+      sans_agence: particuliers.length,
+      mandats_month: enriched.filter((l) => l.pipeline === "mandat" || l.status === "mandat").length,
+      dvf_sous_marche: enriched.filter((l) =>
+        ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
+      ).length,
+      dvf_compared: enriched.filter((l) => l.dvf_verdict).length,
+    },
+    priorities: enriched.slice(0, 20),
+    alerts: [],
+    _clientFallback: true,
+  };
+}
+
+async function loadData() {
+  const [leads, statsData, sources, crawlerStatus] = await Promise.all([
+    api("/leads"),
+    api("/stats"),
+    api("/sources"),
+    api("/crawler/status"),
+  ]);
+
+  LEADS = leads;
+  ACTIVITIES = statsData.activities || [];
+  SOURCE_STATS = statsData.source_stats || [];
+  SOURCES = sources;
+  state.crawlerRunning = crawlerStatus.running;
+
+  await refreshAgencySettings().catch(() => {
+    applyAgencyCityToCrawl(true);
+  });
+
+  RADAR = await fetchRadarBriefing();
+  PLAYBOOK = await fetchPlaybook();
+  applyMobileLeadsLayout();
+
+  if (RADAR?._clientFallback && !sessionStorage.getItem("veliora_radar_warn")) {
+    sessionStorage.setItem("veliora_radar_warn", "1");
+    showToast(
+      "Briefing en mode local — relancez python app.py (ou demarrer.bat) pour le radar complet",
+      "warning",
+      7000,
+    );
+  }
+}
+
+function normalizeSettingsPayload(data) {
+  if (!data || typeof data !== "object") return {};
+  if (data.settings && typeof data.settings === "object") return data.settings;
+  return data;
+}
+
+function agencyPrimaryCity() {
+  const s = state.settings || {};
+  const fromApi = (s.primary_city || "").trim();
+  if (fromApi) return fromApi;
+  const cities = s.target_cities || [];
+  const first = cities.find((c) => c && String(c).trim());
+  return first ? String(first).trim() : "";
+}
+
+/** Met à jour le champ ville du crawler (visible immédiatement). */
+function setCrawlCityField(city, { force = false } = {}) {
+  const el = document.getElementById("crawl-city-filter");
+  if (!el) return;
+  const label = document.getElementById("crawl-city-territory-hint");
+  const trimmed = (city || "").trim();
+
+  if (!trimmed) {
+    if (force) {
+      el.value = "";
+      delete el.dataset.agencyCity;
+      delete el.dataset.userCleared;
+    }
+    if (label) {
+      label.textContent = "Territoire non renseigné — Radar → Territoire ou Fiche agence";
+    }
+    return;
+  }
+
+  const prevAgency = (el.dataset.agencyCity || "").trim();
+  const currentVal = el.value.trim();
+  const userOverride =
+    el.dataset.userCleared !== "1" &&
+    currentVal &&
+    trimmed &&
+    currentVal.toLowerCase() !== trimmed.toLowerCase() &&
+    currentVal.toLowerCase() !== prevAgency.toLowerCase();
+
+  if (force && !userOverride) {
+    delete el.dataset.userCleared;
+    el.value = trimmed;
+    el.dataset.agencyCity = trimmed;
+  } else if (!userOverride && el.dataset.userCleared !== "1") {
+    if (
+      !currentVal ||
+      !prevAgency ||
+      currentVal.toLowerCase() === prevAgency.toLowerCase() ||
+      prevAgency.toLowerCase() !== trimmed.toLowerCase()
+    ) {
+      el.value = trimmed;
+      el.dataset.agencyCity = trimmed;
+    }
+  }
+
+  el.placeholder = `${trimmed} — effacez pour crawler sans limite ville`;
+  if (label) {
+    label.textContent = `Territoire agence : ${trimmed}`;
+  }
+}
+
+// Ville optionnelle : vide = crawl sans filtre géographique (plus de résultats).
+function applyAgencyCityToCrawl(force = false) {
+  setCrawlCityField(agencyPrimaryCity(), { force });
+}
+
+/** Recharge les réglages agence depuis l’API et synchronise le champ crawl. */
+async function refreshAgencySettings() {
+  try {
+    const data = await api("/radar/settings");
+    state.settings = normalizeSettingsPayload(data);
+  } catch {
+    /* garde state.settings actuel */
+  }
+  applyAgencyCityToCrawl(true);
+  scheduleSourceUrlsForCity();
+  return state.settings;
+}
+
+window.VelioraRefreshAgencySettings = refreshAgencySettings;
+window.VelioraScheduleSourceUrlsForCity = scheduleSourceUrlsForCity;
+
+function getCrawlCity() {
+  const el = document.getElementById("crawl-city-filter");
+  const v = (el?.value || "").trim();
+  return v || null;
+}
+
+function crawlBodyExtra() {
+  const city = getCrawlCity();
+  return city ? { city } : {};
+}
+
+function formatEtaRemaining(job) {
+  if (!job?.eta_seconds) return "";
+  const elapsed = crawlState.startedAt ? (Date.now() - crawlState.startedAt) / 1000 : 0;
+  const progress = Math.min(99, Math.max(0, job.progress || 0));
+  let remaining = job.eta_seconds;
+  if (progress > 5) {
+    remaining = Math.max(30, Math.round((job.eta_seconds * (100 - progress)) / 100));
+  } else {
+    remaining = Math.max(0, job.eta_seconds - Math.round(elapsed));
+  }
+  if (remaining < 60) return `~${remaining} s restantes`;
+  const m = Math.ceil(remaining / 60);
+  if (m < 120) return `~${m} min restantes`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `~${h} h ${rm} min restantes` : `~${h} h restantes`;
+}
+
+function updateEtaDisplay(job) {
+  const text = formatEtaRemaining(job);
+  const totalHint = job?.eta_seconds
+    ? `Durée totale estimée : ${formatEtaTotal(job.eta_seconds)}`
+    : "";
+  ["crawl-loader-eta", "crawl-dock-eta"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text || totalHint;
+  });
+  const right = document.getElementById("crawl-dock-eta-right");
+  if (right) right.textContent = job?.listings_total ? `${job.listings_done || 0}/${job.listings_total} ann.` : "";
+}
+
+function formatEtaTotal(sec) {
+  if (sec < 3600) return `~${Math.ceil(sec / 60)} min`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.ceil((sec % 3600) / 60);
+  return m ? `~${h} h ${m} min` : `~${h} h`;
+}
+
+function setupMobileNav() {
+  const toggle = document.getElementById("mobile-nav-toggle");
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebar-overlay");
+  const close = () => {
+    sidebar?.classList.remove("open");
+    overlay?.classList.remove("open");
+  };
+  toggle?.addEventListener("click", () => {
+    sidebar?.classList.toggle("open");
+    overlay?.classList.toggle("open");
+  });
+  overlay?.addEventListener("click", close);
+
+  document.querySelectorAll(".mobile-bottom-nav button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchView(btn.dataset.view);
+      close();
+      document.querySelectorAll(".mobile-bottom-nav button").forEach((b) => {
+        b.classList.toggle("active", b === btn);
+      });
+    });
+  });
+}
+
+function scriptCopyText(script) {
+  if (!script) return "";
+  if (typeof script === "string") return script;
+  if (script.full_text) return script.full_text;
+  return [script.opening, script.observation, script.value, script.closing]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildScriptPanelHtml(script) {
+  if (!script) return "<p class=\"text-muted\">Script indisponible.</p>";
+  if (typeof script === "string") {
+    return script
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => `<p class="script-panel-p">${escapeHtml(l)}</p>`)
+      .join("");
+  }
+  const steps = [
+    ["1", script.opening],
+    ["2", script.observation],
+    ["3", script.value],
+    ["4", script.closing],
+  ].filter(([, t]) => t);
+  let html = steps
+    .map(
+      ([n, t]) =>
+        `<div class="playbook-script-step"><span>${n}</span><p>${escapeHtml(t)}</p></div>`,
+    )
+    .join("");
+  if (script.advice?.length) {
+    html += `<ul class="script-panel-advice">${script.advice.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`;
+  }
+  if (script.objections?.length) {
+    html += `<div class="script-panel-objections"><strong>Objections</strong>${script.objections
+      .map(
+        (obj) =>
+          `<div class="playbook-objection"><strong>« ${escapeHtml(obj.q || "")} »</strong><p>${escapeHtml(obj.a || "")}</p></div>`,
+      )
+      .join("")}</div>`;
+  }
+  return html || `<p class="script-panel-p">${escapeHtml(scriptCopyText(script))}</p>`;
+}
+
+function syncScriptPanelUi() {
+  const panel = document.getElementById("script-panel");
+  const dock = document.getElementById("script-dock");
+  if (!panel || !dock) return;
+
+  const expanded = scriptPanelState.visible && !scriptPanelState.minimized;
+  const minimized = scriptPanelState.visible && scriptPanelState.minimized;
+
+  panel.hidden = !expanded;
+  panel.classList.toggle("open", expanded);
+  dock.hidden = !minimized;
+  dock.classList.toggle("open", minimized);
+}
+
+function openScriptPanel(lead, script) {
+  scriptPanelState.visible = true;
+  scriptPanelState.minimized = false;
+  scriptPanelState.leadId = lead?.id ?? null;
+  scriptPanelState.copyText = scriptCopyText(script);
+
+  const title = document.getElementById("script-panel-title");
+  const scenario = document.getElementById("script-panel-scenario");
+  const body = document.getElementById("script-panel-body");
+  const dockLabel = document.getElementById("script-dock-label");
+  const openLeadBtn = document.getElementById("script-panel-open-lead");
+
+  const label =
+    lead?.property_title || lead?.address || lead?.owner || "Script d'appel";
+  if (title) title.textContent = label;
+  if (dockLabel) dockLabel.textContent = label.length > 36 ? `${label.slice(0, 34)}…` : label;
+  if (scenario) {
+    scenario.textContent =
+      typeof script === "object" && script?.scenario_label
+        ? script.scenario_label
+        : "";
+    scenario.hidden = !scenario.textContent;
+  }
+  if (body) body.innerHTML = buildScriptPanelHtml(script);
+  if (openLeadBtn) {
+    openLeadBtn.hidden = !scriptPanelState.leadId;
+  }
+
+  syncScriptPanelUi();
+}
+
+function minimizeScriptPanel() {
+  if (!scriptPanelState.visible) return;
+  scriptPanelState.minimized = true;
+  syncScriptPanelUi();
+}
+
+function expandScriptPanel() {
+  if (!scriptPanelState.visible) return;
+  scriptPanelState.minimized = false;
+  syncScriptPanelUi();
+}
+
+function closeScriptPanel() {
+  scriptPanelState.visible = false;
+  scriptPanelState.minimized = false;
+  scriptPanelState.leadId = null;
+  scriptPanelState.copyText = "";
+  syncScriptPanelUi();
+}
+
+async function loadScriptForLead(lead) {
+  if (!lead?.id) {
+    showToast("Prospect introuvable", "error");
+    return;
+  }
+  try {
+    const res = await api(`/radar/leads/${lead.id}/script`);
+    const script = res?.script ?? res;
+    openScriptPanel(lead, script);
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+function setupScriptPanel() {
+  document.getElementById("script-panel-close")?.addEventListener("click", closeScriptPanel);
+  document.getElementById("script-panel-minimize")?.addEventListener("click", minimizeScriptPanel);
+  document.getElementById("script-dock-close")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeScriptPanel();
+  });
+  document.getElementById("script-dock-expand")?.addEventListener("click", expandScriptPanel);
+  document.getElementById("script-panel-copy")?.addEventListener("click", async () => {
+    const text = scriptPanelState.copyText;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Script copié", "success", 2500);
+    } catch {
+      showToast("Copie impossible", "error");
+    }
+  });
+  document.getElementById("script-panel-open-lead")?.addEventListener("click", () => {
+    if (scriptPanelState.leadId) openDrawer(scriptPanelState.leadId);
+  });
+}
+
+function setupCrawlBackground() {
+  document.getElementById("crawl-minimize-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    minimizeCrawlUI();
+  });
+  document.getElementById("crawl-cancel-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelStaleCrawlUi();
+    showToast("Crawl annulé", "success");
+  });
+  document.getElementById("crawl-dock-cancel")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    cancelStaleCrawlUi();
+    showToast("Crawl annulé", "success");
+  });
+  document.getElementById("crawl-dock")?.addEventListener("click", (e) => {
+    if (e.target.closest(".crawl-dock-close")) return;
+    expandCrawlUI();
+  });
+}
+
+function minimizeCrawlUI() {
+  if (!crawlState.active) return;
+  crawlState.minimized = true;
+  document.getElementById("crawl-loader")?.classList.add("minimized");
+  document.getElementById("crawl-loader")?.classList.remove("open");
+  document.getElementById("crawl-dock")?.classList.add("open");
+}
+
+function expandCrawlUI() {
+  if (!crawlState.active) return;
+  crawlState.minimized = false;
+  document.getElementById("crawl-loader")?.classList.remove("minimized");
+  document.getElementById("crawl-loader")?.classList.add("open");
+  document.getElementById("crawl-dock")?.classList.remove("open");
+}
+
+async function ensureAuth() {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (!token) {
+    redirectToLogin();
+    return false;
+  }
+  try {
+    const me = await api("/auth/me");
+    state.user = me.user;
+    state.settings = normalizeSettingsPayload(me.settings || state.settings || {});
+    applyAgencyCityToCrawl(true);
+    scheduleSourceUrlsForCity();
+    const cached = localStorage.getItem(AUTH_USER_KEY);
+    if (cached) {
+      try {
+        state.user = { ...JSON.parse(cached), ...state.user };
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.user));
+    updateAuthHeader();
+    if (me.billing?.requires_payment && !me.billing?.active) {
+      window.location.href = "/crm/auth?next=" + encodeURIComponent(
+        window.location.pathname + window.location.search
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    if (/session|connecté|401/i.test(err.message)) return false;
+    throw err;
+  }
+}
+
+function updateAuthHeader() {
+  const u = state.user;
+  const avatar = document.getElementById("header-avatar");
+  const agencyEl = document.getElementById("header-agency-name");
+  if (agencyEl && u?.agency_name) agencyEl.textContent = u.agency_name;
+  if (avatar && u) {
+    const initials = [u.first_name, u.last_name].filter(Boolean).map((n) => n[0]).join("")
+      || (u.email || "AG").slice(0, 2).toUpperCase();
+    avatar.textContent = initials;
+    avatar.title = u.email || "";
+  }
+  const inviteBtn = document.getElementById("btn-invite-collab");
+  if (inviteBtn) inviteBtn.hidden = u?.role !== "admin";
+}
+
+function logout() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  window.location.href = "/";
+}
+
+async function init() {
+  setupNavigation();
+  setupMobileNav();
+  setupSearch();
+  setupFilters();
+  setupViewToggle();
+  setupDrawer();
+  setupLeadRefresh();
+  setupLeadsActions();
+  setupCrawler();
+  setupCrawlBackground();
+  setupScriptPanel();
+  setupCustomUrlCrawl();
+  setupProductModes();
+  setupAnalyzeForm();
+  setupCrawlUrlModal();
+  document.getElementById("btn-logout")?.addEventListener("click", logout);
+  document.getElementById("btn-invite-collab")?.addEventListener("click", () => {
+    document.getElementById("invite-modal")?.classList.add("open");
+  });
+  document.getElementById("invite-modal-close")?.addEventListener("click", () => {
+    document.getElementById("invite-modal")?.classList.remove("open");
+  });
+  document.getElementById("invite-form")?.addEventListener("submit", submitInvite);
+  setupRadar();
+  setupPlaybook();
+  setupOnboarding();
+  setupAccountMenu();
+  window.addEventListener("resize", () => {
+    applyMobileLeadsLayout();
+    renderLeads();
+  });
+
+  if (!(await ensureAuth())) return;
+
+  try {
+    const health = await api("/health").catch(() => null);
+    if (!health) {
+      showWrongServerBanner();
+      showToast(
+        `API indisponible — lancez python app.py puis http://localhost:${PROPSCOUT_PORT}`,
+        "error",
+        12000,
+      );
+    } else if (!health.mandates || !health.clients || (health.api_version || 0) < 6) {
+      showWrongServerBanner(true);
+      showToast(
+        "Serveur obsolète — fermez l’ancien terminal (Ctrl+C), relancez demarrer.bat ou python app.py (api_version 6, module clients requis)",
+        "warning",
+        14000,
+      );
+    } else if (!health.radar_analyze_url || (health.api_version || 0) < 7) {
+      showToast(
+        "Mode 2 (Score Mandat™) nécessite un redémarrage — Ctrl+C puis python app.py (api_version 7)",
+        "warning",
+        12000,
+      );
+    } else if (!health.delete_leads || (health.api_version || 0) < 5) {
+      showWrongServerBanner(true);
+      showToast(
+        "Serveur obsolète sur le port 8000 — Ctrl+C puis python app.py ou demarrer.bat",
+        "warning",
+        12000,
+      );
+    } else if (!health.radar) {
+      showToast(
+        "Module Radar indisponible — relancez le serveur avec la dernière version (python app.py)",
+        "warning",
+        8000,
+      );
+    } else if (API !== "/api") {
+      showToast(
+        `API : ${API} (page ouverte ailleurs que :8000)`,
+        "info",
+        5000,
+      );
+    } else if (!health.delete_sources) {
+      showToast(
+        "Serveur partiellement obsolète — relancez python app.py",
+        "warning",
+        8000,
+      );
+    }
+    if (health?.ok && health.delete_leads) hideWrongServerBanner();
+    if (typeof initVelioraClients === "function") {
+      initVelioraClients({
+        api,
+        showToast,
+        escapeHtml,
+        getAuthHeaders,
+        API,
+      });
+    }
+    if (typeof initVelioraMandates === "function") {
+      initVelioraMandates({
+        api,
+        showToast,
+        escapeHtml,
+        getAuthHeaders,
+        API,
+        refreshAgencySettings,
+        scheduleSourceUrlsForCity,
+      });
+    }
+    await loadData();
+    await checkServerLeadRefreshCapability();
+    renderAll();
+    syncCrawlerUI();
+    await syncAccountBillingButton();
+    await refreshOnboardingUi();
+    if (!onboardingDidAutoNav && onboardingCache && !onboardingCache.settings?.onboarding_completed) {
+      const current = currentOnboardingStep(onboardingProgress(onboardingCache));
+      const meta = ONBOARDING_STEPS.find((s) => s.step === current);
+      if (meta && state.currentView !== meta.view) {
+        onboardingDidAutoNav = true;
+        await switchView(meta.view);
+      }
+    }
+    startPolling();
+    await resumeActiveCrawlIfAny();
+  } catch (err) {
+    showToast(err.message || "Impossible de charger les données — lancez python app.py", "error");
+    renderAll();
+  }
+}
+
+function setupNavigation() {
+  document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => switchView(btn.dataset.view));
+  });
+}
+
+async function switchView(view) {
+  state.currentView = view;
+  syncProductModeTabs(view);
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === view);
+  });
+  document.querySelectorAll(".mobile-bottom-nav button").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === view);
+  });
+  document.querySelectorAll(".view").forEach((el) => {
+    el.classList.toggle("active", el.id === `view-${view}`);
+  });
+  const meta = viewTitles[view] || { title: view, subtitle: "" };
+  document.getElementById("header-title").textContent = meta.title;
+  document.getElementById("header-subtitle").textContent = meta.subtitle;
+  if (view === "crawler") {
+    refreshAgencySettings().catch(() => {
+      applyAgencyCityToCrawl(true);
+      scheduleSourceUrlsForCity();
+    });
+  }
+  if (view === "clients" && typeof loadClients === "function") {
+    try {
+      await loadClients();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+  if (view === "mandates" && typeof loadMandates === "function") {
+    try {
+      await loadMandates();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+  if (view === "playbook" && !PLAYBOOK) {
+    PLAYBOOK = await fetchPlaybook().catch(() => null);
+  }
+  renderAll();
+  if (view === "dashboard") {
+    markOnboardingStep3Seen();
+  }
+  if (view === "analyze" && !state.onDemandAnalysis?.analysis) {
+    setAnalyzeUiState("empty");
+  }
+  refreshOnboardingUi();
+}
+
+function setupSearch() {
+  const input = document.getElementById("global-search");
+  let debounce;
+  input.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const value = e.target.value.trim();
+    if (!value) return;
+
+    if (isUrl(value)) {
+      e.preventDefault();
+      await runOnDemandAnalysis(value);
+      return;
+    }
+
+    state.searchQuery = value.toLowerCase();
+    switchView("leads");
+    renderLeads();
+  });
+
+  input.addEventListener("input", (e) => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      state.searchQuery = e.target.value.toLowerCase();
+      if (state.searchQuery && !isUrl(state.searchQuery)) {
+        if (state.currentView !== "leads") switchView("leads");
+        renderLeads();
+      }
+    }, 200);
+  });
+}
+
+function setupCustomUrlCrawl() {
+  const form = document.getElementById("custom-crawl-form");
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("custom-crawl-url");
+      await runOnDemandAnalysis(input.value.trim());
+    });
+  }
+}
+
+function normalizeUrlKey(url) {
+  try {
+    let u = url.trim();
+    if (!u.startsWith("http://") && !u.startsWith("https://")) u = "https://" + u;
+    const parsed = new URL(u);
+    const path = parsed.pathname.replace(/\/$/, "") || "";
+    return `${parsed.origin}${path}${parsed.search}`.toLowerCase();
+  } catch {
+    return url.toLowerCase().trim();
+  }
+}
+
+function getDomainFromUrl(url) {
+  try {
+    let u = url.trim();
+    if (!u.startsWith("http")) u = "https://" + u;
+    return new URL(u).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function guessSiteNameFromUrl(url) {
+  const domain = getDomainFromUrl(url);
+  const known = {
+    "paruvendu.fr": "ParuVendu",
+    "leboncoin.fr": "LeBonCoin",
+    "pap.fr": "PAP",
+    "seloger.com": "SeLoger",
+    "logic-immo.com": "LogicImmo",
+    "bienici.com": "BienIci",
+    "lefigaro.fr": "Le Figaro Immobilier",
+    "figaro.fr": "Le Figaro Immobilier",
+  };
+  if (known[domain]) return known[domain];
+  const part = domain.split(".")[0];
+  return part ? part.charAt(0).toUpperCase() + part.slice(1) : "Site";
+}
+
+function findSourceByUrl(url) {
+  const key = normalizeUrlKey(url);
+  return SOURCES.find((s) => normalizeUrlKey(s.search_url || s.base_url) === key);
+}
+
+function findSourceByDomain(url) {
+  const domain = getDomainFromUrl(url);
+  if (!domain) return null;
+  return SOURCES.find((s) => getDomainFromUrl(s.base_url) === domain);
+}
+
+function setupCrawlUrlModal() {
+  document.getElementById("crawl-url-close").addEventListener("click", closeCrawlUrlModal);
+  document.getElementById("crawl-url-cancel").addEventListener("click", closeCrawlUrlModal);
+  document.getElementById("crawl-url-modal").addEventListener("click", (e) => {
+    if (e.target.id === "crawl-url-modal") closeCrawlUrlModal();
+  });
+  document.getElementById("crawl-url-once").addEventListener("click", () => confirmCrawlUrl(false));
+  document.getElementById("crawl-url-add").addEventListener("click", () => confirmCrawlUrl(true));
+}
+
+function openCrawlUrlModal(url) {
+  state.pendingCrawlUrl = url;
+  const existing = findSourceByUrl(url);
+  const sameDomain = findSourceByDomain(url);
+  const name = guessSiteNameFromUrl(url);
+
+  document.getElementById("crawl-url-preview").textContent = url;
+  const hint = document.getElementById("crawl-url-hint");
+  const btnAdd = document.getElementById("crawl-url-add");
+  const btnOnce = document.getElementById("crawl-url-once");
+
+  if (existing) {
+    hint.textContent = `${existing.name} est déjà configuré avec cette URL. Le crawl va utiliser cette source.`;
+    btnAdd.style.display = "none";
+    btnOnce.textContent = "Lancer le crawl";
+    btnOnce.className = "btn btn-primary";
+  } else if (sameDomain) {
+    hint.textContent = `${sameDomain.name} est déjà dans vos sources. Mettre à jour le lien « ${url} » ou crawler une seule fois ?`;
+    btnAdd.textContent = "Mettre à jour et crawler";
+    btnAdd.style.display = "";
+    btnOnce.textContent = "Crawler une fois";
+    btnOnce.className = "btn btn-secondary";
+  } else {
+    hint.textContent = `Ajouter ${name} à vos sources pour le crawler régulièrement, ou lancer un crawl unique ?`;
+    btnAdd.textContent = "Ajouter aux sources et crawler";
+    btnAdd.style.display = "";
+    btnOnce.textContent = "Crawler une fois";
+    btnOnce.className = "btn btn-secondary";
+  }
+
+  document.getElementById("crawl-url-modal").classList.add("open");
+}
+
+function closeCrawlUrlModal() {
+  document.getElementById("crawl-url-modal").classList.remove("open");
+  state.pendingCrawlUrl = null;
+}
+
+async function confirmCrawlUrl(addToSources) {
+  const url = state.pendingCrawlUrl;
+  if (!url) return;
+  closeCrawlUrlModal();
+
+  const existing = findSourceByUrl(url);
+  const label = guessSiteNameFromUrl(url);
+  const crawlOpts = { goToLeads: true };
+
+  try {
+    if (addToSources && !existing) {
+      const result = await api("/sources", {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
+      await runCrawlJob(`/crawler/scan/${result.source.id}`, crawlBodyExtra(), result.source.name, crawlOpts);
+    } else if (existing) {
+      await runCrawlJob(`/crawler/scan/${existing.id}`, crawlBodyExtra(), existing.name, crawlOpts);
+    } else {
+      await runCrawlJob("/crawler/crawl-url", { url, ...crawlBodyExtra() }, label, crawlOpts);
+    }
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+function isLikelySearchPageUrl(url) {
+  try {
+    const u = new URL(url.trim());
+    const path = u.pathname.toLowerCase();
+    if (/\/(?:recherche|search|categorie|category|resultats|liste)(?:\/|$)/i.test(path)) {
+      return !/\d{4,}/.test(path);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function setupProductModes() {
+  document.querySelectorAll(".product-mode").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.dataset.mode;
+      if (mode) switchView(mode);
+    });
+  });
+  document.getElementById("leads-goto-analyze")?.addEventListener("click", () => switchView("analyze"));
+}
+
+function syncProductModeTabs(view) {
+  const mode = view === "analyze" ? "analyze" : view === "dashboard" ? "dashboard" : null;
+  document.querySelectorAll(".product-mode").forEach((btn) => {
+    if (!mode) {
+      btn.classList.remove("active");
+      return;
+    }
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+  const bar = document.getElementById("product-modes");
+  if (bar) {
+    bar.hidden = view !== "dashboard" && view !== "analyze";
+  }
+}
+
+function setAnalyzeUiState(phase) {
+  const loading = document.getElementById("analyze-loading");
+  const empty = document.getElementById("analyze-empty");
+  const result = document.getElementById("analyze-result");
+  if (loading) loading.hidden = phase !== "loading";
+  if (empty) empty.hidden = phase !== "empty";
+  if (result) result.hidden = phase !== "result";
+}
+
+function renderOnDemandAnalysis(analysis, lead) {
+  if (!analysis) {
+    setAnalyzeUiState("empty");
+    return;
+  }
+  setAnalyzeUiState("result");
+  state.onDemandAnalysis = { analysis, lead };
+
+  const score = analysis.mandate_score ?? 0;
+  const scoreEl = document.getElementById("analyze-score-display");
+  if (scoreEl) {
+    scoreEl.innerHTML = `${score}<span class="analyze-score-max">/${analysis.mandate_score_max || 100}</span>`;
+    scoreEl.className = `analyze-score-value ${getMandateScoreClass(score)}`;
+  }
+  const addr = document.getElementById("analyze-score-address");
+  if (addr) {
+    addr.textContent = analysis.address || analysis.owner || "Annonce analysée";
+  }
+  const meta = document.getElementById("analyze-score-meta");
+  if (meta) {
+    const bits = [
+      analysis.portal,
+      analysis.price_label,
+      analysis.mandate_score_reason,
+    ].filter(Boolean);
+    meta.textContent = bits.join(" · ");
+  }
+
+  const ai = analysis.ai_analysis || {};
+  const aiSub = document.getElementById("analyze-ai-subtitle");
+  const aiBody = document.getElementById("analyze-ai-body");
+  const aiDisclaimer = document.getElementById("analyze-ai-disclaimer");
+  const aiCard = document.getElementById("analyze-ai-card");
+  if (aiSub) aiSub.textContent = ai.subtitle || "Synthèse contextualisée";
+  if (aiBody) {
+    const paras = ai.paragraphs || [];
+    if (!paras.length) {
+      aiBody.innerHTML =
+        '<p class="analyze-ai-p analyze-ai-p-muted">Analyse en cours de construction — relancez après import complet de la fiche.</p>';
+    } else {
+      aiBody.innerHTML = paras
+        .map((p) => `<p class="analyze-ai-p">${escapeHtml(p)}</p>`)
+        .join("");
+    }
+  }
+  if (aiDisclaimer) {
+    aiDisclaimer.textContent = ai.disclaimer || "";
+    aiDisclaimer.hidden = !ai.disclaimer;
+  }
+  if (aiCard) aiCard.hidden = false;
+
+  const factorsEl = document.getElementById("analyze-factors");
+  const factors = analysis.positive_factors || [];
+  if (factorsEl) {
+    if (!factors.length) {
+      factorsEl.innerHTML =
+        '<li class="analyze-factor analyze-factor-muted"><span>Peu de signaux détectés — complétez la fiche ou relancez l’analyse.</span></li>';
+    } else {
+      factorsEl.innerHTML = factors
+        .map(
+          (f) => `
+        <li class="analyze-factor">
+          <span class="analyze-factor-check" aria-hidden="true">✓</span>
+          <div>
+            <strong>${escapeHtml(f.label)}</strong>
+            <span>${escapeHtml(f.detail || "")}</span>
+          </div>
+        </li>`,
+        )
+        .join("");
+    }
+  }
+
+  const reco = analysis.recommendation || {};
+  const recoLabel = document.getElementById("analyze-reco-label");
+  const recoDetail = document.getElementById("analyze-reco-detail");
+  if (recoLabel) recoLabel.textContent = reco.label || mandateCallRecommendation(score);
+  if (recoDetail) recoDetail.textContent = reco.detail || analysis.scenario_label || "";
+
+  const openBtn = document.getElementById("analyze-open-lead");
+  const dvfBtn = document.getElementById("analyze-compare-dvf");
+  const lid = lead?.id || analysis.lead_id;
+  if (openBtn) {
+    openBtn.disabled = !lid;
+    openBtn.onclick = () => {
+      if (lid) openDrawer(lid);
+    };
+  }
+  if (dvfBtn) {
+    dvfBtn.disabled = !lid;
+    dvfBtn.onclick = () => {
+      if (lid) compareLeadDvf(lid);
+    };
+  }
+}
+
+function isMissingApiRouteError(err) {
+  const msg = err?.message || "";
+  return /Route API introuvable|Ressource introuvable|404|Not Found/i.test(msg);
+}
+
+function findLeadByListingUrl(url) {
+  const key = normalizeUrlKey(url);
+  if (!key) return null;
+  return (
+    LEADS.find((l) => normalizeUrlKey(l.source_url || "") === key) || null
+  );
+}
+
+async function fetchOnDemandAnalysisFallback(url) {
+  const normalized = url.trim();
+  const existing = findLeadByListingUrl(normalized);
+  if (existing?.id) {
+    const res = await api(`/radar/leads/${existing.id}/analysis`);
+    return {
+      status: "ready",
+      analysis: res.analysis,
+      lead: res.lead || existing,
+    };
+  }
+  const importRes = await api("/crawler/import-listing", {
+    method: "POST",
+    body: JSON.stringify({ url: normalized }),
+  });
+  const jobId = importRes.job_id || importRes.job?.id;
+  if (!jobId) {
+    throw new Error("Import de la fiche impossible — relancez python app.py");
+  }
+  return { status: "importing", job_id: jobId, url: normalized };
+}
+
+async function fetchOnDemandAnalysis(url) {
+  const body = JSON.stringify({ url: url.trim() });
+  const paths = ["/radar/analyze-url", "/crawler/analyze-listing"];
+  let lastErr;
+  for (const path of paths) {
+    try {
+      return await api(path, { method: "POST", body });
+    } catch (err) {
+      lastErr = err;
+      if (!isMissingApiRouteError(err)) throw err;
+    }
+  }
+  try {
+    return await fetchOnDemandAnalysisFallback(url);
+  } catch (err) {
+    if (lastErr && isMissingApiRouteError(lastErr)) {
+      throw new Error(
+        "Mode 2 indisponible — Ctrl+C dans le terminal, puis python app.py ou demarrer.bat (api_version 7 + radar_analyze_url).",
+      );
+    }
+    throw err;
+  }
+}
+
+async function runOnDemandAnalysis(url, { skipViewSwitch } = {}) {
+  if (!url || state.loading) return;
+  const normalized = url.trim();
+  if (!isUrl(normalized)) {
+    showToast("Collez un lien http(s) valide vers une fiche annonce", "error");
+    return;
+  }
+  if (isLikelySearchPageUrl(normalized)) {
+    showToast(
+      "Collez le lien direct de la fiche (pas une page de recherche)",
+      "warning",
+      7000,
+    );
+    return;
+  }
+  if (!skipViewSwitch) switchView("analyze");
+  const input = document.getElementById("analyze-url-input");
+  if (input) input.value = normalized;
+  setAnalyzeUiState("loading");
+  const msg = document.getElementById("analyze-loading-msg");
+  if (msg) msg.textContent = "Lecture de l'annonce et calcul du Score Mandat™…";
+
+  try {
+    const res = await fetchOnDemandAnalysis(normalized);
+    if (res.status === "importing" && res.job_id) {
+      const label = guessSiteNameFromUrl(normalized);
+      if (msg) msg.textContent = "Import de la fiche — extraction contacts, type, prix…";
+      await runCrawlJob(null, null, `Analyse — ${label}`, {
+        existingJobId: res.job_id,
+        goToAnalyze: true,
+        importUrl: normalized,
+      });
+      return;
+    }
+    if (res.status === "ready" && res.analysis) {
+      if (res.lead?.id) {
+        const idx = LEADS.findIndex((l) => l.id === res.lead.id);
+        if (idx >= 0) LEADS[idx] = res.lead;
+        else LEADS.unshift(res.lead);
+      }
+      renderOnDemandAnalysis(res.analysis, res.lead);
+      showToast(`Score Mandat™ : ${res.analysis.mandate_score}/100`, "success", 5000);
+      return;
+    }
+    setAnalyzeUiState("empty");
+    showToast("Analyse indisponible — vérifiez l'URL", "warning");
+  } catch (err) {
+    setAnalyzeUiState("empty");
+    showToast(err.message, "error");
+  }
+}
+
+async function completeOnDemandAnalysisAfterImport(url) {
+  setAnalyzeUiState("loading");
+  const msg = document.getElementById("analyze-loading-msg");
+  if (msg) msg.textContent = "Calcul du Score Mandat™ et comparatif DVF…";
+  try {
+    await refreshAppData();
+    const res = await fetchOnDemandAnalysis(url);
+    if (res.status === "ready" && res.analysis) {
+      renderOnDemandAnalysis(res.analysis, res.lead);
+      showToast(`Score Mandat™ : ${res.analysis.mandate_score}/100`, "success", 6000);
+    } else {
+      setAnalyzeUiState("empty");
+      showToast("Fiche importée — relancez l'analyse si le score n'apparaît pas", "warning");
+    }
+  } catch (err) {
+    setAnalyzeUiState("empty");
+    showToast(err.message, "error");
+  }
+}
+
+function setupAnalyzeForm() {
+  const form = document.getElementById("analyze-url-form");
+  if (!form) return;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("analyze-url-input");
+    await runOnDemandAnalysis(input?.value?.trim() || "");
+  });
+}
+
+async function importListingUrl(url) {
+  await runOnDemandAnalysis(url);
+}
+
+async function crawlCustomUrl(url) {
+  if (!url || state.loading) return;
+  await runOnDemandAnalysis(url);
+}
+
+function setupFilters() {
+  document.querySelectorAll(".filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      state.leadsFilter = chip.dataset.filter;
+      renderLeads();
+    });
+  });
+}
+
+function setupViewToggle() {
+  document.querySelectorAll(".view-toggle button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".view-toggle button").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.leadsView = btn.dataset.view;
+      renderLeads();
+    });
+  });
+}
+
+function setupLeadsActions() {
+  document.getElementById("leads-delete-all-btn")?.addEventListener("click", async () => {
+    const count = LEADS.length;
+    if (!count) {
+      showToast("Aucun prospect à supprimer", "warning");
+      return;
+    }
+    if (
+      !confirm(
+        `Supprimer les ${count} prospect(s) ?\n\nCette action est irréversible.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const result = await deleteAllLeadsApi();
+      LEADS = result.leads;
+      closeDrawer();
+      await refreshAppData();
+      showToast(`${result.deleted} prospect(s) supprimé(s)`, "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  });
+
+  document.getElementById("drawer-delete-lead-btn")?.addEventListener("click", async () => {
+    const lead = state.selectedLead;
+    if (!lead) return;
+    await deleteLeadById(lead.id, lead.owner);
+  });
+
+  document.getElementById("leads-dvf-compare-all")?.addEventListener("click", () => {
+    compareAllLeadsDvf().catch((err) => showToast(err.message, "error"));
+  });
+
+  const leadsView = document.getElementById("view-leads");
+  if (leadsView) {
+    leadsView.addEventListener("click", (e) => {
+      if (e.target.closest(".lead-refresh-btn, #drawer-refresh-lead-btn")) return;
+      const btn = e.target.closest(".lead-delete-btn");
+      if (!btn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      deleteLeadById(parseInt(btn.dataset.id, 10), btn.dataset.name);
+    });
+  }
+}
+
+function setupDrawer() {
+  document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+  document.getElementById("drawer-overlay").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeDrawer();
+      closeCrawlUrlModal();
+      closeAddSourceModal();
+    }
+  });
+}
+
+function setupCrawler() {
+  const cityEl = document.getElementById("crawl-city-filter");
+  if (cityEl) {
+    cityEl.addEventListener("input", () => {
+      const agency = agencyPrimaryCity();
+      const v = cityEl.value.trim();
+      if (!v) {
+        cityEl.dataset.userCleared = "1";
+        scheduleSourceUrlsForCity();
+      } else if (agency && v.toLowerCase() === agency.toLowerCase()) {
+        delete cityEl.dataset.userCleared;
+        cityEl.dataset.agencyCity = agency;
+        scheduleSourceUrlsForCity();
+      } else {
+        delete cityEl.dataset.userCleared;
+        delete cityEl.dataset.agencyCity;
+        scheduleSourceUrlsForCity();
+      }
+    });
+    cityEl.addEventListener("focus", () => {
+      refreshAgencySettings().catch(() => {
+        applyAgencyCityToCrawl(true);
+        scheduleSourceUrlsForCity();
+      });
+    });
+  }
+  document.getElementById("crawler-toggle").addEventListener("click", toggleCrawler);
+  document.getElementById("crawler-scan-btn").addEventListener("click", runManualScan);
+  document.getElementById("crawler-all-btn").addEventListener("click", runManualScan);
+  document.getElementById("add-source-btn").addEventListener("click", openAddSourceModal);
+  document.getElementById("add-source-close").addEventListener("click", closeAddSourceModal);
+  document.getElementById("add-source-cancel").addEventListener("click", closeAddSourceModal);
+  document.getElementById("add-source-modal").addEventListener("click", (e) => {
+    if (e.target.id === "add-source-modal") closeAddSourceModal();
+  });
+  document.getElementById("add-source-form").addEventListener("submit", submitAddSource);
+
+  document.getElementById("sources-grid").addEventListener("change", async (e) => {
+    if (!e.target.matches(".toggle-switch input")) return;
+    const sourceId = e.target.dataset.source;
+    try {
+      await api(`/sources/${encodeURIComponent(sourceId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: e.target.checked }),
+      });
+      await loadData();
+      renderCrawler();
+      showToast(`Source ${e.target.checked ? "activée" : "désactivée"}`);
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
+  document.getElementById("sources-grid").addEventListener("input", (e) => {
+    if (!e.target.matches(".source-url-input")) return;
+    markSourceUrlDirty(e.target.dataset.source, e.target);
+  });
+
+  document.getElementById("sources-grid").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || !e.target.matches(".source-url-input")) return;
+    e.preventDefault();
+    const sourceId = e.target.dataset.source;
+    try {
+      await saveSourceUrlFromInput(sourceId, e.target);
+    } catch {
+      /* toast déjà affiché */
+    }
+  });
+
+  document.getElementById("sources-grid").addEventListener(
+    "focusout",
+    async (e) => {
+      if (!e.target.matches(".source-url-input")) return;
+      const related = e.relatedTarget;
+      if (
+        related?.closest?.(
+          ".source-save-url-btn, .source-crawl-btn, .source-delete-btn, .toggle-switch",
+        )
+      ) {
+        return;
+      }
+      const sourceId = e.target.dataset.source;
+      if (!sourceUrlDirty.has(sourceId)) return;
+      try {
+        await saveSourceUrlFromInput(sourceId, e.target, { quiet: true });
+        showToast("Lien enregistré", "success", 2500);
+      } catch {
+        /* toast déjà affiché */
+      }
+    },
+    true,
+  );
+
+  document.getElementById("sources-grid").addEventListener("click", async (e) => {
+    const delBtn = e.target.closest(".source-delete-btn");
+    if (delBtn) {
+      const { source: sourceId, name } = delBtn.dataset;
+      if (!confirm(`Supprimer la source « ${name} » ?\nLes prospects déjà trouvés restent dans la base.`)) return;
+      try {
+        const result = await deleteSourceApi(sourceId);
+        SOURCES = result.sources;
+        await refreshAppData();
+        showToast(`${name} supprimée`, "success");
+      } catch (err) {
+        await loadData().catch(() => {});
+        renderCrawler();
+        showToast(err.message, "error");
+      }
+      return;
+    }
+
+    const saveBtn = e.target.closest(".source-save-url-btn");
+    if (saveBtn) {
+      e.preventDefault();
+      const card = saveBtn.closest(".source-card");
+      const input = card?.querySelector(".source-url-input");
+      try {
+        await saveSourceUrlFromInput(saveBtn.dataset.source, input);
+      } catch {
+        /* toast déjà affiché */
+      }
+      return;
+    }
+
+    const btn = e.target.closest(".source-crawl-btn");
+    if (!btn || crawlState.active) return;
+    await crawlSingleSource(btn.dataset.source, btn.dataset.name);
+  });
+}
+
+function openAddSourceModal() {
+  document.getElementById("add-source-modal").classList.add("open");
+  document.getElementById("add-source-name").focus();
+}
+
+function closeAddSourceModal() {
+  document.getElementById("add-source-modal").classList.remove("open");
+  document.getElementById("add-source-form").reset();
+}
+
+async function submitAddSource(e) {
+  e.preventDefault();
+  const url = document.getElementById("add-source-url").value.trim();
+  const name = document.getElementById("add-source-name").value.trim();
+
+  if (!url) {
+    showToast("Collez un lien, ex. https://www.paruvendu.fr/immobilier/", "warning");
+    return;
+  }
+
+  try {
+    const result = await api("/sources", {
+      method: "POST",
+      body: JSON.stringify({ url, name: name || undefined }),
+    });
+    SOURCES = result.sources;
+    closeAddSourceModal();
+    renderCrawler();
+    showToast(`${result.source.name} ajouté — ${result.source.search_url}`, "success");
+    await refreshOnboardingUi();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+async function crawlSingleSource(sourceId, sourceName) {
+  const city = getCrawlCity();
+  const label = city ? `${sourceName} — ${city}` : sourceName;
+  await runCrawlJob(`/crawler/scan/${sourceId}`, crawlBodyExtra(), label);
+}
+
+async function runManualScan() {
+  const city = getCrawlCity();
+  const count = SOURCES.filter((s) => s.search_url || s.base_url).length;
+  const label = city
+    ? `Tous les sites (${count}) — ${city}`
+    : `Tous les sites (${count})`;
+  await runCrawlJob("/crawler/scan", crawlBodyExtra(), label);
+}
+
+const crawlFeedState = {
+  seenMessages: new Set(),
+  seenLogIds: new Set(),
+};
+
+const CRAWL_WAIT_TIPS = [
+  "On parcourt les annonces comme un bon agent de quartier…",
+  "Vérification des surfaces, prix et dates de publication…",
+  "On distingue les particuliers des agences pour vous…",
+  "Pas de mélange : chaque fiche = une vraie annonce…",
+  "On ignore les prix au m² pour ne garder que le bon montant…",
+  "Comme une visite virtuelle, mais à l'échelle du portail…",
+  "Les bonnes opportunités se cachent — on les débusque…",
+  "On croise titre, m² et prix avant d'enregistrer…",
+  "Patience : un crawl sérieux vaut mieux qu'une liste brouillonne…",
+  "Repérage des mandats potentiels en cours…",
+  "On lit les annonces plus vite qu'un acquéreur le dimanche matin…",
+  "Chaque portail a ses secrets — on les connaît…",
+  "On vérifie le téléphone et le type d'annonceur…",
+  "Presque là : on peaufine les dernières fiches…",
+  "Le marché ne dort jamais — nous non plus, le temps du scan…",
+];
+
+function pickCrawlWaitTip() {
+  const idx = Math.floor(Math.random() * CRAWL_WAIT_TIPS.length);
+  return CRAWL_WAIT_TIPS[idx];
+}
+
+function setCrawlWaitTip(text) {
+  const tip = text || pickCrawlWaitTip();
+  ["crawl-loader-tip", "crawl-dock-tip"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.textContent === tip) return;
+    el.classList.add("tip-fade");
+    setTimeout(() => {
+      el.textContent = tip;
+      el.classList.remove("tip-fade");
+    }, 280);
+  });
+}
+
+function startCrawlWaitAnimation() {
+  stopCrawlWaitAnimation();
+  setCrawlWaitTip(CRAWL_WAIT_TIPS[0]);
+  crawlState.tipIndex = 0;
+  crawlState.tipTimer = setInterval(() => {
+    crawlState.tipIndex = (crawlState.tipIndex + 1) % CRAWL_WAIT_TIPS.length;
+    setCrawlWaitTip(CRAWL_WAIT_TIPS[crawlState.tipIndex]);
+  }, 4500);
+}
+
+function stopCrawlWaitAnimation() {
+  if (crawlState.tipTimer) {
+    clearInterval(crawlState.tipTimer);
+    crawlState.tipTimer = null;
+  }
+}
+
+function resetCrawlFeed() {
+  crawlFeedState.seenMessages = new Set();
+  crawlFeedState.seenLogIds = new Set();
+  const feed = document.getElementById("crawl-loader-feed");
+  if (feed) feed.innerHTML = "";
+}
+
+function formatCrawlLogLine(log) {
+  const msg = log.message || "";
+  switch (log.status) {
+    case "ok":
+      return `Prospect enregistré — ${msg}`;
+    case "duplicate":
+      return `Doublon — ${msg}`;
+    case "incomplete":
+      return `Annonce incomplète — ${msg}`;
+    case "error":
+      return `Erreur — ${msg}`;
+    case "completed":
+      return msg;
+    case "updated":
+      return `Mis à jour — ${msg}`;
+    case "verify_failed":
+      return `Vérification refusée — ${msg}`;
+    case "withdrawn":
+      return `Retiré du radar — ${msg}`;
+    case "rejected":
+      return msg.startsWith("Annonce") ? msg : `Rejeté — ${msg}`;
+    default:
+      return msg;
+  }
+}
+
+function crawlLogFeedType(status) {
+  if (status === "ok" || status === "updated") return "ok";
+  if (
+    status === "verify_failed" ||
+    status === "rejected" ||
+    status === "withdrawn" ||
+    status === "skip_url"
+  ) {
+    return "warn";
+  }
+  if (status === "duplicate" || status === "incomplete") return "warn";
+  if (status === "error") return "error";
+  return "step";
+}
+
+function setLeadsLiveIndicator(on) {
+  const el = document.getElementById("leads-live-indicator");
+  if (el) el.hidden = !on;
+}
+
+function scheduleLeadsRefreshDuringCrawl(job) {
+  if (crawlState.leadsRefreshTimer) return;
+  crawlState.leadsRefreshTimer = setTimeout(async () => {
+    crawlState.leadsRefreshTimer = null;
+    await refreshLeadsDuringCrawl(job);
+  }, 700);
+}
+
+async function refreshLeadsDuringCrawl(job) {
+  try {
+    crawlState.lastJob = job || crawlState.lastJob;
+    const prevCount = LEADS.length;
+    const prevFp = leadsDataFingerprint(LEADS);
+    const [leads, sources] = await Promise.all([api("/leads"), api("/sources")]);
+    const fp = leadsDataFingerprint(leads);
+    const changed = fp !== prevFp || leads.length !== prevCount;
+
+    LEADS = leads;
+    SOURCES = sources;
+    crawlState.lastLeadCount = leads.length;
+    updateSourceCardsLive(crawlState.lastJob);
+    updateCrawlerSummary();
+
+    if (!changed) return;
+
+    const added = Math.max(0, leads.length - prevCount);
+
+    RADAR = await fetchRadarBriefing().catch(() => RADAR);
+    await refreshStats();
+    updateSidebarCount();
+    updateBadges();
+
+    if (state.currentView === "leads") {
+      renderLeads();
+      document.getElementById("leads-table-wrapper")?.classList.add("leads-live-flash");
+      setTimeout(
+        () => document.getElementById("leads-table-wrapper")?.classList.remove("leads-live-flash"),
+        600,
+      );
+    } else if (state.currentView === "dashboard") {
+      renderDashboardTopLeads();
+      renderRadarBriefing();
+      renderStats();
+    } else if (state.currentView === "pipeline") {
+      renderPipeline();
+    }
+
+    renderStats();
+    renderActivity();
+
+    if (added > 0) {
+      appendCrawlFeedLine(
+        `+${added} prospect(s) ajouté(s) — total ${leads.length}`,
+        "ok",
+      );
+      if (state.currentView !== "leads" && added > 0) {
+        showToast(`${added} nouveau(x) prospect(s) — voir Prospects`, "success", 3500);
+      }
+    }
+
+    if (job) {
+      crawlState.lastSavedCount = job.leads_saved || 0;
+      crawlState.lastFoundCount = job.leads_found || 0;
+    }
+  } catch {
+    /* ignore transient errors during crawl */
+  }
+}
+
+function appendCrawlFeedLine(text, type = "step") {
+  if (!text || crawlFeedState.seenMessages.has(text)) return;
+  crawlFeedState.seenMessages.add(text);
+
+  const feed = document.getElementById("crawl-loader-feed");
+  if (!feed) return;
+
+  const li = document.createElement("li");
+  li.className = `feed-${type} feed-enter`;
+  li.innerHTML = `<span class="feed-dot" aria-hidden="true"></span><span>${escapeHtml(text)}</span>`;
+  feed.appendChild(li);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const LEAD_ICON_EXTERNAL = `<svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>`;
+const LEAD_ICON_REFRESH = `<svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+
+function getLeadListingLinkHtml(lead, label = "Voir") {
+  const url = (lead.source_url || "").trim();
+  if (!url) {
+    return `<span class="btn btn-view-listing btn-sm is-disabled" title="URL d'annonce indisponible">${LEAD_ICON_EXTERNAL}<span>${label}</span></span>`;
+  }
+  return `<a href="${escapeHtml(url)}" class="btn btn-view-listing btn-sm" target="_blank" rel="noopener noreferrer" title="Ouvrir l'annonce sur le portail" onclick="event.stopPropagation()">${LEAD_ICON_EXTERNAL}<span>${label}</span></a>`;
+}
+
+function getLeadRefreshButtonHtml(lead) {
+  const url = (lead.source_url || "").trim();
+  if (!url) return "";
+  return `<button type="button" class="btn btn-recrawl btn-sm lead-refresh-btn" data-id="${lead.id}" title="Recrawler l'annonce sur le portail" onclick="event.stopPropagation()">${LEAD_ICON_REFRESH}<span>Recrawler</span></button>`;
+}
+
+function getLeadActionsHtml(lead) {
+  const view = getLeadListingLinkHtml(lead);
+  const refresh = getLeadRefreshButtonHtml(lead);
+  if (!refresh && view.includes("is-disabled")) {
+    return `<div class="lead-actions-group">${view}</div>`;
+  }
+  return `<div class="lead-actions-group">${view}${refresh}</div>`;
+}
+
+const DRAWER_EDIT_FIELD_DEFS = [
+  { key: "first_name", label: "Prénom", type: "text", get: (l) => l.first_name || "" },
+  { key: "last_name", label: "Nom", type: "text", get: (l) => l.last_name || "" },
+  { key: "phone", label: "Téléphone", type: "tel", get: (l) => (l.phone && l.phone !== "—" ? l.phone : "") },
+  { key: "email", label: "Email", type: "email", get: (l) => (l.email && l.email !== "—" ? l.email : "") },
+  { key: "address", label: "Adresse", type: "text", get: (l) => (l.address && l.address !== "—" ? l.address : "") },
+  { key: "city", label: "Ville", type: "text", get: (l) => l.city || "" },
+  { key: "postcode", label: "Code postal", type: "text", get: (l) => l.postcode || "" },
+  { key: "surface", label: "Surface (m²)", type: "number", get: (l) => (l.surface != null ? l.surface : "") },
+  { key: "price", label: "Prix (€)", type: "number", get: (l) => (l.price ? l.price : "") },
+  { key: "type", label: "Type annonceur", type: "select", options: ["particulier", "agence"], get: (l) => l.type || "particulier" },
+  { key: "agency", label: "Nom agence", type: "text", get: (l) => l.agency || "", when: (l) => l.type === "agence" },
+  { key: "source_url", label: "Lien annonce", type: "url", get: (l) => l.source_url || "" },
+  { key: "notes", label: "Notes", type: "textarea", get: (l) => l.notes || "" },
+];
+
+function isDrawerFieldEmpty(lead, key) {
+  const missing = new Set(lead.missing_fields || []);
+  if (missing.has(key)) return true;
+  switch (key) {
+    case "phone":
+    case "email":
+    case "address":
+      return !lead[key] || lead[key] === "—";
+    case "surface":
+      return lead.surface == null || lead.surface <= 0;
+    case "price":
+      return !lead.price;
+    case "first_name":
+    case "last_name":
+      return !(lead[key] || "").trim();
+    case "source_url":
+      return !(lead.source_url || "").trim();
+    default:
+      return !(lead[key] || "").toString().trim();
+  }
+}
+
+function renderDrawerEditFieldInput(def, lead) {
+  const val = def.get(lead);
+  const missing = isDrawerFieldEmpty(lead, def.key);
+  const cls = `drawer-edit-input${missing ? " is-missing" : ""}`;
+  if (def.type === "select") {
+    const opts = (def.options || []).map(
+      (o) => `<option value="${o}"${val === o ? " selected" : ""}>${o === "agence" ? "Agence" : "Particulier"}</option>`,
+    );
+    return `<select class="${cls}" data-field="${def.key}" id="drawer-field-${def.key}">${opts.join("")}</select>`;
+  }
+  if (def.type === "textarea") {
+    return `<textarea class="${cls}" data-field="${def.key}" id="drawer-field-${def.key}" rows="2" placeholder="${missing ? "À compléter" : ""}">${escapeHtml(val)}</textarea>`;
+  }
+  return `<input class="${cls}" type="${def.type}" data-field="${def.key}" id="drawer-field-${def.key}" value="${escapeAttr(String(val))}" placeholder="${missing ? "À compléter" : ""}">`;
+}
+
+function renderDrawerEditSection(lead) {
+  const defs = DRAWER_EDIT_FIELD_DEFS.filter((d) => !d.when || d.when(lead));
+  const visible = state.drawerShowAllFields
+    ? defs
+    : defs.filter((d) => isDrawerFieldEmpty(lead, d.key));
+  const missingCount = defs.filter((d) => isDrawerFieldEmpty(lead, d.key)).length;
+
+  let fieldsHtml = "";
+  if (!visible.length) {
+    fieldsHtml = `<p class="drawer-edit-empty">Tous les champs principaux sont renseignés. Utilisez « Tous les champs » pour modifier.</p>`;
+  } else {
+    fieldsHtml = visible
+      .map(
+        (d) => `
+      <label class="drawer-edit-field${isDrawerFieldEmpty(lead, d.key) ? " is-missing" : ""}">
+        <span class="drawer-edit-label">${escapeHtml(d.label)}${isDrawerFieldEmpty(lead, d.key) ? ' <em class="drawer-missing-tag">manquant</em>' : ""}</span>
+        ${renderDrawerEditFieldInput(d, lead)}
+      </label>`,
+      )
+      .join("");
+  }
+
+  return `
+    <div class="drawer-section drawer-edit-section">
+      <div class="drawer-section-head">
+        <span class="drawer-section-title">Compléter la fiche</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawer-toggle-all-fields">
+          ${state.drawerShowAllFields ? "Champs manquants seulement" : "Tous les champs"}
+        </button>
+      </div>
+      ${missingCount ? `<p class="drawer-edit-hint">${missingCount} champ${missingCount > 1 ? "s" : ""} à compléter — saisissez puis enregistrez.</p>` : ""}
+      <form id="drawer-edit-form" class="drawer-edit-form" onsubmit="return false">${fieldsHtml}</form>
+      <button type="button" class="btn btn-secondary btn-sm" id="drawer-save-fields-btn">Enregistrer les modifications</button>
+    </div>`;
+}
+
+function bindDrawerEditHandlers(lead) {
+  document.getElementById("drawer-toggle-all-fields")?.addEventListener("click", () => {
+    state.drawerShowAllFields = !state.drawerShowAllFields;
+    const section = document.querySelector(".drawer-edit-section");
+    if (section) {
+      section.outerHTML = renderDrawerEditSection(lead);
+      bindDrawerEditHandlers(lead);
+    }
+  });
+
+  document.getElementById("drawer-save-fields-btn")?.addEventListener("click", () => {
+    saveDrawerLeadFields(lead.id).catch((err) => showToast(err.message, "error"));
+  });
+
+  document.getElementById("drawer-field-type")?.addEventListener("change", (e) => {
+    const current = LEADS.find((l) => l.id === lead.id) || lead;
+    const merged = { ...current, type: e.target.value };
+    const section = document.querySelector(".drawer-edit-section");
+    if (section) {
+      section.outerHTML = renderDrawerEditSection(merged);
+      bindDrawerEditHandlers(merged);
+    }
+  });
+}
+
+async function saveDrawerLeadFields(leadId) {
+  const form = document.getElementById("drawer-edit-form");
+  if (!form) return;
+  const payload = {};
+  form.querySelectorAll("[data-field]").forEach((el) => {
+    const key = el.dataset.field;
+    if (!key) return;
+    payload[key] = el.value;
+  });
+  const btn = document.getElementById("drawer-save-fields-btn");
+  if (btn) btn.disabled = true;
+  try {
+    const result = await api(`/leads/${leadId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const prev = LEADS.find((l) => l.id === leadId);
+    if (result.lead) {
+      const idx = LEADS.findIndex((l) => l.id === leadId);
+      if (idx >= 0) LEADS[idx] = result.lead;
+      applyLeadLiveUpdate(result.lead, prev);
+      state.selectedLead = result.lead;
+      const section = document.querySelector(".drawer-edit-section");
+      if (section) {
+        section.outerHTML = renderDrawerEditSection(result.lead);
+        bindDrawerEditHandlers(result.lead);
+      }
+      patchDrawerLeadFields(result.lead, prev);
+      renderLeads();
+      showToast("Fiche enregistrée", "success");
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+const leadRefreshState = {
+  busy: false,
+  leadId: null,
+  jobId: null,
+  seenLogs: new Set(),
+  lastFingerprint: "",
+};
+
+const LEAD_REFRESH_FIELD_DEFS = [
+  { key: "price", label: "Prix", has: (l) => !!l.price },
+  { key: "surface", label: "Surface", has: (l) => l.surface != null && l.surface > 0 },
+  { key: "phone", label: "Tél.", has: (l) => l.phone && l.phone !== "—" },
+  { key: "email", label: "Email", has: (l) => l.email && l.email !== "—" },
+  { key: "address", label: "Adresse", has: (l) => l.address && l.address !== "—" },
+];
+
+function leadLiveFingerprint(lead) {
+  if (!lead) return "";
+  return [
+    lead.id,
+    lead.updated_at || "",
+    lead.price || 0,
+    lead.surface || 0,
+    lead.phone || "",
+    lead.email || "",
+    lead.score || 0,
+    lead.address || "",
+  ].join("|");
+}
+
+function resolveLeadRefreshId(btn) {
+  const raw = btn?.dataset?.id ?? state.selectedLead?.id;
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function findLeadById(leadId) {
+  const id = Number(leadId);
+  return LEADS.find((l) => Number(l.id) === id) || null;
+}
+
+function setupLeadRefresh() {
+  if (setupLeadRefresh._wired) return;
+  setupLeadRefresh._wired = true;
+  leadRefreshState.busy = false;
+
+  document.addEventListener(
+    "click",
+    (e) => {
+      const btn = e.target.closest(".lead-refresh-btn, #drawer-refresh-lead-btn");
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      const id = resolveLeadRefreshId(btn);
+      if (!id) {
+        showToast("Fiche prospect introuvable — rouvrez le prospect", "warning");
+        return;
+      }
+      refreshLeadDeep(id);
+    },
+    true,
+  );
+}
+
+function showLeadRefreshPanel(leadId) {
+  const panel = document.getElementById("lead-refresh-panel");
+  const drawer = document.getElementById("lead-drawer");
+  if (!panel) return;
+  panel.hidden = false;
+  drawer?.classList.add("lead-drawer--refreshing");
+  setLeadsLiveIndicator(true);
+  updateLeadRefreshProgress(12, "Lancement du recrawl…");
+  renderLeadRefreshFieldChips(findLeadById(leadId), null);
+  appendLeadRefreshFeedLine("Connexion au portail immobilier…");
+  markLeadRowRefreshing(leadId, true);
+}
+
+function hideLeadRefreshPanel(leadId) {
+  const panel = document.getElementById("lead-refresh-panel");
+  const drawer = document.getElementById("lead-drawer");
+  panel && (panel.hidden = true);
+  drawer?.classList.remove("lead-drawer--refreshing");
+  if (!crawlState.active) setLeadsLiveIndicator(false);
+  const feed = document.getElementById("lead-refresh-feed");
+  if (feed) feed.innerHTML = "";
+  if (leadId) markLeadRowRefreshing(leadId, false);
+  leadRefreshState.seenLogs.clear();
+}
+
+function showLeadRefreshDock(label) {
+  const title = `Mise à jour — ${label}`;
+  document.getElementById("crawl-dock-title").textContent = title;
+  document.getElementById("crawl-dock-step").textContent = "Lancement du recrawl…";
+  document.getElementById("crawl-dock-fill").style.width = "8%";
+  document.getElementById("crawl-dock-pct").textContent = "8%";
+  document.getElementById("crawl-dock")?.classList.add("open");
+  setLeadsLiveIndicator(true);
+}
+
+function hideLeadRefreshDock() {
+  if (!crawlState.active) {
+    document.getElementById("crawl-dock")?.classList.remove("open");
+    setLeadsLiveIndicator(false);
+  }
+}
+
+function syncLeadRefreshDock(job) {
+  const pct = job.progress || 0;
+  document.getElementById("crawl-dock-step").textContent = job.message || "…";
+  document.getElementById("crawl-dock-fill").style.width = `${pct}%`;
+  document.getElementById("crawl-dock-pct").textContent = `${pct}%`;
+  setCrawlStat("cds-analyzed", job.listings_done || 0);
+  setCrawlStat("cds-verified", job.leads_found || 0);
+  setCrawlStat("cds-new", job.leads_saved || 0);
+}
+
+function updateLeadRefreshProgress(pct, message) {
+  const fill = document.getElementById("lead-refresh-bar-fill");
+  const step = document.getElementById("lead-refresh-step");
+  const bar = document.querySelector(".lead-refresh-bar");
+  const n = Math.min(100, Math.max(4, pct || 0));
+  if (fill) fill.style.width = `${n}%`;
+  if (bar) {
+    bar.setAttribute("aria-valuenow", String(Math.round(n)));
+    bar.setAttribute("aria-valuetext", message || "");
+  }
+  if (step && message) step.textContent = message;
+}
+
+function appendLeadRefreshFeedLine(text) {
+  const feed = document.getElementById("lead-refresh-feed");
+  if (!feed || !text || leadRefreshState.seenLogs.has(text)) return;
+  leadRefreshState.seenLogs.add(text);
+  const li = document.createElement("li");
+  li.textContent = text;
+  feed.appendChild(li);
+  while (feed.children.length > 6) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function renderLeadRefreshFieldChips(lead, prevLead) {
+  const box = document.getElementById("lead-refresh-fields");
+  if (!box) return;
+  box.innerHTML = LEAD_REFRESH_FIELD_DEFS.map((def) => {
+    const filled = lead && def.has(lead);
+    const wasFilled = prevLead && def.has(prevLead);
+    let cls = "lead-refresh-chip";
+    if (!filled) cls += " is-pending";
+    else if (!wasFilled && filled) cls += " is-done is-new";
+    else if (leadRefreshState.busy) cls += " is-active";
+    else cls += " is-done";
+    const val =
+      def.key === "price" && filled
+        ? formatPrice(lead)
+        : def.key === "surface" && filled
+          ? `${lead.surface} m²`
+          : "";
+    return `<span class="${cls}" data-chip="${def.key}">${def.label}${val ? ` · ${escapeHtml(val)}` : ""}</span>`;
+  }).join("");
+}
+
+function markLeadRowRefreshing(leadId, on) {
+  document.querySelector(`tr[data-id="${leadId}"]`)?.classList.toggle("lead-row-refreshing", on);
+  document.querySelector(`.lead-card[data-id="${leadId}"]`)?.classList.toggle("lead-card-refreshing", on);
+}
+
+function patchDrawerLeadFields(lead, prevLead) {
+  if (!lead || Number(state.selectedLead?.id) !== Number(lead.id)) return;
+  const fieldFormatters = {
+    price: (l) => `${formatPrice(l)} ${getTransactionBadge(l)}`,
+    surface: (l) => (l.surface ? `${l.surface} m²` : "—"),
+    phone: (l) => l.phone || "—",
+    email: (l) => l.email || "—",
+    owner: (l) => escapeHtml(l.owner || "—"),
+    address: (l) => escapeHtml(l.address || "—"),
+    score: (l) =>
+      `<span class="score-pill ${getScoreClass(l.score || 0)}">${l.score || 0}/100</span>`,
+  };
+  for (const [key, fmt] of Object.entries(fieldFormatters)) {
+    const el = document.querySelector(`[data-drawer-field="${key}"] .drawer-live-value`);
+    if (!el) continue;
+    const nextHtml = fmt(lead);
+    if (el.innerHTML === nextHtml) continue;
+    const prevHtml = prevLead ? fmt(prevLead) : null;
+    el.innerHTML = nextHtml;
+    if (!prevLead || prevHtml !== nextHtml) {
+      el.closest(".detail-row")?.classList.add("drawer-field-flash");
+      setTimeout(() => el.closest(".detail-row")?.classList.remove("drawer-field-flash"), 900);
+    }
+  }
+  const title = document.getElementById("drawer-title");
+  if (title) {
+    title.textContent = lead.property_title || lead.listing_title || lead.address || title.textContent;
+  }
+}
+
+function patchLeadRowInList(lead, prevLead) {
+  const row = document.querySelector(`tr[data-id="${lead.id}"]`);
+  if (row) {
+    const priceEl = row.querySelector(".price-tag");
+    if (priceEl && (!prevLead || prevLead.price !== lead.price)) {
+      priceEl.textContent = formatPrice(lead);
+      row.classList.add("lead-row-flash");
+      setTimeout(() => row.classList.remove("lead-row-flash"), 900);
+    }
+    const details = row.querySelector(".lead-property .details");
+    if (details && lead.surface && prevLead?.surface !== lead.surface) {
+      const base = escapeHtml(lead.property_detail || lead.property || "");
+      details.textContent = `${base} · Publié ${formatPublishedDate(lead)}`;
+    }
+  }
+  const card = document.querySelector(`.lead-card[data-id="${lead.id}"]`);
+  if (card) {
+    const meta = card.querySelector(".property-meta");
+    if (meta) {
+      meta.innerHTML = `${escapeHtml(lead.property_detail || lead.property)} · ${formatPrice(lead)} ${getTransactionBadge(lead)}`;
+    }
+  }
+}
+
+function applyLeadLiveUpdate(lead, prevLead) {
+  const idx = LEADS.findIndex((l) => l.id === lead.id);
+  if (idx >= 0) LEADS[idx] = lead;
+  state.selectedLead = lead;
+  patchDrawerLeadFields(lead, prevLead);
+  patchLeadRowInList(lead, prevLead);
+  renderLeadRefreshFieldChips(lead, prevLead);
+}
+
+async function fetchLeadSnapshot(leadId) {
+  try {
+    return await api(`/leads/${leadId}`);
+  } catch {
+    return findLeadById(leadId);
+  }
+}
+
+async function startLeadRefreshJob(leadId) {
+  const id = Number(leadId);
+  const attempts = [
+    { path: `/crawler/leads/${id}/refresh`, body: null },
+    { path: `/crawler/refresh-lead/${id}`, body: null },
+    { path: `/leads/${id}/refresh`, body: null },
+    { path: "/leads/refresh", body: JSON.stringify({ lead_id: id }) },
+  ];
+  let lastErr = null;
+  for (const { path, body } of attempts) {
+    try {
+      return await api(path, {
+        method: "POST",
+        ...(body ? { body } : {}),
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!/404|introuvable|Route API|Not Found/i.test(err.message || "")) {
+        throw err;
+      }
+    }
+  }
+  throw (
+    lastErr ||
+    new Error(
+      "Mise à jour indisponible — fermez le terminal Veliora (Ctrl+C), relancez demarrer.bat, puis Ctrl+F5 sur le CRM.",
+    )
+  );
+}
+
+async function checkServerLeadRefreshCapability() {
+  try {
+    const health = await api("/health");
+    state.serverLeadRefresh = !!health.lead_refresh;
+    state.serverApiVersion = health.api_version;
+    if (!health.lead_refresh) {
+      showStaleServerBanner(
+        "Serveur Veliora obsolète — le bouton « Mettre à jour » nécessite api_version 7. " +
+          "Ctrl+C dans le terminal, puis double-clic sur demarrer.bat.",
+      );
+    } else {
+      hideStaleServerBanner();
+    }
+  } catch {
+    state.serverLeadRefresh = null;
+  }
+}
+
+function showStaleServerBanner(message) {
+  let el = document.getElementById("server-stale-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "server-stale-banner";
+    el.className = "server-warning-banner";
+    el.style.background = "#92400e";
+    document.body.prepend(el);
+  }
+  el.innerHTML = `<strong>Mise à jour requise</strong> — ${escapeHtml(message)}`;
+  el.hidden = false;
+}
+
+function hideStaleServerBanner() {
+  const el = document.getElementById("server-stale-banner");
+  if (el) el.hidden = true;
+}
+
+function ingestJobLogs(job) {
+  const logs = job.logs || [];
+  for (const entry of logs.slice(-4)) {
+    const msg = entry.message || entry.status || "";
+    if (msg) appendLeadRefreshFeedLine(msg);
+  }
+}
+
+function setLeadRefreshButtonsLoading(loading, leadId) {
+  document.querySelectorAll(".lead-refresh-btn, #drawer-refresh-lead-btn").forEach((btn) => {
+    const match = !leadId || btn.id === "drawer-refresh-lead-btn" || parseInt(btn.dataset.id, 10) === leadId;
+    if (!match) return;
+    btn.disabled = loading;
+    btn.classList.toggle("is-loading", loading);
+    if (!btn.dataset.refreshLabel) btn.dataset.refreshLabel = btn.textContent.trim();
+    btn.textContent = loading ? "Mise à jour…" : btn.dataset.refreshLabel;
+  });
+}
+
+async function pollLeadRefreshJob(jobId, leadId, initialLead) {
+  const maxAttempts = 120;
+  let prevLead = initialLead;
+  let lastProgress = 8;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const [job, lead] = await Promise.all([
+      api(i % 2 === 0 ? `/crawler/jobs/${jobId}` : `/crawler/jobs/${jobId}?lite=1`),
+      fetchLeadSnapshot(leadId),
+    ]);
+
+    if (job.message) {
+      updateLeadRefreshProgress(job.progress || lastProgress, job.message);
+      lastProgress = job.progress || lastProgress;
+    }
+    syncLeadRefreshDock(job);
+    ingestJobLogs(job);
+
+    if (lead) {
+      const fp = leadLiveFingerprint(lead);
+      if (fp !== leadRefreshState.lastFingerprint) {
+        applyLeadLiveUpdate(lead, prevLead);
+        leadRefreshState.lastFingerprint = fp;
+        if (prevLead && fp !== leadLiveFingerprint(prevLead)) {
+          appendLeadRefreshFeedLine("Données mises à jour en direct");
+        }
+        prevLead = lead;
+      }
+    }
+
+    if (job.status === "completed") {
+      updateLeadRefreshProgress(100, job.message || "Terminé");
+      if (Array.isArray(job.leads)) {
+        LEADS = job.leads;
+        const fresh = job.leads.find((l) => Number(l.id) === Number(leadId));
+        if (fresh) applyLeadLiveUpdate(fresh, prevLead);
+      }
+      return job;
+    }
+    if (job.status === "failed" || job.status === "cancelled") {
+      throw new Error(job.errors?.[0]?.message || job.message || "Échec de la mise à jour");
+    }
+
+    await new Promise((r) => setTimeout(r, 650));
+  }
+  throw new Error("Délai dépassé — réessayez dans un instant");
+}
+
+async function refreshLeadDeep(leadId) {
+  const id = Number(leadId);
+  if (!Number.isFinite(id) || id <= 0) {
+    showToast("Identifiant prospect invalide", "error");
+    return;
+  }
+  if (leadRefreshState.busy) {
+    showToast("Une mise à jour est déjà en cours…", "warning");
+    return;
+  }
+  let lead = findLeadById(id);
+  if (!lead) {
+    try {
+      lead = await fetchLeadSnapshot(id);
+      if (lead) {
+        const idx = LEADS.findIndex((l) => Number(l.id) === id);
+        if (idx >= 0) LEADS[idx] = lead;
+        else LEADS.push(lead);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!lead) {
+    showToast("Prospect introuvable", "error");
+    return;
+  }
+  if (!(lead.source_url || "").trim()) {
+    showToast("Ce prospect n'a pas de lien d'annonce", "warning");
+    return;
+  }
+
+  if (crawlState.active) {
+    showToast("Un crawl est déjà en cours — attendez la fin ou annulez-le", "warning");
+    return;
+  }
+
+  leadRefreshState.busy = true;
+  leadRefreshState.leadId = id;
+  leadRefreshState.lastFingerprint = leadLiveFingerprint(lead);
+
+  const label = lead.owner || lead.property_title || "Prospect";
+  const drawerOpen =
+    state.selectedLead?.id != null && Number(state.selectedLead.id) === id;
+
+  if (drawerOpen) showLeadRefreshPanel(id);
+  showLeadRefreshDock(label);
+  markLeadRowRefreshing(id, true);
+  setLeadRefreshButtonsLoading(true, id);
+  showToast(`Recrawl lancé — ${label}`, "info", 2800);
+
+  void (async () => {
+    try {
+      const start = await startLeadRefreshJob(id);
+      const jobId = start.job_id || start.job?.id;
+      if (!jobId) throw new Error("Impossible de lancer la mise à jour");
+      leadRefreshState.jobId = jobId;
+
+      appendLeadRefreshFeedLine("Crawl navigateur démarré…");
+      const job = await pollLeadRefreshJob(jobId, id, lead);
+
+      await refreshAppData();
+      const updated = findLeadById(id) || (await fetchLeadSnapshot(id));
+      if (updated) {
+        applyLeadLiveUpdate(updated, lead);
+        if (drawerOpen && Number(state.selectedLead?.id) === id) {
+          patchDrawerLeadFields(updated, lead);
+        }
+      }
+
+      if (job.leads_updated > 0) {
+        showToast(`${label} — prospect mis à jour`, "success", 5000);
+      } else if (job.warnings?.length) {
+        showToast(job.warnings.map((w) => w.message).join(" · "), "warning", 6000);
+      } else if (job.errors?.length) {
+        showToast(job.errors[0].message, "warning", 6000);
+      } else {
+        showToast(`${label} — recrawl terminé`, "info", 4000);
+      }
+    } catch (err) {
+      showToast(err.message || "Erreur mise à jour", "error", 8000);
+      appendLeadRefreshFeedLine(err.message || "Erreur");
+    } finally {
+      leadRefreshState.busy = false;
+      leadRefreshState.jobId = null;
+      setLeadRefreshButtonsLoading(false, id);
+      hideLeadRefreshPanel(id);
+      hideLeadRefreshDock();
+      markLeadRowRefreshing(id, false);
+    }
+  })();
+}
+
+function setCrawlLoaderStep(message) {
+  const step = document.getElementById("crawl-loader-step");
+  const textEl = document.getElementById("crawl-loader-step-text") || step;
+  if (!textEl) return;
+  const text = message || "…";
+  if (textEl.textContent !== text) {
+    textEl.textContent = text;
+    if (step) {
+      step.classList.remove("pulse");
+      void step.offsetWidth;
+      step.classList.add("pulse");
+    }
+    appendCrawlFeedLine(text, "step");
+  }
+}
+
+// Déduit le site et le détail (annonce) en cours à partir du message serveur.
+const CRAWL_SITE_RE = /(?:Site\s+\d+\/\d+\s+[—-]\s+|—\s+)([A-Za-zÀ-ÿ'’.\s]+?)(?:…|\.\.\.|$|—)/;
+function updateCrawlTarget(job) {
+  const msg = job?.message || "";
+  const siteEl = document.getElementById("crawl-loader-site");
+  const detailEl = document.getElementById("crawl-loader-detail");
+  if (!siteEl || !detailEl) return;
+
+  let site = "";
+  const mSite = msg.match(/Site\s+\d+\/\d+\s+[—-]\s+([^…—]+)/);
+  if (mSite) site = mSite[1].trim();
+  else if (job?.source_id) site = String(job.source_id).split("_").pop();
+
+  const mAnn = msg.match(/Annonce\s+(\d+)\/(\d+)/);
+  let detail = "";
+  if (mAnn) detail = `Annonce ${mAnn[1]}/${mAnn[2]}`;
+  const mPath = msg.match(/«\s*([^»]+?)\s*»/);
+  if (mPath) detail = (detail ? detail + " · " : "") + mPath[1];
+
+  if (site) {
+    siteEl.textContent = site;
+    siteEl.hidden = false;
+  } else {
+    siteEl.hidden = true;
+  }
+  detailEl.textContent = detail;
+  updateCrawlActivity(job, site, detail);
+}
+
+// Vue d'activité live : déduit la phase (scroll / clic / extraction / vérif / dvf)
+// à partir du message serveur et anime le mini-navigateur en conséquence.
+function crawlActivityPhase(msg) {
+  const m = (msg || "").toLowerCase();
+  if (/dvf|comparatif/.test(m)) return ["dvf", "Comparatif DVF"];
+  if (/v[ée]rif|contr[ôo]le qualit|rejet|incohér/.test(m)) return ["verify", "Vérification des données"];
+  if (/extraction|champs|coordonn/.test(m)) return ["extract", "Extraction des champs"];
+  if (/t[ée]l[ée]phone|num[ée]ro|contact|clic/.test(m)) return ["click", "Affichage du numéro"];
+  if (/annonce|lecture|chargement de l/.test(m)) return ["scroll", "Lecture de l'annonce"];
+  if (/exploration|page|recherche|parcour/.test(m)) return ["scroll", "Parcours des pages"];
+  if (/session|s[ée]curis|échauff|ouverture|pr[ée]paration|d[ée]marrage/.test(m)) return ["loading", "Connexion au site"];
+  return ["loading", "Travail en cours"];
+}
+
+function updateCrawlActivity(job, site, detail) {
+  const panel = document.getElementById("crawl-activity");
+  if (!panel) return;
+  const [phase, label] = crawlActivityPhase(job?.message || "");
+  if (panel.dataset.phase !== phase) panel.dataset.phase = phase;
+  const phaseEl = document.getElementById("crawl-activity-phase");
+  if (phaseEl) phaseEl.textContent = label;
+  const urlEl = document.getElementById("crawl-activity-url");
+  if (urlEl) {
+    const host = site ? site.toLowerCase().replace(/\s+/g, "") : "site";
+    urlEl.textContent = detail ? `${host} › ${detail}` : (job?.message || host).slice(0, 60);
+  }
+}
+
+// ─── Heatmap réel : captures live de la page que crawle le bot ───
+let liveFrameTimer = null;
+let liveFrameMisses = 0;
+let liveFrameObjUrl = null;
+
+function hideLiveFrame() {
+  const img = document.getElementById("crawl-activity-img");
+  const panel = document.getElementById("crawl-activity");
+  const badge = document.getElementById("crawl-activity-live");
+  if (img) {
+    img.hidden = true;
+    img.removeAttribute("src");
+  }
+  panel?.classList.remove("has-live");
+  if (badge) badge.hidden = true;
+}
+
+function startLiveFramePolling() {
+  stopLiveFramePolling();
+  liveFrameMisses = 0;
+  const tick = async () => {
+    if (!crawlState.active) return;
+    try {
+      const res = await fetch(`${API}/crawler/live-frame`, {
+        headers: getAuthHeaders(),
+        cache: "no-store",
+      });
+      if (res.status === 200) {
+        const blob = await res.blob();
+        if (blob && blob.size > 0) {
+          const img = document.getElementById("crawl-activity-img");
+          const url = URL.createObjectURL(blob);
+          if (img) {
+            const prev = liveFrameObjUrl;
+            img.onload = () => {
+              if (prev) URL.revokeObjectURL(prev);
+            };
+            liveFrameObjUrl = url;
+            img.src = url;
+            img.hidden = false;
+          }
+          document.getElementById("crawl-activity")?.classList.add("has-live");
+          const badge = document.getElementById("crawl-activity-live");
+          if (badge) badge.hidden = false;
+          liveFrameMisses = 0;
+        }
+      } else {
+        liveFrameMisses += 1;
+      }
+    } catch {
+      liveFrameMisses += 1;
+    }
+    if (liveFrameMisses >= 5) hideLiveFrame();
+    if (crawlState.active) liveFrameTimer = setTimeout(tick, 1200);
+  };
+  liveFrameTimer = setTimeout(tick, 700);
+}
+
+function stopLiveFramePolling() {
+  if (liveFrameTimer) {
+    clearTimeout(liveFrameTimer);
+    liveFrameTimer = null;
+  }
+  hideLiveFrame();
+  if (liveFrameObjUrl) {
+    URL.revokeObjectURL(liveFrameObjUrl);
+    liveFrameObjUrl = null;
+  }
+}
+
+function ingestCrawlJobLogs(logs) {
+  if (!Array.isArray(logs)) return;
+  for (const log of logs) {
+    if (!log.id || crawlFeedState.seenLogIds.has(log.id)) continue;
+    crawlFeedState.seenLogIds.add(log.id);
+    const line = formatCrawlLogLine(log);
+    appendCrawlFeedLine(line, crawlLogFeedType(log.status));
+  }
+}
+
+function updateCrawlLoaderUI(job, title) {
+  crawlState.lastJob = job;
+  if (job?.source_id) crawlState.sourceId = job.source_id;
+  if (!crawlState.minimized) {
+    document.getElementById("crawl-loader")?.classList.add("open");
+  }
+  document.getElementById("crawl-loader-title").textContent = title;
+  document.getElementById("crawl-dock-title").textContent = title;
+  setCrawlLoaderStep(job.message || "Traitement…");
+  document.getElementById("crawl-dock-step").textContent = job.message || "…";
+  updateCrawlTarget(job);
+  ingestCrawlJobLogs(job.logs);
+  const progress = job.progress || 0;
+  document.getElementById("crawl-loader-fill").style.width = `${progress}%`;
+  document.getElementById("crawl-loader-pct").textContent = `${progress}%`;
+  document.getElementById("crawl-dock-fill").style.width = `${progress}%`;
+  document.getElementById("crawl-dock-pct").textContent = `${progress}%`;
+  updateCrawlStats(job);
+  updateEtaDisplay(job);
+  updateSourceCardsLive(job);
+}
+
+function setCrawlStat(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const next = Number(value || 0);
+  if (el._val === next) return;
+  el._val = next;
+  el.textContent = next;
+  el.classList.remove("bump");
+  void el.offsetWidth; // relance l'animation
+  el.classList.add("bump");
+}
+
+function updateCrawlStats(job) {
+  const analyzed = job.listings_done || 0;
+  const verified = job.leads_found || 0;
+  const created = job.leads_saved || 0;
+  const updated = job.leads_updated || 0;
+  setCrawlStat("cls-analyzed", analyzed);
+  setCrawlStat("cls-verified", verified);
+  setCrawlStat("cls-new", created);
+  setCrawlStat("cls-updated", updated);
+  setCrawlStat("cds-analyzed", analyzed);
+  setCrawlStat("cds-verified", verified);
+  setCrawlStat("cds-new", created);
+}
+
+function showCrawlLoader(title, message, progress) {
+  resetCrawlFeed();
+  crawlState.minimized = false;
+  crawlState.lastSavedCount = 0;
+  crawlState.lastFoundCount = 0;
+  crawlState.lastLeadCount = LEADS.length;
+  setLeadsLiveIndicator(true);
+  document.getElementById("crawl-loader")?.classList.remove("minimized");
+  document.getElementById("crawl-dock")?.classList.remove("open");
+  updateCrawlLoaderUI({ message, progress, logs: [] }, title);
+  crawlState.active = true;
+  startCrawlWaitAnimation();
+  startLiveFramePolling();
+  state.loading = true;
+  document.querySelectorAll(".source-crawl-btn").forEach((b) => (b.disabled = true));
+}
+
+function hideCrawlLoader() {
+  crawlState.active = false;
+  crawlState.minimized = false;
+  crawlState.jobId = null;
+  crawlState.sourceId = null;
+  crawlState.lastJob = null;
+  crawlState.startedAt = null;
+  stopCrawlWaitAnimation();
+  stopLiveFramePolling();
+  setLeadsLiveIndicator(false);
+  if (crawlState.leadsRefreshTimer) {
+    clearTimeout(crawlState.leadsRefreshTimer);
+    crawlState.leadsRefreshTimer = null;
+  }
+  if (crawlState.pollTimer) {
+    clearTimeout(crawlState.pollTimer);
+    crawlState.pollTimer = null;
+  }
+  document.getElementById("crawl-loader")?.classList.remove("open", "minimized");
+  document.getElementById("crawl-dock")?.classList.remove("open");
+  state.loading = false;
+  document.querySelectorAll(".source-crawl-btn").forEach((b) => (b.disabled = false));
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
+  const now = Date.now();
+  const useLite = now - lastLogsFetch < 2500;
+  const job = await api(useLite ? `/crawler/jobs/${jobId}?lite=1` : `/crawler/jobs/${jobId}`);
+  const newFetch = !useLite || job.logs?.length ? now : lastLogsFetch;
+  const title =
+    job.status === "completed" || job.status === "failed"
+      ? `Crawl terminé — ${label}`
+      : `Crawl — ${label}`;
+  updateCrawlLoaderUI(job, title);
+  return { job, lastLogsFetch: newFetch };
+}
+
+function startCrawlPolling(jobId, label, options = {}) {
+  let networkFails = 0;
+  let lastLogsFetch = 0;
+
+  const tick = async () => {
+    if (!crawlState.active || crawlState.jobId !== jobId) return;
+
+    try {
+      const { job, lastLogsFetch: lf } = await pollCrawlJobOnce(jobId, label, lastLogsFetch);
+      lastLogsFetch = lf;
+      networkFails = 0;
+
+      const savedDelta = (job.leads_saved || 0) !== crawlState.lastSavedCount;
+      const foundDelta = (job.leads_found || 0) !== crawlState.lastFoundCount;
+      if (savedDelta || foundDelta || job.status === "running") {
+        scheduleLeadsRefreshDuringCrawl(job);
+      }
+
+      if (job.status === "completed" || job.status === "failed") {
+        setCrawlLoaderStep(job.message || "Terminé");
+        const finalJob = await api(`/crawler/jobs/${jobId}`).catch(() => job);
+        await refreshAppData();
+        notifyCrawlResult(finalJob, label);
+        if (options.goToAnalyze && options.importUrl) {
+          clearUrlSearchInputs();
+          switchView("analyze");
+          await completeOnDemandAnalysisAfterImport(options.importUrl);
+        } else if (options.goToLeads) {
+          clearUrlSearchInputs();
+          switchView("leads");
+        }
+        if (options.openImportedLead && options.importUrl && !options.goToAnalyze) {
+          const target = normalizeUrlKey(options.importUrl);
+          const lead = LEADS.find(
+            (l) => normalizeUrlKey(l.source_url || "") === target,
+          );
+          if (lead) {
+            openDrawer(lead.id);
+          }
+        }
+        hideCrawlLoader();
+        return;
+      }
+
+      crawlState.pollTimer = setTimeout(tick, 600);
+    } catch (err) {
+      if (isNetworkFetchError(err) || err.message?.includes("Connexion perdue")) {
+        networkFails += 1;
+        const msg = `Connexion interrompue (${networkFails}/40)…`;
+        setCrawlLoaderStep(msg);
+        document.getElementById("crawl-dock-step").textContent = msg;
+        if (networkFails >= 40) {
+          showToast(
+            "Connexion perdue — le crawl peut continuer côté serveur. Rechargez la page plus tard.",
+            "error",
+            10000,
+          );
+          hideCrawlLoader();
+          return;
+        }
+        crawlState.pollTimer = setTimeout(tick, 1500);
+        return;
+      }
+      showToast(err.message, "error");
+      hideCrawlLoader();
+    }
+  };
+
+  crawlState.pollTimer = setTimeout(tick, 400);
+}
+
+async function cancelStaleCrawlUi() {
+  hideCrawlLoader();
+  try {
+    await api("/crawler/jobs/cancel", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function resumeActiveCrawlIfAny() {
+  try {
+    const res = await api("/crawler/jobs/active");
+    const job = res?.job;
+    if (!job || job.status !== "running" || !job.started_at) {
+      if (crawlState.active) await cancelStaleCrawlUi();
+      return;
+    }
+
+    const started = new Date(job.started_at).getTime();
+    if (Number.isNaN(started) || Date.now() - started > 12 * 60 * 60 * 1000) {
+      await cancelStaleCrawlUi();
+      return;
+    }
+
+    crawlState.active = true;
+    crawlState.jobId = job.id;
+    crawlState.label = job.source_id || job.message?.slice(0, 40) || "Crawl";
+    crawlState.startedAt = started;
+    crawlState.minimized = true;
+    state.loading = true;
+    document.querySelectorAll(".source-crawl-btn").forEach((b) => (b.disabled = true));
+
+    minimizeCrawlUI();
+    startCrawlWaitAnimation();
+    startLiveFramePolling();
+    updateCrawlLoaderUI(job, `Crawl — reprise`);
+    startCrawlPolling(job.id, crawlState.label);
+    showToast("Crawl en cours repris en arrière-plan", "info", 4000);
+  } catch {
+    if (crawlState.active) hideCrawlLoader();
+  }
+}
+
+async function runCrawlJob(endpoint, body, label, options = {}) {
+  if (crawlState.active) {
+    showToast("Un crawl est déjà en cours — réduisez le panneau pour naviguer", "warning");
+    return;
+  }
+
+  const useExisting = Boolean(options.existingJobId);
+  showCrawlLoader(
+    useExisting ? label : `Crawl — ${label}`,
+    useExisting ? "Extraction de l'annonce…" : "Lancement (mode humain, peut être long)…",
+    0,
+  );
+
+  try {
+    let jobId = options.existingJobId;
+    let start = {};
+    if (!jobId) {
+      if (!endpoint) throw new Error("Impossible de démarrer le crawl");
+      start = await api(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body || {}),
+      });
+      jobId = start.job_id || start.job?.id;
+    }
+    if (!jobId) throw new Error("Impossible de démarrer le crawl");
+
+    crawlState.jobId = jobId;
+    crawlState.label = label;
+    crawlState.startedAt = Date.now();
+
+    if (start.job?.eta_seconds) {
+      updateEtaDisplay(start.job);
+    }
+
+    startCrawlPolling(jobId, label, options);
+  } catch (err) {
+    const msg = err.message || "Erreur crawl";
+    showToast(msg, "error", msg.length > 80 ? 12000 : 6000);
+    hideCrawlLoader();
+  }
+}
+
+function notifyCrawlResult(job, label) {
+  const updated = job.leads_updated || 0;
+  if (job.leads_saved > 0 || updated > 0) {
+    const parts = [];
+    if (job.leads_saved > 0) parts.push(`${job.leads_saved} nouveau(x)`);
+    if (updated > 0) parts.push(`${updated} mis à jour`);
+    showToast(
+      `${label} — ${parts.join(", ")} sur ${job.leads_found} annonce(s) analysée(s)`,
+      "success",
+      6000
+    );
+    return;
+  }
+
+  if (job.warnings?.length && !job.errors?.length) {
+    showToast(job.warnings.map((w) => w.message).join(" · "), "warning", 6000);
+    return;
+  }
+
+  if (job.errors?.length) {
+    const reasons = job.errors
+      .slice(0, 3)
+      .map((e) => e.message)
+      .join("\n");
+    showToast(`${label} — échec du crawl\n${reasons}`, "error", 9000);
+    return;
+  }
+
+  showToast(`${label} — crawl terminé, aucune annonce complète trouvée`, "warning");
+}
+
+async function toggleCrawler() {
+  try {
+    if (state.crawlerRunning) {
+      await api("/crawler/stop", { method: "POST" });
+      state.crawlerRunning = false;
+      showToast("Crawler en pause");
+    } else {
+      await api("/crawler/start", { method: "POST" });
+      state.crawlerRunning = true;
+      showToast("Crawler démarré — surveillance active");
+    }
+    syncCrawlerUI();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+function syncCrawlerUI() {
+  const btn = document.getElementById("crawler-toggle");
+  const dot = document.querySelector(".sidebar-footer .status-dot");
+  const label = document.querySelector(".sidebar-footer .status-row p");
+
+  if (state.crawlerRunning) {
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
+    dot?.classList.remove("paused");
+    if (label) label.textContent = "Crawler actif";
+  } else {
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Démarrer`;
+    dot?.classList.add("paused");
+    if (label) label.textContent = "Crawler en pause";
+  }
+}
+
+async function refreshStats() {
+  const statsData = await api("/stats");
+  ACTIVITIES = statsData.activities || [];
+  SOURCE_STATS = statsData.source_stats || [];
+}
+
+/** Recharge leads, sources, stats et met à jour toute l’interface. */
+async function refreshAppData() {
+  await loadData();
+  renderAll();
+  syncCrawlerUI();
+  await refreshOnboardingUi();
+}
+
+function clearUrlSearchInputs() {
+  const globalSearch = document.getElementById("global-search");
+  if (globalSearch) globalSearch.value = "";
+  state.searchQuery = "";
+  const customUrl = document.getElementById("custom-crawl-url");
+  if (customUrl) customUrl.value = "";
+  const importUrl = document.getElementById("import-listing-url");
+  if (importUrl) importUrl.value = "";
+}
+
+function getFilteredLeads() {
+  let leads = [...LEADS];
+
+  if (state.leadsFilter === "particulier") leads = leads.filter((l) => l.type === "particulier");
+  else if (state.leadsFilter === "sans-agence") leads = leads.filter((l) => l.type !== "agence");
+  else if (state.leadsFilter === "avec-agence") leads = leads.filter((l) => l.type === "agence");
+  else if (state.leadsFilter === "vente") leads = leads.filter((l) => (l.transaction_type || "vente") === "vente");
+  else if (state.leadsFilter === "location") leads = leads.filter((l) => l.transaction_type === "location");
+  else if (state.leadsFilter === "nouveau") leads = leads.filter((l) => l.status === "nouveau");
+  else if (state.leadsFilter === "retire") leads = leads.filter((l) => l.status === "retire");
+  else if (state.leadsFilter === "hot-mandate")
+    leads = leads.filter((l) => (l.mandate_score || 0) >= 85);
+  else if (state.leadsFilter === "price-drop")
+    leads = leads.filter((l) => (l.alert_tags || []).includes("baisse_prix"));
+  else if (state.leadsFilter === "dvf-sous-marche")
+    leads = leads.filter((l) =>
+      ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
+    );
+
+  if (state.searchQuery && !isUrl(state.searchQuery)) {
+    const q = state.searchQuery;
+    leads = leads.filter(
+      (l) =>
+        (l.owner || "").toLowerCase().includes(q) ||
+        (l.address || "").toLowerCase().includes(q) ||
+        (l.city || "").toLowerCase().includes(q) ||
+        (l.property || "").toLowerCase().includes(q)
+    );
+  }
+
+  return leads.sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
+}
+
+function renderAll() {
+  renderStats();
+  renderRadarBriefing();
+  renderPlaybook();
+  renderActivity();
+  renderSourceChart();
+  renderLeads();
+  renderPipeline();
+  renderCrawler();
+  renderDashboardTopLeads();
+  updateBadges();
+  updateSidebarCount();
+  if (typeof renderClientsModule === "function") renderClientsModule();
+  if (typeof renderMandatesModule === "function") renderMandatesModule();
+}
+
+function renderStats() {
+  const elLeads = document.getElementById("stat-leads");
+  if (!elLeads) return;
+
+  const sansAgence = LEADS.filter((l) => l.type !== "agence").length;
+  const mandats = LEADS.filter((l) => l.status === "mandat" || l.pipeline === "mandat").length;
+  const nouveaux = LEADS.filter((l) => l.status === "nouveau").length;
+
+  elLeads.textContent = LEADS.length;
+  const elSa = document.getElementById("stat-sans-agence");
+  if (elSa) elSa.textContent = sansAgence;
+  const elM = document.getElementById("stat-mandats");
+  if (elM) elM.textContent = mandats;
+  const elN = document.getElementById("stat-nouveaux");
+  if (elN) elN.textContent = nouveaux;
+}
+
+function mandateCallRecommendation(score) {
+  const s = score || 0;
+  if (s >= 85) return "À appeler aujourd'hui";
+  if (s >= 65) return "À appeler sous 48h";
+  if (s >= 45) return "À traiter cette semaine";
+  return "À surveiller";
+}
+
+function renderMandatePill(lead, opts = {}) {
+  const s = lead.mandate_score || 0;
+  const reason = escapeHtml(lead.mandate_score_reason || "");
+  const showMax = opts.showMax !== false;
+  const large = opts.large ? " score-pill-lg" : "";
+  const label = showMax ? `${s}<span class="score-max">/100</span>` : String(s);
+  return `<span class="score-pill mandate ${getMandateScoreClass(s)}${large}" title="${reason}">${label}</span>`;
+}
+
+function renderDvfBadge(lead) {
+  if (!lead.dvf_verdict) {
+    return `<span class="dvf-badge unknown" title="Lancer le comparatif DVF">DVF ?</span>`;
+  }
+  const v = lead.dvf_verdict;
+  const label = escapeHtml(lead.dvf_verdict_label || v);
+  const delta = lead.dvf_delta_pct != null ? ` (${lead.dvf_delta_pct > 0 ? "+" : ""}${lead.dvf_delta_pct} %)` : "";
+  const ctx = [lead.dvf_sector || lead.sector, lead.dvf_reference_period ? `ventes ${lead.dvf_reference_period}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  return `<span class="dvf-badge ${v}" title="${label}${delta}${ctx ? " — " + ctx : ""}">${label}</span>`;
+}
+
+async function compareLeadDvf(leadId) {
+  showToast("Analyse DVF en cours (données Etalab)…", "info", 3000);
+  const result = await api(`/dvf/compare/${leadId}`, { method: "POST" });
+  if (result.lead) {
+    const idx = LEADS.findIndex((l) => l.id === leadId);
+    if (idx >= 0) LEADS[idx] = result.lead;
+  }
+  RADAR = await fetchRadarBriefing();
+  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  renderAll();
+  const c = result.comparison || {};
+  if (c.available) {
+    showToast(`${c.verdict_label} — ${c.delta_pct}% vs ${c.dvf_median_m2} €/m² (DVF)`, "success", 8000);
+    if (state.currentView === "analyze") {
+      try {
+        const fresh = await api(`/radar/leads/${leadId}/analysis`);
+        if (fresh.analysis) renderOnDemandAnalysis(fresh.analysis, fresh.lead || result.lead);
+      } catch {
+        /* garde l'analyse affichée */
+      }
+    } else {
+      openDrawer(leadId);
+    }
+  } else {
+    showToast(c.reason || "Comparatif DVF indisponible", "warning", 7000);
+  }
+  return result;
+}
+
+async function compareAllLeadsDvf() {
+  const ventes = LEADS.filter(
+    (l) => (l.transaction_type || "vente") === "vente" && l.price > 0 && l.surface > 0,
+  );
+  if (!ventes.length) {
+    showToast("Aucune annonce en vente avec prix et surface", "warning");
+    return;
+  }
+  showToast(`Comparatif DVF sur ${Math.min(ventes.length, 25)} annonces…`, "info", 4000);
+  const result = await api("/dvf/compare-all", {
+    method: "POST",
+    body: JSON.stringify({ limit: 25 }),
+  });
+  LEADS = result.leads || LEADS;
+  RADAR = await fetchRadarBriefing();
+  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  renderAll();
+  showToast(
+    `DVF : ${result.compared || 0} annonce(s) analysée(s)${result.errors ? ` (${result.errors} erreurs)` : ""}`,
+    "success",
+    6000,
+  );
+}
+
+function renderRadarBriefing() {
+  const counts = RADAR?.counts || {};
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v ?? 0;
+  };
+  set("radar-count-sans-agence", counts.sans_agence ?? counts.new_without_agency);
+  set("radar-count-new", counts.new_without_agency);
+  set("radar-count-drops", counts.price_drops);
+  set("radar-count-hot", counts.hot_mandate);
+  set("radar-count-dvf", counts.dvf_sous_marche);
+
+  const list = RADAR?.priorities?.length
+    ? RADAR.priorities
+    : [...LEADS].sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0)).slice(0, 12);
+
+  const totalOpps = counts.total_opportunities ?? LEADS.filter((l) => l.type !== "agence").length;
+  const hotCount = counts.hot_mandate ?? list.filter((l) => (l.mandate_score || 0) >= 85).length;
+  const callToday = list.filter((l) => (l.mandate_score || 0) >= 85).length || hotCount;
+
+  set("radar-total-opps", totalOpps);
+  set("radar-hero-hot", hotCount);
+  set("radar-hero-call-today", callToday);
+
+  const greeting = document.getElementById("radar-greeting");
+  if (greeting) {
+    const name = RADAR?.agency_name || state.user?.agency_name || "votre agence";
+    greeting.textContent = `Opportunités du marché — ${name}`;
+  }
+  const dateEl = document.getElementById("radar-date");
+  if (dateEl) {
+    const d = RADAR?.date ? new Date(`${RADAR.date}T08:00:00`) : new Date();
+    dateEl.textContent = d.toLocaleDateString("fr-FR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  const prioMeta = document.getElementById("radar-prio-meta");
+  if (prioMeta) {
+    prioMeta.textContent = list.length
+      ? `${list.length} vendeur(s) · tri Score Mandat™`
+      : "Classées par Score Mandat™";
+  }
+
+  const featuredEl = document.getElementById("radar-hero-featured");
+  if (featuredEl) {
+    const top = list[0];
+    if (top) {
+      const ms = top.mandate_score || 0;
+      featuredEl.hidden = false;
+      featuredEl.innerHTML = `
+        <div class="crm-hero-featured-inner" data-id="${top.id}" role="button" tabindex="0">
+          <span class="crm-hero-featured-label">Priorité n°1</span>
+          <div class="crm-hero-featured-score">${renderMandatePill(top, { large: true })}</div>
+          <p class="crm-hero-featured-reco">${escapeHtml(mandateCallRecommendation(ms))}</p>
+          <p class="crm-hero-featured-title">${escapeHtml(top.property_title || top.address || top.owner)}</p>
+          <p class="crm-hero-featured-reason">${escapeHtml(top.mandate_score_reason || "")}</p>
+          <span class="btn btn-primary btn-sm">Ouvrir la fiche</span>
+        </div>`;
+      const inner = featuredEl.querySelector(".crm-hero-featured-inner");
+      const openTop = () => openDrawer(parseInt(top.id, 10));
+      inner?.addEventListener("click", openTop);
+      inner?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openTop();
+        }
+      });
+    } else {
+      featuredEl.hidden = true;
+      featuredEl.innerHTML = "";
+    }
+  }
+
+  const prioEl = document.getElementById("radar-priorities");
+  if (prioEl) {
+    if (!list.length) {
+      prioEl.innerHTML = `<div class="empty-state"><p>Ajoutez une source ou lancez un crawl pour détecter les opportunités de votre marché.</p></div>`;
+    } else {
+      prioEl.innerHTML = list
+        .map(
+          (l) => {
+            const ms = l.mandate_score || 0;
+            return `
+        <div class="radar-priority-row" data-id="${l.id}">
+          <div class="radar-priority-main">
+            ${renderMandatePill(l, { large: true })}
+            <div>
+              <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)}</div>
+              <div class="radar-priority-meta">${escapeHtml(l.mandate_score_reason || "")} · ${formatPrice(l)} ${renderDvfBadge(l)}</div>
+              <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm radar-open-btn">Appeler</button>
+        </div>`;
+          },
+        )
+        .join("");
+      prioEl.querySelectorAll(".radar-priority-row").forEach((row) => {
+        row.addEventListener("click", (e) => {
+          if (e.target.closest(".radar-open-btn") || e.target === row) {
+            openDrawer(parseInt(row.dataset.id, 10));
+          }
+        });
+      });
+    }
+  }
+
+  const alertsEl = document.getElementById("radar-alerts");
+  if (alertsEl) {
+    const alerts = RADAR?.alerts || [];
+    if (!alerts.length) {
+      alertsEl.innerHTML = `<div class="empty-state"><p>Aucune alerte pour le moment</p></div>`;
+    } else {
+      alertsEl.innerHTML = alerts
+        .slice(0, 8)
+        .map(
+          (a) => `
+        <div class="radar-alert radar-alert-${a.priority}" data-lead-id="${a.lead_id || ""}">
+          <strong>${escapeHtml(a.title)}</strong>
+          <p>${escapeHtml(a.message)}</p>
+        </div>`,
+        )
+        .join("");
+      alertsEl.querySelectorAll("[data-lead-id]").forEach((el) => {
+        const id = parseInt(el.dataset.leadId, 10);
+        if (id) el.addEventListener("click", () => openDrawer(id));
+      });
+    }
+  }
+}
+
+async function fetchPlaybook() {
+  try {
+    const res = await fetchWithTimeout(`${API}/radar/playbook`, {
+      headers: { ...getAuthHeaders(), Accept: "application/json" },
+    }, 15000);
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null);
+    if (!body || body.error) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+function renderPlaybookTag(tag) {
+  const labels = {
+    sans_agence: "Sans agence",
+    nouveau: "Nouveau",
+    ancienne: "Ancienne",
+    baisse_prix: "Baisse",
+    dvf_sous_marche: "DVF −",
+    dvf_sur_marche: "DVF +",
+  };
+  return `<span class="playbook-tag">${escapeHtml(labels[tag] || tag)}</span>`;
+}
+
+function renderPlaybookGuide() {
+  const el = document.getElementById("playbook-guide");
+  if (!el) return;
+  const guide = PLAYBOOK?.guide || [];
+  if (!guide.length) {
+    el.innerHTML = `<div class="empty-state"><p>Guide indisponible — relancez le serveur</p></div>`;
+    return;
+  }
+  el.innerHTML = guide
+    .map(
+      (section) => `
+    <details class="playbook-guide-block" open>
+      <summary>
+        <span class="playbook-guide-emoji">${section.emoji || "📘"}</span>
+        <span>${escapeHtml(section.title)}</span>
+      </summary>
+      <p class="playbook-guide-summary">${escapeHtml(section.summary || "")}</p>
+      <div class="playbook-guide-items">
+        ${(section.blocks || [])
+          .map(
+            (b) => `
+          <div class="playbook-guide-item playbook-tone-${b.tone || "medium"}">
+            <strong>${escapeHtml(b.label)}</strong>
+            <p>${escapeHtml(b.detail)}</p>
+          </div>`,
+          )
+          .join("")}
+      </div>
+      ${(section.tips || []).length ? `<ul class="playbook-tips">${section.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+    </details>`,
+    )
+    .join("");
+}
+
+function renderPlaybookTemplates() {
+  const el = document.getElementById("playbook-templates");
+  if (!el) return;
+  const templates = PLAYBOOK?.script_templates || {};
+  const keys = Object.keys(templates);
+  if (!keys.length) {
+    el.innerHTML = `<div class="empty-state"><p>Aucun modèle de script</p></div>`;
+    return;
+  }
+  el.innerHTML = keys
+    .map((key) => {
+      const t = templates[key];
+      return `
+      <details class="playbook-template">
+        <summary>${escapeHtml(t.label || key)}</summary>
+        <div class="playbook-template-body">
+          <p><strong>Observation</strong> — ${escapeHtml(t.hook || "")}</p>
+          <p><strong>Proposition de valeur</strong> — ${escapeHtml(t.value || "")}</p>
+          <p><strong>Closing</strong> — ${escapeHtml(t.closing || "")}</p>
+          ${(t.objections || [])
+            .map(
+              (o) => `
+            <div class="playbook-objection">
+              <strong>« ${escapeHtml(o.q || o[0] || "")} »</strong>
+              <p>${escapeHtml(o.a || o[1] || "")}</p>
+            </div>`,
+            )
+            .join("")}
+          <button type="button" class="btn btn-ghost btn-sm playbook-copy-btn" data-copy-template="${escapeHtml(key)}">Copier le script type</button>
+        </div>
+      </details>`;
+    })
+    .join("");
+  el.querySelectorAll(".playbook-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tplKey = btn.dataset.copyTemplate;
+      const t = PLAYBOOK?.script_templates?.[tplKey];
+      const text = t
+        ? [`Accroche : ${t.hook}`, `Valeur : ${t.value}`, `Closing : ${t.closing}`].join("\n\n")
+        : "";
+      copyPlaybookText(text, btn);
+    });
+  });
+}
+
+function renderPlaybookOpportunities() {
+  const el = document.getElementById("playbook-opportunities");
+  const countEl = document.getElementById("playbook-opp-count");
+  if (!el) return;
+  const opps = PLAYBOOK?.opportunities || [];
+  if (countEl) countEl.textContent = `${opps.length} prospect(s)`;
+  if (!opps.length) {
+    el.innerHTML = `<div class="empty-state"><p>Lancez un crawl pour alimenter vos opportunités, puis revenez ici pour vos scripts personnalisés.</p></div>`;
+    return;
+  }
+  el.innerHTML = opps
+    .map((o) => {
+      const script = o.script || {};
+      const advice = (o.advice || []).map((a) => `<li>${escapeHtml(a)}</li>`).join("");
+      const tags = (o.alert_tags || []).map(renderPlaybookTag).join("");
+      const dvf =
+        o.dvf_verdict_label
+          ? `<span class="playbook-dvf">${escapeHtml(o.dvf_verdict_label)}${o.dvf_delta_pct != null ? ` (${o.dvf_delta_pct > 0 ? "+" : ""}${o.dvf_delta_pct} %)` : ""}</span>`
+          : "";
+      return `
+      <article class="playbook-opp" data-lead-id="${o.lead_id}">
+        <header class="playbook-opp-head">
+          <div>
+            <span class="score-pill mandate ${getMandateScoreClass(o.mandate_score || 0)}">${o.mandate_score || 0}</span>
+            <span class="playbook-scenario">${escapeHtml(o.scenario_label || "")}</span>
+          </div>
+          <div class="playbook-opp-actions">
+            <button type="button" class="btn btn-ghost btn-sm playbook-open-lead">Fiche</button>
+            <button type="button" class="btn btn-secondary btn-sm playbook-copy-btn" data-copy-lead="${o.lead_id}">Copier script</button>
+          </div>
+        </header>
+        <h3 class="playbook-opp-title">${escapeHtml(o.address || "—")}</h3>
+        <p class="playbook-opp-meta">${escapeHtml(o.mandate_score_reason || "")} · ${escapeHtml(o.price_label || "")} ${dvf}</p>
+        <div class="playbook-opp-tags">${tags}</div>
+        ${advice ? `<ul class="playbook-advice">${advice}</ul>` : ""}
+        <div class="playbook-script">
+          <div class="playbook-script-step"><span>1</span><p>${escapeHtml(script.opening || "")}</p></div>
+          <div class="playbook-script-step"><span>2</span><p>${escapeHtml(script.observation || "")}</p></div>
+          <div class="playbook-script-step"><span>3</span><p>${escapeHtml(script.value || "")}</p></div>
+          <div class="playbook-script-step"><span>4</span><p>${escapeHtml(script.closing || "")}</p></div>
+        </div>
+        ${(script.objections || []).length ? `
+          <details class="playbook-opp-objections">
+            <summary>Objections fréquentes</summary>
+            ${script.objections.map((obj) => `<div class="playbook-objection"><strong>« ${escapeHtml(obj.q || "")} »</strong><p>${escapeHtml(obj.a || "")}</p></div>`).join("")}
+          </details>` : ""}
+      </article>`;
+    })
+    .join("");
+
+  el.querySelectorAll(".playbook-open-lead").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.closest(".playbook-opp")?.dataset.leadId, 10);
+      if (id) openDrawer(id);
+    });
+  });
+  el.querySelectorAll(".playbook-copy-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const leadId = parseInt(btn.dataset.copyLead, 10);
+      const tplKey = btn.dataset.copyTemplate;
+      let text = "";
+      if (leadId) {
+        const opp = (PLAYBOOK?.opportunities || []).find((o) => o.lead_id === leadId);
+        text = opp?.script?.full_text || "";
+      } else if (tplKey) {
+        const t = PLAYBOOK?.script_templates?.[tplKey];
+        if (t) text = [`Accroche : ${t.hook}`, `Valeur : ${t.value}`, `Closing : ${t.closing}`].join("\n\n");
+      }
+      copyPlaybookText(text, btn);
+    });
+  });
+  el.querySelectorAll(".playbook-opp").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      const id = parseInt(card.dataset.leadId, 10);
+      if (id) openDrawer(id);
+    });
+  });
+}
+
+function renderPlaybookStats() {
+  const el = document.getElementById("playbook-stats");
+  if (!el) return;
+  const c = PLAYBOOK?.counts || {};
+  el.innerHTML = `
+    <div class="playbook-stat-card">
+      <span class="playbook-stat-value">${c.particuliers ?? 0}</span>
+      <span class="playbook-stat-label">Particuliers</span>
+    </div>
+    <div class="playbook-stat-card hot">
+      <span class="playbook-stat-value">${c.hot ?? 0}</span>
+      <span class="playbook-stat-label">Fort potentiel</span>
+    </div>
+    <div class="playbook-stat-card dvf">
+      <span class="playbook-stat-value">${c.dvf_sous_marche ?? 0}</span>
+      <span class="playbook-stat-label">Sous marché DVF</span>
+    </div>
+    <div class="playbook-stat-card">
+      <span class="playbook-stat-value">${c.with_script ?? 0}</span>
+      <span class="playbook-stat-label">Scripts prêts</span>
+    </div>`;
+}
+
+function renderPlaybook() {
+  if (state.currentView !== "playbook") return;
+  const sub = document.getElementById("playbook-subtitle");
+  if (sub && PLAYBOOK) {
+    const agency = PLAYBOOK.agency_name || state.user?.agency_name || "votre agence";
+    sub.textContent = `${agency} — conseils, opportunités et discours à tenir`;
+  }
+  renderPlaybookStats();
+  renderPlaybookGuide();
+  renderPlaybookTemplates();
+  renderPlaybookOpportunities();
+}
+
+async function copyPlaybookText(text, btn) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Script copié dans le presse-papier", "success", 2500);
+    if (btn) {
+      const prev = btn.textContent;
+      btn.textContent = "Copié ✓";
+      setTimeout(() => {
+        btn.textContent = prev;
+      }, 1800);
+    }
+  } catch {
+    showToast(text, "info", 12000);
+  }
+}
+
+function setupPlaybook() {
+  document.getElementById("playbook-refresh-btn")?.addEventListener("click", async () => {
+    showToast("Actualisation du guide…", "info", 2000);
+    PLAYBOOK = await fetchPlaybook();
+    if (!PLAYBOOK) {
+      showToast("Guide indisponible — relancez python app.py", "warning");
+      return;
+    }
+    renderPlaybook();
+    showToast("Guide actualisé", "success");
+  });
+}
+
+async function patchLeadPipeline(leadId, pipeline) {
+  const result = await api(`/leads/${leadId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ pipeline }),
+  });
+  const idx = LEADS.findIndex((l) => l.id === leadId);
+  if (idx >= 0 && result.lead) LEADS[idx] = result.lead;
+  RADAR = await fetchRadarBriefing();
+  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  renderAll();
+  if (state.selectedLead?.id === leadId && result.lead) {
+    state.selectedLead = result.lead;
+    openDrawer(leadId);
+  }
+}
+
+function setupRadar() {
+  document.querySelectorAll(".radar-stat").forEach((card) => {
+    card.addEventListener("click", () => {
+      const filter = card.dataset.filter;
+      if (filter) {
+        state.leadsFilter = filter;
+        document.querySelectorAll(".filter-chip").forEach((c) => {
+          c.classList.toggle("active", c.dataset.filter === filter);
+        });
+        switchView("leads");
+      }
+    });
+  });
+
+  document.getElementById("radar-playbook-btn")?.addEventListener("click", () => switchView("playbook"));
+
+  document.getElementById("radar-settings-btn")?.addEventListener("click", async () => {
+    const modal = document.getElementById("radar-settings-modal");
+    try {
+      const settings = normalizeSettingsPayload(await api("/radar/settings"));
+      document.getElementById("radar-target-cities").value = (settings.target_cities || []).join(", ");
+      document.getElementById("radar-mandate-goal").value = settings.mandate_goal_month || 5;
+    } catch {
+      /* ignore */
+    }
+    modal?.classList.add("open");
+  });
+
+  document.getElementById("radar-settings-close")?.addEventListener("click", () => {
+    document.getElementById("radar-settings-modal")?.classList.remove("open");
+  });
+
+  document.getElementById("radar-settings-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const raw = document.getElementById("radar-target-cities").value;
+    const cities = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const goal = parseInt(document.getElementById("radar-mandate-goal").value, 10) || 5;
+    try {
+      const res = await api("/radar/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ target_cities: cities, mandate_goal_month: goal }),
+      });
+      state.settings = normalizeSettingsPayload(
+        res?.settings ? res : { target_cities: cities, mandate_goal_month: goal },
+      );
+      if (!state.settings.target_cities?.length) {
+        state.settings.target_cities = cities;
+      }
+      setCrawlCityField(agencyPrimaryCity(), { force: true });
+      scheduleSourceUrlsForCity();
+      showToast("Territoire enregistré — liens sources mis à jour", "success");
+      document.getElementById("radar-settings-modal")?.classList.remove("open");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  });
+}
+
+function renderActivity() {
+  const container = document.getElementById("activity-feed");
+  if (!ACTIVITIES.length) {
+    container.innerHTML = `<div class="empty-state"><p>Aucune activité — lancez un crawl pour commencer</p></div>`;
+    return;
+  }
+
+  container.innerHTML = ACTIVITIES.map(
+    (a) => `
+    <div class="activity-item">
+      <div class="activity-icon ${a.type}">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          ${a.type === "new" ? '<path d="M12 4v16m8-8H4"/>' : a.type === "contact" ? '<path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>' : '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>'}
+        </svg>
+      </div>
+      <div class="activity-content">
+        <p>${a.text}</p>
+        <div class="time">${a.time}</div>
+      </div>
+    </div>`
+  ).join("");
+}
+
+function renderSourceChart() {
+  const container = document.getElementById("source-chart");
+  if (!SOURCE_STATS.length || SOURCE_STATS.every((s) => s.count === 0)) {
+    container.innerHTML = `<div class="empty-state"><p>Aucune source n'a encore produit de leads</p></div>`;
+    return;
+  }
+
+  container.innerHTML = SOURCE_STATS.map(
+    (s) => `
+    <div class="source-bar-item">
+      <div class="source-bar-header">
+        <span>${s.name}</span>
+        <span>${s.count}</span>
+      </div>
+      <div class="source-bar-track">
+        <div class="source-bar-fill ${s.key}" style="width: ${s.pct}%"></div>
+      </div>
+    </div>`
+  ).join("");
+}
+
+function renderDashboardTopLeads() {
+  const container = document.getElementById("dashboard-top-leads");
+  const topLeads = LEADS.filter((l) => l.type !== "agence").sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
+
+  if (!topLeads.length) {
+    container.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>Aucun prospect — lancez le crawler</p></div></td></tr>`;
+    return;
+  }
+
+  container.innerHTML = topLeads.map((lead) => `
+    <tr data-id="${lead.id}">
+      <td>
+        <div class="lead-owner">
+          <div class="lead-avatar" style="background:${getAvatarColor(lead.id)}">${getInitials(lead.owner)}</div>
+          <div class="lead-info"><div class="name">${lead.owner}</div><div class="phone">${lead.phone}</div></div>
+        </div>
+      </td>
+      <td><div class="lead-property"><div class="address">${escapeHtml(lead.property_title || lead.address)}</div><div class="details">${escapeHtml(lead.property_detail || lead.property)}</div></div></td>
+      <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
+      <td><span class="source-tag">${lead.source}</span></td>
+      <td><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}</span></td>
+      <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
+    </tr>`).join("");
+
+  container.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("click", () => openDrawer(parseInt(row.dataset.id)));
+  });
+}
+
+function getLeadDeleteButtonHtml(lead) {
+  return `<button type="button" class="btn btn-ghost lead-delete-btn" data-id="${lead.id}" data-name="${escapeAttr(lead.owner)}" title="Supprimer ce prospect" aria-label="Supprimer">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
+  </button>`;
+}
+
+function renderLeadRow(lead) {
+  const ms = lead.mandate_score || 0;
+  return `
+    <tr data-id="${lead.id}">
+      <td class="col-score-mandat">
+        <div class="lead-score-cell">
+          ${renderMandatePill(lead, { large: true })}
+          <span class="lead-score-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
+          <span class="lead-score-reason" title="${escapeAttr(lead.mandate_score_reason || "")}">${escapeHtml((lead.mandate_score_reason || "").slice(0, 48))}${(lead.mandate_score_reason || "").length > 48 ? "…" : ""}</span>
+        </div>
+      </td>
+      <td>
+        <div class="lead-owner">
+          <div class="lead-avatar" style="background:${getAvatarColor(lead.id)}">${getInitials(lead.owner)}</div>
+          <div class="lead-info">
+            <div class="name">${lead.owner}</div>
+            <div class="phone">${lead.phone}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="lead-property">
+          <div class="address">${escapeHtml(lead.property_title || lead.address)}</div>
+          <div class="details">${escapeHtml(lead.property_detail || lead.property)} · Publié ${formatPublishedDate(lead)}</div>
+        </div>
+      </td>
+      <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
+      <td>${getTypeBadge(lead)}</td>
+      <td>${getStatusBadge(lead.status)}</td>
+      <td><span class="source-tag">${lead.source}</span></td>
+      <td>${renderDvfBadge(lead) || '<span class="text-muted">—</span>'}</td>
+      <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
+      <td class="lead-actions-cell lead-delete-cell">${getLeadDeleteButtonHtml(lead)}</td>
+    </tr>`;
+}
+
+function renderLeads() {
+  const leads = getFilteredLeads();
+  const tableContainer = document.getElementById("leads-table-body");
+  const gridContainer = document.getElementById("leads-grid");
+  const tableWrapper = document.getElementById("leads-table-wrapper");
+  const gridWrapper = document.getElementById("leads-grid-wrapper");
+
+  const useTable = state.leadsView === "table" && !isMobileLayout();
+
+  if (useTable) {
+    tableWrapper.style.display = "block";
+    gridWrapper.style.display = "none";
+
+    if (!leads.length) {
+      tableContainer.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
+      return;
+    }
+
+    tableContainer.innerHTML = leads.map(renderLeadRow).join("");
+    tableContainer.querySelectorAll("tr").forEach((row) => {
+      row.addEventListener("click", () => openDrawer(parseInt(row.dataset.id)));
+    });
+  } else {
+    tableWrapper.style.display = "none";
+    gridWrapper.style.display = "block";
+
+    if (!leads.length) {
+      gridContainer.innerHTML = `<div class="empty-state"><p>Aucun prospect</p></div>`;
+      return;
+    }
+
+    gridContainer.innerHTML = leads.map((lead) => `
+      <div class="lead-card" data-id="${lead.id}">
+        <div class="lead-card-header">
+          <div class="lead-owner">
+            <div class="lead-avatar" style="background:${getAvatarColor(lead.id)}">${getInitials(lead.owner)}</div>
+            <div class="lead-info">
+              <div class="name">${lead.owner}</div>
+              <div class="phone">${lead.phone}</div>
+            </div>
+          </div>
+          <div class="lead-card-header-actions">
+            ${renderMandatePill(lead, { large: true })}
+            ${getLeadDeleteButtonHtml(lead)}
+          </div>
+        </div>
+        <div class="lead-card-body">
+          <div class="property-title">${escapeHtml(lead.property_title || lead.address)}</div>
+          <div class="property-meta">${escapeHtml(lead.mandate_score_reason || "")}</div>
+          <div class="property-meta">${escapeHtml(lead.property_detail || lead.property)} · ${formatPrice(lead)} ${getTransactionBadge(lead)} ${renderDvfBadge(lead)}</div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${getTypeBadge(lead)} ${getStatusBadge(lead.status)} <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(lead.mandate_score || 0))}</span></div>
+        </div>
+        <div class="lead-card-footer">
+          <span class="source-tag">${lead.source}</span>
+          <span class="lead-card-footer-links">${getLeadActionsHtml(lead)}</span>
+        </div>
+      </div>`).join("");
+
+    gridContainer.querySelectorAll(".lead-card").forEach((card) => {
+      card.addEventListener("click", () => openDrawer(parseInt(card.dataset.id)));
+    });
+  }
+}
+
+function pipelineMatchesColumn(lead, key) {
+  const p = lead.pipeline || "nouveau";
+  if (key === "nouveau") return p === "nouveau" || p === "a_contacter";
+  return p === key;
+}
+
+function renderPipeline() {
+  const columns = {
+    nouveau: { label: "À contacter", color: "#0ea5e9" },
+    contacte: { label: "Contacté", color: "#8b5cf6" },
+    rdv: { label: "RDV", color: "#f59e0b" },
+    mandat: { label: "Mandat", color: "#10b981" },
+  };
+
+  document.getElementById("pipeline-board").innerHTML = Object.entries(columns).map(([key, col]) => {
+    const cards = LEADS.filter((l) => pipelineMatchesColumn(l, key))
+      .sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
+    return `
+      <div class="pipeline-column">
+        <div class="pipeline-column-header">
+          <div class="pipeline-column-title">
+            <span class="dot" style="background:${col.color}"></span>
+            ${col.label}
+          </div>
+          <span class="pipeline-count">${cards.length}</span>
+        </div>
+        <div class="pipeline-cards">
+          ${cards.length ? cards.map((l) => `
+            <div class="pipeline-card" data-id="${l.id}">
+              <div class="title">${l.owner}</div>
+              <div class="meta">${l.address}</div>
+              <div class="footer">${renderMandatePill(l)} ${getTypeBadge(l)}<span class="price-tag">${formatPrice(l)}</span></div>
+            </div>`).join("") : `<div class="empty-state" style="padding:1rem"><p style="font-size:0.8rem">Vide</p></div>`}
+        </div>
+      </div>`;
+  }).join("");
+
+  document.querySelectorAll(".pipeline-card").forEach((card) => {
+    card.addEventListener("click", () => openDrawer(parseInt(card.dataset.id)));
+  });
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str ?? "").replace(/"/g, "&quot;");
+}
+
+function formatSourceScanHint(lastScan) {
+  if (!lastScan) return "";
+  try {
+    const d = new Date(lastScan);
+    if (Number.isNaN(d.getTime())) return "";
+    return `Dernier scan : ${d.toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`;
+  } catch {
+    return "";
+  }
+}
+
+function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
+  const stats = getSourceDisplayStats(s, job || crawlState.lastJob);
+  const hasError = Boolean(s.last_error) && !stats.isActiveSource;
+  const scanHint = formatSourceScanHint(s.last_scan);
+  const displayUrl = getSourceDisplayUrl(s);
+  const liveCrawl =
+    stats.isActiveSource && stats.job
+      ? `<p class="source-live-crawl">
+          Crawl en cours —
+          ${stats.job.listings_done || 0}/${stats.job.listings_total || "?"} annonces ·
+          ${stats.job.leads_found || 0} analysées ·
+          ${stats.job.leads_saved || 0} nouveaux ·
+          ${stats.job.leads_updated || 0} màj
+        </p>`
+      : "";
+  const extraClass = [
+    hasError ? "source-card--error" : "",
+    saved ? "source-card--saved" : "",
+    sourceUrlDirty.has(s.id) ? "source-card--dirty" : "",
+    sourceUrlSaving.has(s.id) ? "source-card--saving" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `
+    <div class="source-card ${extraClass}" data-source-id="${s.id}" data-search-url="${escapeAttr(displayUrl)}">
+      <div class="source-card-header">
+        <div class="source-name">
+          <div class="source-logo-img">
+            ${getSourceLogoHtml(s)}
+          </div>
+          <div class="source-name-text">
+            <span class="source-title">${escapeHtml(s.name)}</span>
+            ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
+            ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur crawl</span>' : ""}
+            ${saved ? '<span class="source-status-badge source-status-badge--ok">Lien enregistré</span>' : ""}
+          </div>
+        </div>
+        <div class="source-card-actions">
+          <label class="toggle-switch" title="Activer / désactiver">
+            <input type="checkbox" data-source="${s.id}" ${s.enabled ? "checked" : ""}>
+            <span class="toggle-slider"></span>
+          </label>
+          <button type="button" class="btn btn-ghost source-delete-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" title="Supprimer la source">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
+          </button>
+        </div>
+      </div>
+      ${hasError ? `<p class="source-error-msg">${escapeHtml(s.last_error)}</p>` : ""}
+      ${liveCrawl}
+      ${scanHint ? `<p class="source-scan-hint">${escapeHtml(scanHint)}</p>` : ""}
+      <div class="source-url-edit">
+        <label class="source-url-label" for="source-url-${s.id}">Lien de liste / recherche</label>
+        <div class="source-url-row">
+          <input type="url" id="source-url-${s.id}" class="source-url-input" data-source="${s.id}" value="${escapeAttr(displayUrl)}" placeholder="https://www.exemple.fr/annonces/" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn btn-ghost btn-sm source-save-url-btn" data-source="${s.id}" title="Enregistrer le lien">Enregistrer</button>
+        </div>
+        <div class="source-url-meta">
+          ${displayUrl ? `<a href="${escapeAttr(displayUrl)}" class="source-url-open" target="_blank" rel="noopener noreferrer">Ouvrir le lien</a>` : ""}
+          <span class="source-url-hint">${saved ? "Utilisé pour le prochain crawl" : "Modifiez puis Entrée, clic dehors ou Enregistrer"}</span>
+        </div>
+      </div>
+      <div class="source-stats">
+        <div class="source-stat-item">
+          <div class="label">Prospects en base</div>
+          <div class="value source-stat-leads" data-source="${s.id}">${stats.inDb}</div>
+        </div>
+        <div class="source-stat-item">
+          <div class="label">Màj aujourd'hui</div>
+          <div class="value source-stat-today" data-source="${s.id}">${stats.updatedToday}</div>
+        </div>
+      </div>
+      <div class="source-progress"><div class="bar"><div class="fill source-stat-progress" data-source="${s.id}" style="width:${stats.inDb > 0 ? 100 : 0}%"></div></div></div>
+      <button class="btn btn-secondary source-crawl-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" ${crawlState.active ? "disabled" : ""}>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Crawler
+      </button>
+    </div>`;
+}
+
+function updateSourceCardsLive(job) {
+  for (const s of SOURCES) {
+    const stats = getSourceDisplayStats(s, job);
+    const card = document.querySelector(`.source-card[data-source-id="${CSS.escape(s.id)}"]`);
+    if (!card) continue;
+    const leadsEl = card.querySelector(".source-stat-leads");
+    const todayEl = card.querySelector(".source-stat-today");
+    const progEl = card.querySelector(".source-stat-progress");
+    if (leadsEl) leadsEl.textContent = String(stats.inDb);
+    if (todayEl) todayEl.textContent = String(stats.updatedToday);
+    if (progEl) progEl.style.width = `${stats.inDb > 0 ? 100 : 0}%`;
+
+    let liveEl = card.querySelector(".source-live-crawl");
+    if (stats.isActiveSource && stats.job) {
+      const text = `Crawl en cours — ${stats.job.listings_done || 0}/${stats.job.listings_total || "?"} annonces · ${stats.job.leads_found || 0} analysées · ${stats.job.leads_saved || 0} nouveaux · ${stats.job.leads_updated || 0} màj`;
+      if (!liveEl) {
+        liveEl = document.createElement("p");
+        liveEl.className = "source-live-crawl";
+        const anchor = card.querySelector(".source-error-msg") || card.querySelector(".source-card-header");
+        anchor?.insertAdjacentElement("afterend", liveEl);
+      }
+      liveEl.textContent = text;
+      card.classList.add("source-card--live");
+    } else {
+      liveEl?.remove();
+      card.classList.remove("source-card--live");
+    }
+  }
+}
+
+function refreshSourceCard(sourceId, { saved = false } = {}) {
+  const s = SOURCES.find((x) => x.id === sourceId);
+  if (!s) {
+    renderCrawler();
+    return;
+  }
+  const existing = document.querySelector(`.source-card[data-source-id="${CSS.escape(sourceId)}"]`);
+  if (!existing) {
+    renderCrawler();
+    return;
+  }
+  const wrap = document.createElement("div");
+  wrap.innerHTML = buildSourceCardHtml(s, { saved }).trim();
+  const next = wrap.firstElementChild;
+  existing.replaceWith(next);
+  if (saved) {
+    setTimeout(() => {
+      const card = document.querySelector(`.source-card[data-source-id="${CSS.escape(sourceId)}"]`);
+      card?.classList.remove("source-card--saved");
+      card?.querySelector(".source-status-badge--ok")?.remove();
+    }, 4000);
+  }
+}
+
+function renderCrawler() {
+  document.getElementById("sources-grid").innerHTML = SOURCES.map((s) => buildSourceCardHtml(s)).join("");
+  updateCrawlerSummary();
+  scheduleSourceUrlsForCity();
+}
+
+function updateBadges() {
+  document.getElementById("badge-leads").textContent = LEADS.length;
+  document.querySelectorAll(".filter-chip").forEach((chip) => {
+    const filter = chip.dataset.filter;
+    const countEl = chip.querySelector(".count");
+    if (!countEl) return;
+    let count = LEADS.length;
+    if (filter === "particulier") count = LEADS.filter((l) => l.type === "particulier").length;
+    else if (filter === "sans-agence") count = LEADS.filter((l) => l.type !== "agence").length;
+    else if (filter === "avec-agence") count = LEADS.filter((l) => l.type === "agence").length;
+    else if (filter === "vente") count = LEADS.filter((l) => (l.transaction_type || "vente") === "vente").length;
+    else if (filter === "location") count = LEADS.filter((l) => l.transaction_type === "location").length;
+    else if (filter === "nouveau") count = LEADS.filter((l) => l.status === "nouveau").length;
+    else if (filter === "retire") count = LEADS.filter((l) => l.status === "retire").length;
+    else if (filter === "hot-mandate")
+      count = LEADS.filter((l) => l.status !== "retire" && (l.mandate_score || 0) >= 85).length;
+    else if (filter === "price-drop")
+      count = LEADS.filter((l) => (l.alert_tags || []).includes("baisse_prix")).length;
+    else if (filter === "dvf-sous-marche")
+      count = LEADS.filter((l) =>
+        ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
+      ).length;
+    countEl.textContent = count;
+  });
+}
+
+function updateSidebarCount() {
+  const el = document.querySelector(".sidebar-footer .count");
+  if (el) el.textContent = SOURCES.reduce((a, s) => a + s.today, 0);
+}
+
+function renderFactsVerificationHtml(lead) {
+  const audit = lead.facts_audit;
+  if (!audit) return "";
+
+  const passed = audit.checks_passed || [];
+  const failed = audit.checks_failed || [];
+  const sources = audit.sources || {};
+  const sourceCount = Object.values(sources).reduce((n, arr) => n + (arr?.length || 0), 0);
+  const statusClass = failed.length ? "facts-audit-warn" : "facts-audit-ok";
+  const statusLabel = failed.length
+    ? `${failed.length} alerte${failed.length > 1 ? "s" : ""}`
+    : `${passed.length} vérif. OK`;
+
+  const chips = passed
+    .slice(0, 6)
+    .map((c) => `<span class="facts-chip facts-chip-ok">${escapeHtml(c)}</span>`)
+    .join("");
+  const alerts = failed
+    .map((c) => `<span class="facts-chip facts-chip-warn">${escapeHtml(c)}</span>`)
+    .join("");
+
+  const sourceLines = ["title", "price", "surface", "published_at"]
+    .filter((k) => sources[k]?.length)
+    .map((k) => {
+      const label =
+        k === "title"
+          ? "Titre"
+          : k === "price"
+            ? "Prix"
+            : k === "surface"
+              ? "Surface"
+              : "Date";
+      return `<div class="facts-source-row"><span>${label}</span><span>${escapeHtml([...new Set(sources[k])].join(", "))}</span></div>`;
+    })
+    .join("");
+
+  return `<div class="drawer-facts-block ${statusClass}">
+    <div class="drawer-facts-head">
+      <strong>Vérification annonce</strong>
+      <span class="facts-status-pill">${escapeHtml(statusLabel)} · ${sourceCount} sources</span>
+    </div>
+    ${lead.listing_title ? `<div class="facts-listing-title">${escapeHtml(lead.listing_title)}</div>` : ""}
+    <div class="facts-chips">${chips}${alerts}</div>
+    ${sourceLines ? `<div class="facts-sources">${sourceLines}</div>` : ""}
+  </div>`;
+}
+
+function openDrawer(id) {
+  const lead = LEADS.find((l) => l.id === id);
+  if (!lead) return;
+
+  state.drawerShowAllFields = false;
+  state.selectedLead = lead;
+  document.getElementById("drawer-title").textContent = lead.property_title || lead.listing_title || lead.address;
+  const listingUrl = (lead.source_url || "").trim();
+  const viewListingBtn = document.getElementById("drawer-view-listing-btn");
+  if (viewListingBtn) {
+    if (listingUrl) {
+      viewListingBtn.href = listingUrl;
+      viewListingBtn.style.display = "";
+      viewListingBtn.removeAttribute("aria-disabled");
+    } else {
+      viewListingBtn.href = "#";
+      viewListingBtn.style.display = "none";
+      viewListingBtn.setAttribute("aria-disabled", "true");
+    }
+  }
+
+  const pipelineStages = [
+    { key: "nouveau", label: "À contacter" },
+    { key: "contacte", label: "Contacté" },
+    { key: "rdv", label: "RDV" },
+    { key: "mandat", label: "Mandat" },
+    { key: "perdu", label: "Perdu" },
+  ];
+  const pipelineBtns = document.getElementById("drawer-pipeline-btns");
+  if (pipelineBtns) {
+    pipelineBtns.innerHTML = pipelineStages
+      .map(
+        (s) => `<button type="button" class="btn btn-sm ${lead.pipeline === s.key || (!lead.pipeline && s.key === "nouveau") ? "btn-primary" : "btn-secondary"}" data-pipeline="${s.key}">${s.label}</button>`,
+      )
+      .join("");
+    pipelineBtns.querySelectorAll("[data-pipeline]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await patchLeadPipeline(lead.id, btn.dataset.pipeline);
+          showToast(`Pipeline : ${btn.textContent}`, "success");
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      });
+    });
+  }
+
+  const phoneBtn = document.getElementById("drawer-phone-btn");
+  if (phoneBtn) {
+    const tel = (lead.phone || "").replace(/\s/g, "");
+    if (tel && tel !== "—") {
+      phoneBtn.href = `tel:${tel}`;
+      phoneBtn.style.display = "";
+    } else {
+      phoneBtn.href = "#";
+      phoneBtn.style.display = "none";
+    }
+  }
+
+  const refreshFooterBtn = document.getElementById("drawer-refresh-lead-btn");
+  if (refreshFooterBtn) {
+    refreshFooterBtn.dataset.id = String(lead.id);
+    refreshFooterBtn.classList.add("lead-refresh-btn");
+    refreshFooterBtn.disabled = !(lead.source_url || "").trim();
+    refreshFooterBtn.type = "button";
+  }
+
+  const dvfBtn = document.getElementById("drawer-dvf-compare-btn");
+  if (dvfBtn) {
+    const dvfClone = dvfBtn.cloneNode(true);
+    dvfBtn.replaceWith(dvfClone);
+    dvfClone.addEventListener("click", () => {
+      compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
+    });
+  }
+
+  document.getElementById("drawer-call-script-btn")?.replaceWith(
+    document.getElementById("drawer-call-script-btn").cloneNode(true),
+  );
+  document.getElementById("drawer-call-script-btn")?.addEventListener("click", () => {
+    loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
+  });
+
+  const mandateTypeForLead =
+    lead.transaction_type === "location" ? "location" : "vente";
+  const wireMandateDrawerBtn = (id, type) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    const clone = btn.cloneNode(true);
+    clone.classList.remove("btn-ghost-dim");
+    if (type !== mandateTypeForLead) clone.classList.add("btn-ghost-dim");
+    btn.replaceWith(clone);
+    clone.addEventListener("click", () => {
+      if (window.VelioraMandates?.createMandateFromLead) {
+        window.VelioraMandates.createMandateFromLead(lead.id, type);
+      } else {
+        showToast("Module mandats indisponible — relancez le serveur (demarrer.bat)", "error");
+      }
+    });
+  };
+  wireMandateDrawerBtn("drawer-mandate-vente", "vente");
+  wireMandateDrawerBtn("drawer-mandate-location", "location");
+
+  const daysTxt =
+    lead.days_on_market != null ? `${lead.days_on_market} j en ligne` : formatPublishedDate(lead);
+
+  let dvfHtml = `<div class="drawer-dvf-block">
+    <strong>Comparatif DVF</strong> — ventes réelles (DGFiP / <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Etalab</a>)<br>
+    Cliquez sur « Comparatif DVF » pour analyser ce bien.`;
+  if (lead.dvf_verdict) {
+    const sign = lead.dvf_delta_pct > 0 ? "+" : "";
+    const locParts = [
+      lead.dvf_sector || lead.sector || lead.city,
+      lead.postcode ? `(${lead.postcode})` : "",
+    ].filter(Boolean).join(" ");
+    const pubDate = lead.published_at ? formatPublishedDate(lead) : null;
+    const dvfPeriod = lead.dvf_reference_period
+      ? `ventes ${lead.dvf_reference_period}`
+      : "24 derniers mois";
+    dvfHtml = `<div class="drawer-dvf-block">
+      <strong>${escapeHtml(lead.dvf_verdict_label || "")}</strong><br>
+      <span class="dvf-context">${escapeHtml(locParts || "—")}${pubDate ? ` · Annonce publiée ${pubDate}` : ""}</span><br>
+      Annonce : <strong>${lead.price && lead.surface ? Math.round(lead.price / lead.surface).toLocaleString("fr-FR") : "—"} €/m²</strong>
+      · Médiane DVF : <strong>${(lead.dvf_median_m2 || 0).toLocaleString("fr-FR")} €/m²</strong>
+      (${lead.dvf_sample_count || 0} ventes ${escapeHtml(dvfPeriod)}, ${escapeHtml(lead.dvf_commune || "")})<br>
+      Écart : <strong>${sign}${lead.dvf_delta_pct}%</strong>
+      · <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Explorer sur DVF</a>`;
+  }
+  dvfHtml += `</div>`;
+
+  const ms = lead.mandate_score || 0;
+  document.getElementById("drawer-body").innerHTML = `
+    <div class="drawer-mandate-hero">
+      <span class="drawer-mandate-kicker">Score Mandat™</span>
+      <div class="drawer-mandate-score-row">
+        ${renderMandatePill(lead, { large: true })}
+        <span class="drawer-mandate-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
+      </div>
+      <p class="drawer-mandate-reason">${escapeHtml(lead.mandate_score_reason || "—")}</p>
+      <p class="drawer-mandate-hint">Opportunité du marché · ${escapeHtml(lead.city || lead.sector || "secteur")}</p>
+    </div>
+    ${renderFactsVerificationHtml(lead)}
+    ${dvfHtml}
+    ${renderDrawerEditSection(lead)}
+    <div class="drawer-section drawer-readonly-summary">
+      <div class="drawer-section-title">Résumé</div>
+      ${lead.property_title ? `<div class="detail-row"><span class="label">Bien</span><span class="value">${escapeHtml(lead.property_title)}</span></div>` : ""}
+      <div class="detail-row" data-drawer-field="owner"><span class="label">Contact</span><span class="value drawer-live-value">${escapeHtml(lead.owner)}</span></div>
+      <div class="detail-row" data-drawer-field="price"><span class="label">Prix</span><span class="value drawer-live-value">${formatPrice(lead)} ${getTransactionBadge(lead)}</span></div>
+      <div class="detail-row" data-drawer-field="surface"><span class="label">Surface</span><span class="value drawer-live-value">${lead.surface ? lead.surface + " m²" : "—"}</span></div>
+      <div class="detail-row"><span class="label">En ligne</span><span class="value">${daysTxt}</span></div>
+      <div class="detail-row"><span class="label">Portail</span><span class="value">${escapeHtml(lead.source)}</span></div>
+      <div class="detail-row" data-drawer-field="score"><span class="label">Complétude données</span><span class="value drawer-live-value"><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}/100</span></span></div>
+      <div class="detail-row"><span class="label">Pipeline</span><span class="value">${getStatusBadge(lead.pipeline || lead.status)}</span></div>
+    </div>`;
+
+  bindDrawerEditHandlers(lead);
+
+  document.getElementById("drawer-overlay").classList.add("open");
+  document.getElementById("lead-drawer").classList.add("open");
+}
+
+function closeDrawer() {
+  document.getElementById("drawer-overlay").classList.remove("open");
+  document.getElementById("lead-drawer").classList.remove("open");
+  state.selectedLead = null;
+}
+
+function showWrongServerBanner(staleServer = false) {
+  let el = document.getElementById("server-warning-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "server-warning-banner";
+    el.className = "server-warning-banner";
+    document.body.prepend(el);
+  }
+  const url = `http://localhost:${PROPSCOUT_PORT}`;
+  el.innerHTML = staleServer
+    ? `<strong>Serveur à redémarrer</strong> — Un ancien Veliora tourne encore sur le port 8000. Terminal : <code>Ctrl+C</code> puis <code>python app.py</code> ou double-clic <code>demarrer.bat</code>. <a href="${url}">Ouvrir ${url}</a>`
+    : `<strong>Veliora non démarré</strong> — Lancez <code>python app.py</code> ou <code>demarrer.bat</code>, puis ouvrez <a href="${url}">${url}</a> (pas Live Server).`;
+  el.hidden = false;
+}
+
+function hideWrongServerBanner() {
+  const el = document.getElementById("server-warning-banner");
+  if (el) el.hidden = true;
+}
+
+function showToast(message, type = "info", duration = 4000) {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+
+  const icons = {
+    success: '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+    error: '<path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+    warning: '<path d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>',
+    info: '<path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+  };
+
+  const lines = String(message).split("\n").map((l) => `<span>${l}</span>`).join("");
+  toast.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">${icons[type] || icons.info}</svg>
+    <div class="toast-body">${lines}</div>`;
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(-8px)";
+    toast.style.transition = "all 0.3s ease";
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+function leadsDataFingerprint(leads) {
+  if (!Array.isArray(leads)) return "";
+  return leads
+    .map(
+      (l) =>
+        `${l.id}|${l.updated_at || ""}|${l.price || 0}|${l.mandate_score || 0}|${l.previous_price || ""}|${l.pipeline || ""}|${l.status || ""}`,
+    )
+    .join(";");
+}
+
+function startPolling() {
+  setInterval(async () => {
+    try {
+      const status = await api("/crawler/status");
+      state.crawlerRunning = status.running;
+      syncCrawlerUI();
+
+      if (crawlState.active) {
+        scheduleLeadsRefreshDuringCrawl(null);
+        return;
+      }
+
+      const [leads] = await Promise.all([api("/leads")]);
+      const fp = leadsDataFingerprint(leads);
+      const prevFp = leadsDataFingerprint(LEADS);
+      const changed = fp !== prevFp;
+      LEADS = leads;
+      if (changed) {
+        RADAR = await fetchRadarBriefing().catch(() => RADAR);
+        await refreshStats();
+        renderAll();
+      } else {
+        updateSidebarCount();
+      }
+    } catch {
+      /* silent */
+    }
+  }, 5000);
+}
+
+async function submitInvite(e) {
+  e.preventDefault();
+  const email = document.getElementById("invite-email")?.value?.trim();
+  const password = document.getElementById("invite-password")?.value;
+  const first = document.getElementById("invite-first")?.value?.trim();
+  const last = document.getElementById("invite-last")?.value?.trim();
+  if (!email || !password) {
+    showToast("Email et mot de passe requis", "error");
+    return;
+  }
+  try {
+    await api("/auth/invite", {
+      method: "POST",
+      body: JSON.stringify({ email, password, first_name: first, last_name: last }),
+    });
+    document.getElementById("invite-modal")?.classList.remove("open");
+    showToast("Collaborateur invité", "success");
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
+let onboardingCache = null;
+let onboardingBarHidden = false;
+let onboardingDidAutoNav = false;
+
+const ONBOARDING_STEPS = [
+  {
+    step: 1,
+    view: "crawler",
+    spotId: "onboarding-spot-1",
+    barTitle: "Ajoutez votre première source de veille",
+    barGoto: "Ajouter une source",
+  },
+  {
+    step: 2,
+    view: "crawler",
+    spotId: "onboarding-spot-2",
+    barTitle: "Lancez un crawl pour importer des prospects",
+    barGoto: "Lancer un crawl",
+  },
+  {
+    step: 3,
+    view: "dashboard",
+    spotId: "onboarding-spot-3",
+    barTitle: "Consultez le briefing — qui appeler en premier",
+    barGoto: "Voir le briefing",
+  },
+];
+
+function onboardingProgress(data) {
+  const p = data?.progress || {};
+  return {
+    hasSource: !!p.has_source,
+    hasLeads: !!p.has_leads,
+    step3Seen: (data?.settings?.onboarding_step || 0) >= 3,
+    step1Done: !!p.has_source,
+    step2Done: !!p.has_leads,
+    step3Done: !!p.has_leads && (data?.settings?.onboarding_step || 0) >= 3,
+    allDone: !!p.has_source && !!p.has_leads && (data?.settings?.onboarding_step || 0) >= 3,
+  };
+}
+
+function currentOnboardingStep(prog) {
+  if (!prog.step1Done) return 1;
+  if (!prog.step2Done) return 2;
+  if (!prog.step3Done) return 3;
+  return 0;
+}
+
+function applyOnboardingSpot(stepNum, state, visible) {
+  const spot = document.getElementById(`onboarding-spot-${stepNum}`);
+  if (!spot) return;
+  spot.hidden = !visible;
+  spot.classList.remove("onboarding-spot--done", "onboarding-spot--pending", "onboarding-spot--active");
+  const titleEl = spot.querySelector(".onboarding-spot-title");
+  const doneTitles = {
+    1: "Source configurée",
+    2: "Prospects détectés",
+    3: "Briefing consulté",
+  };
+  const activeTitles = {
+    1: "Ajoutez votre première source",
+    2: "Lancez votre premier crawl",
+    3: "Consultez vos priorités du jour",
+  };
+  if (!visible) return;
+  if (state === "done") {
+    spot.classList.add("onboarding-spot--done");
+    if (titleEl) titleEl.textContent = doneTitles[stepNum] || titleEl.textContent;
+  } else if (state === "pending") {
+    spot.classList.add("onboarding-spot--pending");
+    if (titleEl) titleEl.textContent = activeTitles[stepNum] || titleEl.textContent;
+  } else {
+    spot.classList.add("onboarding-spot--active");
+    if (titleEl) titleEl.textContent = activeTitles[stepNum] || titleEl.textContent;
+  }
+}
+
+async function refreshOnboardingUi() {
+  try {
+    const data = await api("/onboarding");
+    onboardingCache = data;
+    if (data.settings?.onboarding_completed) {
+      document.getElementById("onboarding-bar")?.setAttribute("hidden", "");
+      [1, 2, 3].forEach((n) => applyOnboardingSpot(n, "done", false));
+      return;
+    }
+
+    const prog = onboardingProgress(data);
+    const current = currentOnboardingStep(prog);
+    const view = state.currentView;
+
+    if (prog.allDone) {
+      await api("/onboarding", { method: "PATCH", body: JSON.stringify({ complete: true }) });
+      document.getElementById("onboarding-bar")?.setAttribute("hidden", "");
+      [1, 2, 3].forEach((n) => applyOnboardingSpot(n, "done", false));
+      showToast("Configuration terminée — bonne chasse aux mandats !", "success");
+      return;
+    }
+
+    // Encarts contextuels par vue
+    applyOnboardingSpot(1, prog.step1Done ? "done" : current === 1 ? "active" : "pending", view === "crawler");
+    applyOnboardingSpot(
+      2,
+      prog.step2Done ? "done" : !prog.step1Done ? "pending" : current === 2 ? "active" : "pending",
+      view === "crawler",
+    );
+    applyOnboardingSpot(
+      3,
+      prog.step3Done ? "done" : !prog.step2Done ? "pending" : current === 3 ? "active" : "pending",
+      view === "dashboard",
+    );
+
+    // Barre de progression globale
+    const bar = document.getElementById("onboarding-bar");
+    if (bar) {
+      const showBar = !onboardingBarHidden && current > 0;
+      bar.hidden = !showBar;
+      if (showBar) {
+        const doneCount = [prog.step1Done, prog.step2Done, prog.step3Done].filter(Boolean).length;
+        const pct = Math.round((doneCount / 3) * 100);
+        const fill = document.getElementById("onboarding-bar-fill");
+        if (fill) {
+          if (window.matchMedia("(max-width: 640px)").matches) {
+            fill.style.width = `${pct}%`;
+            fill.style.height = "100%";
+          } else {
+            fill.style.height = `${Math.max(pct, 8)}%`;
+            fill.style.width = "100%";
+          }
+        }
+        const meta = ONBOARDING_STEPS.find((s) => s.step === current);
+        const titleEl = document.getElementById("onboarding-bar-title");
+        const stepEl = document.getElementById("onboarding-bar-step");
+        const gotoBtn = document.getElementById("onboarding-bar-goto");
+        if (titleEl && meta) titleEl.textContent = meta.barTitle;
+        if (stepEl) stepEl.textContent = `Étape ${current} / 3 · ${doneCount} terminée${doneCount > 1 ? "s" : ""}`;
+        if (gotoBtn && meta) {
+          gotoBtn.textContent = meta.barGoto;
+          gotoBtn.dataset.onboardingView = meta.view;
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function markOnboardingStep3Seen() {
+  if (!onboardingCache || onboardingCache.settings?.onboarding_completed) return;
+  const prog = onboardingProgress(onboardingCache);
+  if (!prog.hasLeads || prog.step3Seen) return;
+  try {
+    await api("/onboarding", { method: "PATCH", body: JSON.stringify({ step: 3 }) });
+    await refreshOnboardingUi();
+  } catch {
+    /* ignore */
+  }
+}
+
+function setupOnboarding() {
+  document.getElementById("onboarding-cta-source")?.addEventListener("click", () => {
+    openAddSourceModal();
+  });
+  document.getElementById("onboarding-cta-crawl-all")?.addEventListener("click", () => {
+    document.getElementById("crawler-all-btn")?.click();
+  });
+  document.getElementById("onboarding-cta-crawl-one")?.addEventListener("click", () => {
+    const firstSource = document.querySelector("#sources-grid .source-crawl-btn");
+    if (firstSource) firstSource.click();
+    else showToast("Ajoutez d’abord une source, puis relancez le crawl", "info");
+  });
+  document.getElementById("onboarding-bar-goto")?.addEventListener("click", (e) => {
+    const view = e.currentTarget.dataset.onboardingView || "crawler";
+    switchView(view);
+  });
+  document.getElementById("onboarding-bar-dismiss")?.addEventListener("click", () => {
+    onboardingBarHidden = true;
+    document.getElementById("onboarding-bar")?.setAttribute("hidden", "");
+  });
+}
+
+function setupAccountMenu() {
+  document.getElementById("btn-account-menu")?.addEventListener("click", () => {
+    document.getElementById("account-modal")?.classList.add("open");
+  });
+  document.getElementById("account-modal-close")?.addEventListener("click", () => {
+    document.getElementById("account-modal")?.classList.remove("open");
+  });
+  document.getElementById("btn-export-leads")?.addEventListener("click", async () => {
+    try {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      const res = await fetch(`${API}/leads/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Export impossible");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "veliora-prospects.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Export CSV téléchargé", "success");
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  });
+  document.getElementById("btn-billing-portal")?.addEventListener("click", async () => {
+    try {
+      const { portal_url } = await api("/billing/create-portal-session", { method: "POST" });
+      if (portal_url) window.location.href = portal_url;
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  });
+}
+
+async function syncAccountBillingButton() {
+  try {
+    const me = await api("/auth/me");
+    const btn = document.getElementById("btn-billing-portal");
+    if (btn) btn.hidden = !me.billing?.has_stripe_customer;
+  } catch {
+    /* ignore */
+  }
+}
+
+document.addEventListener("DOMContentLoaded", init);

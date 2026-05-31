@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1220">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Veliora — Radar mandats · Score Mandat™</title>
+  <link rel="manifest" href="/crm/manifest.webmanifest">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=37">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=31">
+</head>
+<body>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <div class="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Veliora</h1>
+          <span class="brand-tagline">Radar mandats · Score Mandat™</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-label">Principal</div>
+          <button class="nav-item active" data-view="dashboard">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Score Mandat™
+          </button>
+          <button class="nav-item" data-view="playbook">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+            Guide commercial
+          </button>
+          <button class="nav-item" data-view="leads">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            Prospects
+            <span class="nav-badge" id="badge-leads">0</span>
+          </button>
+          <button class="nav-item" data-view="pipeline">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+            Pipeline
+          </button>
+          <button class="nav-item" data-view="mandates">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Mandats
+          </button>
+          <button class="nav-item" data-view="clients">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M16 11V7a4 4 0 00-8 0v4M5 11h14v10H5V11z"/></svg>
+            Acheteurs / Locataires
+          </button>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-label">Outils</div>
+          <button class="nav-item" data-view="crawler">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
+            Crawler
+          </button>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="crawler-status-mini">
+          <div class="status-row">
+            <span class="status-dot paused"></span>
+            <p>Crawler en pause</p>
+          </div>
+          <p><span class="count">0</span> annonces scannées aujourd'hui</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+      <header class="header">
+        <div class="header-bar">
+          <div class="header-start">
+            <button type="button" class="mobile-nav-toggle" id="mobile-nav-toggle" aria-label="Ouvrir le menu">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="header-titles">
+              <div class="header-title" id="header-title">Score Mandat™</div>
+              <div class="header-subtitle" id="header-subtitle">Opportunités du marché</div>
+            </div>
+          </div>
+          <div class="header-center">
+            <div class="search-box">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input type="text" id="global-search" placeholder="Rechercher un prospect ou coller une URL…" enterkeyhint="search">
+            </div>
+          </div>
+          <div class="header-end">
+            <span class="header-agency-pill" id="header-agency-name" title="Votre agence"></span>
+            <button type="button" class="header-icon-btn" id="btn-account-menu" title="Compte & export" aria-label="Compte">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            </button>
+            <button type="button" class="header-icon-btn" id="btn-invite-collab" hidden title="Inviter un collaborateur" aria-label="Inviter">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M8.5 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6"/></svg>
+            </button>
+            <button class="btn btn-secondary btn-compact" id="header-crawl-btn" type="button" onclick="switchView('crawler')" title="Alimenter le radar (sources)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
+              <span class="btn-label">Sources</span>
+            </button>
+            <div class="header-user" role="group" aria-label="Compte">
+              <div class="avatar" id="header-avatar" title="Compte">AG</div>
+              <button type="button" class="header-icon-btn" id="btn-logout" title="Déconnexion" aria-label="Déconnexion">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+
+        <nav class="product-modes" id="product-modes" aria-label="Modes Veliora">
+          <button type="button" class="product-mode active" data-mode="dashboard" id="product-mode-radar">
+            <span class="product-mode-num">Mode 1</span>
+            <span class="product-mode-title">Radar automatique</span>
+            <span class="product-mode-desc">Opportunités · Score · Alertes · Briefing</span>
+          </button>
+          <button type="button" class="product-mode" data-mode="analyze" id="product-mode-analyze">
+            <span class="product-mode-num">Mode 2</span>
+            <span class="product-mode-title">Analyse à la demande</span>
+            <span class="product-mode-desc">Coller une URL → Score Mandat™</span>
+          </button>
+        </nav>
+
+        <!-- Barre de progression onboarding (non bloquante) -->
+        <div class="onboarding-bar" id="onboarding-bar" hidden aria-live="polite">
+          <div class="onboarding-bar-inner">
+            <div class="onboarding-bar-progress" aria-hidden="true">
+              <div class="onboarding-bar-fill" id="onboarding-bar-fill"></div>
+            </div>
+            <div class="onboarding-bar-text">
+              <span class="onboarding-bar-kicker" id="onboarding-bar-kicker">Premiers pas</span>
+              <strong id="onboarding-bar-title">Configurez Veliora en 3 étapes</strong>
+              <span class="onboarding-bar-step" id="onboarding-bar-step">Étape 1 / 3</span>
+            </div>
+            <div class="onboarding-bar-actions">
+              <button type="button" class="btn btn-ghost btn-sm" id="onboarding-bar-goto">Aller à l’étape</button>
+              <button type="button" class="btn btn-ghost btn-sm onboarding-bar-close" id="onboarding-bar-dismiss" title="Masquer la barre">Masquer</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Radar / Briefing -->
+        <div class="view active" id="view-dashboard">
+          <aside class="onboarding-spot" id="onboarding-spot-3" data-onboarding-step="3" hidden>
+            <div class="onboarding-spot-inner">
+              <div class="onboarding-spot-head">
+                <span class="onboarding-spot-badge">Étape 3 · Briefing</span>
+                <span class="onboarding-spot-status" aria-hidden="true"></span>
+              </div>
+              <h3 class="onboarding-spot-title">Score Mandat™ & opportunités du marché</h3>
+              <p class="onboarding-spot-desc">Votre <strong>liste priorisée</strong> : score expliqué, raisons de contacter, recommandation d’appel. Ouvrez une fiche pour le script et le comparatif DVF.</p>
+              <p class="onboarding-spot-hint">↓ Bloc « Opportunités du marché » juste en dessous</p>
+            </div>
+          </aside>
+
+          <section class="crm-dashboard-hero" id="crm-dashboard-hero" aria-label="Score Mandat et opportunités du marché">
+            <div class="crm-hero-copy">
+              <span class="crm-hero-kicker">Mode 1 · Radar automatique</span>
+              <h2 class="crm-hero-title" id="radar-greeting">Briefing du marché</h2>
+              <p class="crm-hero-date radar-date" id="radar-date"></p>
+              <p class="crm-hero-tagline">Nouvelles opportunités, Score Mandat™, alertes et briefing du matin — le cœur du produit.</p>
+              <div class="crm-hero-stats">
+                <div class="crm-hero-stat">
+                  <span class="n" id="radar-total-opps">0</span>
+                  <span class="l">sur votre marché</span>
+                </div>
+                <div class="crm-hero-stat hot">
+                  <span class="n" id="radar-hero-hot">0</span>
+                  <span class="l">Score ≥ 85</span>
+                </div>
+                <div class="crm-hero-stat">
+                  <span class="n" id="radar-hero-call-today">0</span>
+                  <span class="l">à appeler aujourd'hui</span>
+                </div>
+              </div>
+            </div>
+            <div class="crm-hero-featured" id="radar-hero-featured" hidden></div>
+          </section>
+
+          <div class="radar-briefing-header">
+            <div>
+              <span class="v-label" style="margin:0">Signaux du marché</span>
+              <p class="radar-section-hint">Filtrez les opportunités par signal détecté sur vos portails</p>
+            </div>
+            <div class="radar-briefing-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="radar-settings-btn" title="Territoire cible">Territoire</button>
+              <button type="button" class="btn btn-primary btn-sm" id="radar-playbook-btn" title="Scripts d'appel">Scripts d'appel</button>
+            </div>
+          </div>
+
+          <div class="stats-grid radar-stats">
+            <div class="stat-card sky radar-stat" data-filter="sans-agence">
+              <div class="stat-header">
+                <span class="stat-label">Sans agence</span>
+              </div>
+              <div class="stat-value" id="radar-count-sans-agence">0</div>
+              <div class="stat-change">Particuliers détectés</div>
+            </div>
+            <div class="stat-card amber radar-stat" data-filter="nouveau">
+              <div class="stat-header">
+                <span class="stat-label">Nouveaux</span>
+              </div>
+              <div class="stat-value" id="radar-count-new">0</div>
+              <div class="stat-change">À traiter en priorité</div>
+            </div>
+            <div class="stat-card rose radar-stat" data-filter="price-drop">
+              <div class="stat-header">
+                <span class="stat-label">Baisses de prix</span>
+              </div>
+              <div class="stat-value" id="radar-count-drops">0</div>
+              <div class="stat-change">Vendeurs potentiellement motivés</div>
+            </div>
+            <div class="stat-card gold radar-stat" data-filter="hot-mandate">
+              <div class="stat-header">
+                <span class="stat-label">Score Mandat™ élevé</span>
+              </div>
+              <div class="stat-value" id="radar-count-hot">0</div>
+              <div class="stat-change">≥ 85 — priorité appel</div>
+            </div>
+            <div class="stat-card teal radar-stat" data-filter="dvf-sous-marche">
+              <div class="stat-header">
+                <span class="stat-label">Sous marché DVF</span>
+              </div>
+              <div class="stat-value" id="radar-count-dvf">0</div>
+              <div class="stat-change">vs ventes récentes Etalab</div>
+            </div>
+          </div>
+
+          <div class="grid-2-1">
+            <div class="card card-market-opps">
+              <div class="card-header">
+                <div>
+                  <span class="card-title">Opportunités du marché</span>
+                  <span class="card-meta" id="radar-prio-meta">Classées par Score Mandat™</span>
+                </div>
+                <button class="btn btn-ghost" onclick="switchView('leads')">Toute la liste →</button>
+              </div>
+              <div class="card-body radar-priority-list" id="radar-priorities"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Alertes marché</span>
+              </div>
+              <div class="card-body" id="radar-alerts"></div>
+            </div>
+          </div>
+
+          <div class="grid-2-1">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Activité récente</span>
+              </div>
+              <div class="card-body" id="activity-feed"></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Sources</span>
+                <button class="btn btn-ghost" onclick="switchView('crawler')">Crawler →</button>
+              </div>
+              <div class="card-body">
+                <div class="source-bars" id="source-chart"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="display:none">
+            <div class="card-body">
+              <table class="leads-table"><tbody id="dashboard-top-leads"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode 2 — Analyse à la demande -->
+        <div class="view" id="view-analyze">
+          <section class="analyze-hero">
+            <span class="analyze-kicker">Mode 2 · Analyse à la demande</span>
+            <h2 class="analyze-title">Analyser une annonce</h2>
+            <p class="analyze-lead">Collez le lien d'une fiche — Veliora calcule le <strong>Score Mandat™</strong>, les facteurs positifs et la recommandation d'appel.</p>
+            <div class="analyze-portals" aria-label="Portails supportés">
+              <span>SeLoger</span><span>Leboncoin</span><span>Bien'ici</span><span>PAP</span><span>Logic-Immo</span><span class="analyze-portals-more">+ sites perso</span>
+            </div>
+            <form class="analyze-form" id="analyze-url-form">
+              <div class="custom-crawl-input analyze-url-input">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"/><path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                <input type="url" id="analyze-url-input" placeholder="https://www.seloger.com/annonces/..." required>
+                <button type="submit" class="btn btn-primary" id="analyze-url-submit">Analyser</button>
+              </div>
+            </form>
+          </section>
+
+          <div class="analyze-loading card" id="analyze-loading" hidden>
+            <div class="card-body analyze-loading-body">
+              <div class="analyze-loading-spinner" aria-hidden="true"></div>
+              <p class="analyze-loading-title">Analyse en cours…</p>
+              <p class="analyze-loading-msg" id="analyze-loading-msg">Extraction de l'annonce et calcul du Score Mandat™</p>
+            </div>
+          </div>
+
+          <div class="analyze-empty card" id="analyze-empty">
+            <div class="card-body">
+              <p>Collez une URL d'annonce ci-dessus : Score Mandat™, <strong>Analyse IA</strong> (synthèse en langage naturel), facteurs positifs et recommandation.</p>
+            </div>
+          </div>
+
+          <section class="analyze-result" id="analyze-result" hidden>
+            <div class="analyze-result-header">
+              <div class="analyze-score-block">
+                <span class="analyze-score-label">Score Mandat™</span>
+                <div class="analyze-score-value" id="analyze-score-display">—<span class="analyze-score-max">/100</span></div>
+                <p class="analyze-score-address" id="analyze-score-address"></p>
+                <p class="analyze-score-meta" id="analyze-score-meta"></p>
+              </div>
+            </div>
+            <div class="card analyze-ai-card" id="analyze-ai-card">
+              <div class="card-header">
+                <div>
+                  <span class="card-title">Analyse IA</span>
+                  <span class="card-meta" id="analyze-ai-subtitle">Synthèse contextualisée</span>
+                </div>
+                <span class="analyze-ai-badge" aria-hidden="true">IA</span>
+              </div>
+              <div class="card-body analyze-ai-body" id="analyze-ai-body"></div>
+              <p class="analyze-ai-disclaimer" id="analyze-ai-disclaimer"></p>
+            </div>
+            <div class="grid-2-1 analyze-result-grid">
+              <div class="card">
+                <div class="card-header"><span class="card-title">Facteurs positifs</span></div>
+                <ul class="analyze-factors" id="analyze-factors"></ul>
+              </div>
+              <div class="card analyze-reco-card">
+                <div class="card-header"><span class="card-title">Recommandation</span></div>
+                <div class="card-body">
+                  <p class="analyze-reco-label" id="analyze-reco-label">—</p>
+                  <p class="analyze-reco-detail" id="analyze-reco-detail"></p>
+                  <div class="analyze-result-actions">
+                    <button type="button" class="btn btn-primary" id="analyze-open-lead">Ouvrir la fiche</button>
+                    <button type="button" class="btn btn-secondary" id="analyze-compare-dvf">Comparatif DVF</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Guide commercial -->
+        <div class="view" id="view-playbook">
+          <div class="playbook-hero">
+            <div>
+              <h2 class="playbook-title">Guide commercial</h2>
+              <p class="playbook-subtitle" id="playbook-subtitle">Conseils, opportunités et scripts d'appel — tout en un seul endroit</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="playbook-refresh-btn">Actualiser</button>
+          </div>
+
+          <div class="playbook-stats" id="playbook-stats"></div>
+
+          <div class="playbook-layout">
+            <div class="playbook-main">
+              <section class="card playbook-section">
+                <div class="card-header">
+                  <span class="card-title">Mes opportunités & scripts</span>
+                  <span class="card-meta" id="playbook-opp-count">0 prospect(s)</span>
+                </div>
+                <div class="card-body playbook-opportunities" id="playbook-opportunities"></div>
+              </section>
+
+              <section class="card playbook-section">
+                <div class="card-header">
+                  <span class="card-title">Scripts par situation</span>
+                </div>
+                <div class="card-body" id="playbook-templates"></div>
+              </section>
+            </div>
+
+            <aside class="playbook-aside">
+              <div class="card playbook-section">
+                <div class="card-header">
+                  <span class="card-title">Comprendre Veliora</span>
+                </div>
+                <div class="card-body playbook-guide" id="playbook-guide"></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <!-- Leads -->
+        <div class="view" id="view-leads">
+          <p class="leads-view-lead">Prospects classés par <strong>Score Mandat™</strong> — opportunités détectées sur votre marché.</p>
+          <div class="import-listing-bar">
+            <p class="import-listing-hint">Analyse ponctuelle d'une annonce ? <button type="button" class="btn btn-ghost btn-sm" id="leads-goto-analyze">Mode 2 — Analyser une URL</button></p>
+          </div>
+          <div class="filters-bar">
+            <button class="filter-chip active" data-filter="all">Tous <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="hot-mandate">Score élevé <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="sans-agence">Sans agence <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="avec-agence">Avec agence <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="vente">Vente <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="location">Location <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="particulier">Particuliers <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="nouveau">Nouveaux <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="retire" title="Fiches retirées par le crawl (incohérentes)">Retirés <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="price-drop">Baisses <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="dvf-sous-marche">Sous marché DVF <span class="count">0</span></button>
+            <div class="filters-spacer"></div>
+            <span id="leads-live-indicator" class="leads-live-badge" hidden aria-live="polite">● Mise à jour en direct</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="leads-dvf-compare-all" title="Comparer aux ventes DVF (Etalab)">
+              Comparatif DVF
+            </button>
+            <button type="button" class="btn btn-ghost btn-danger-ghost" id="leads-delete-all-btn" title="Supprimer tous les prospects">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
+              Tout supprimer
+            </button>
+            <div class="view-toggle">
+              <button class="active" data-view="table" title="Vue tableau">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+              </button>
+              <button data-view="grid" title="Vue grille">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="leads-table-wrapper" class="leads-table-wrapper">
+            <table class="leads-table">
+              <thead>
+                <tr>
+                  <th class="col-score-mandat">Score Mandat™</th>
+                  <th>Propriétaire</th>
+                  <th>Propriété</th>
+                  <th>Prix</th>
+                  <th>Type</th>
+                  <th>Statut</th>
+                  <th>Source</th>
+                  <th>Marché</th>
+                  <th>Annonce</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="leads-table-body"></tbody>
+            </table>
+          </div>
+          <div id="leads-grid-wrapper" style="display:none">
+            <div class="leads-grid" id="leads-grid"></div>
+          </div>
+        </div>
+
+        <!-- Crawler -->
+        <div class="view" id="view-crawler">
+          <aside class="onboarding-spot" id="onboarding-spot-1" data-onboarding-step="1" hidden>
+            <div class="onboarding-spot-inner">
+              <div class="onboarding-spot-head">
+                <span class="onboarding-spot-badge">Étape 1 · Sources</span>
+                <span class="onboarding-spot-status" aria-hidden="true"></span>
+              </div>
+              <h3 class="onboarding-spot-title">Ajoutez votre première source</h3>
+              <p class="onboarding-spot-desc">Collez l’URL d’une page de recherche immobilière (Leboncoin, PAP, SeLoger…). Veliora surveillera cette source pour détecter les opportunités mandat.</p>
+              <button type="button" class="btn btn-primary btn-sm onboarding-spot-cta" id="onboarding-cta-source">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M12 4v16m8-8H4"/></svg>
+                Ajouter un site
+              </button>
+              <p class="onboarding-spot-hint">↓ Ou utilisez le bouton « Ajouter un site » dans la section Sources</p>
+            </div>
+          </aside>
+
+          <div class="crawler-hero">
+            <div class="crawler-hero-content">
+              <h2>Surveillance automatique des annonces</h2>
+              <p>Le crawler parcourt <strong>tous vos sites</strong> (LeBonCoin, PAP, SeLoger, Bien'ici, Figaro, sites perso…) — vente, location, pagination et catégories incluses.</p>
+              <form class="custom-crawl-form" id="custom-crawl-form">
+                <div class="custom-crawl-input">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"/><path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                  <input type="url" id="custom-crawl-url" placeholder="Lien direct d'une fiche annonce (tous sites)…" required>
+                  <button type="submit" class="btn btn-primary">Analyser l'annonce</button>
+                </div>
+                <p class="custom-crawl-hint">Mode 2 — une fiche, Score Mandat™ et recommandation. Pour le radar continu, ajoutez des sources ci-dessous.</p>
+              </form>
+              <div class="crawl-city-bar">
+                <label class="form-field crawl-city-field">
+                  <span>Ville crawlée <small>(optionnel — vide = toutes zones)</small></span>
+                  <input type="text" id="crawl-city-filter" placeholder="Ex. Lyon — laissez vide pour tout le pays" autocomplete="off" spellcheck="false">
+                  <p class="form-hint crawl-city-hint" id="crawl-city-territory-hint">Synchronisé avec Territoire (Radar) et ville de la fiche agence</p>
+                </label>
+              </div>
+              <div class="crawler-controls">
+                <button class="btn btn-primary" id="crawler-toggle">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Démarrer
+                </button>
+                <button class="btn btn-secondary" style="background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.2);color:white" id="crawler-scan-btn">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  Crawler tout
+                </button>
+              </div>
+              <div class="crawler-live-stats">
+                <div class="live-stat">
+                  <div class="label">Prospects en base</div>
+                  <div class="value" id="crawler-total-leads">0</div>
+                </div>
+                <div class="live-stat">
+                  <div class="label">Sources actives</div>
+                  <div class="value" id="crawler-active-sources">5</div>
+                </div>
+                <div class="live-stat">
+                  <div class="label">Màj aujourd'hui</div>
+                  <div class="value" id="crawler-found-today">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="onboarding-spot" id="onboarding-spot-2" data-onboarding-step="2" hidden>
+            <div class="onboarding-spot-inner">
+              <div class="onboarding-spot-head">
+                <span class="onboarding-spot-badge">Étape 2 · Veille</span>
+                <span class="onboarding-spot-status" aria-hidden="true"></span>
+              </div>
+              <h3 class="onboarding-spot-title">Lancez votre premier crawl</h3>
+              <p class="onboarding-spot-desc">Scannez vos sources pour importer les annonces. Dès qu’un prospect est détecté, le briefing se remplit automatiquement.</p>
+              <div class="onboarding-spot-actions">
+                <button type="button" class="btn btn-primary btn-sm onboarding-spot-cta" id="onboarding-cta-crawl-all">Crawler tout</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="onboarding-cta-crawl-one">Crawler une source</button>
+              </div>
+              <p class="onboarding-spot-hint">↑ Boutons « Crawler tout » dans la zone bleue ou ci-dessous</p>
+            </div>
+          </aside>
+
+          <div class="sources-section-header">
+            <h3>Sources configurées</h3>
+            <div class="sources-section-actions">
+              <button class="btn btn-secondary" id="crawler-all-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Crawler tout
+              </button>
+              <button class="btn btn-primary" id="add-source-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M12 4v16m8-8H4"/></svg>
+                Ajouter un site
+              </button>
+            </div>
+          </div>
+          <div class="sources-grid" id="sources-grid"></div>
+        </div>
+
+        <!-- Modal confirmation crawl par lien -->
+        <div class="modal-overlay" id="crawl-url-modal">
+          <div class="modal">
+            <div class="modal-header">
+              <h3>Lancer le crawl</h3>
+              <button class="btn btn-ghost" id="crawl-url-close" type="button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <p class="crawl-url-preview" id="crawl-url-preview"></p>
+              <p class="form-hint" id="crawl-url-hint">Souhaitez-vous enregistrer ce site dans vos sources pour le crawler régulièrement ?</p>
+              <div class="modal-actions crawl-url-actions">
+                <button type="button" class="btn btn-secondary" id="crawl-url-cancel">Annuler</button>
+                <button type="button" class="btn btn-secondary" id="crawl-url-once">Crawler une fois</button>
+                <button type="button" class="btn btn-primary" id="crawl-url-add">Ajouter aux sources et crawler</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal ajout source -->
+        <div class="modal-overlay" id="add-source-modal">
+          <div class="modal">
+            <div class="modal-header">
+              <h3>Ajouter un site à crawler</h3>
+              <button class="btn btn-ghost" id="add-source-close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+            <form id="add-source-form" class="modal-body">
+              <label class="form-field">
+                <span>Lien du site à crawler</span>
+                <input type="text" id="add-source-url" placeholder="https://www.paruvendu.fr/immobilier/" required>
+              </label>
+              <label class="form-field">
+                <span>Nom affiché <span style="color:var(--text-muted);font-weight:400">(optionnel)</span></span>
+                <input type="text" id="add-source-name" placeholder="Ex: ParuVendu — détecté automatiquement">
+              </label>
+              <p class="form-hint">Collez simplement l’URL de la page immobilier du site. Exemple : <a href="https://www.paruvendu.fr/immobilier/" target="_blank" rel="noopener">paruvendu.fr/immobilier</a></p>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="add-source-cancel">Annuler</button>
+                <button type="submit" class="btn btn-primary">Ajouter le site</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Pipeline -->
+        <div class="view" id="view-pipeline">
+          <div class="pipeline-board" id="pipeline-board"></div>
+        </div>
+
+        <!-- Mandats -->
+        <div class="view" id="view-mandates">
+          <div class="module-intro">
+            <p>Mandats de vente et de location — remplissage, aperçu et envoi au vendeur ou bailleur.</p>
+          </div>
+          <div class="mandates-toolbar">
+            <div class="mandates-toolbar-group">
+              <span class="toolbar-label">Type</span>
+              <div class="mandates-filters" role="group" aria-label="Filtrer par type">
+                <button type="button" class="btn btn-sm btn-primary active" data-mandate-filter="all">Tous</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mandate-filter="vente">Vente</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mandate-filter="location">Location</button>
+              </div>
+            </div>
+            <div class="mandates-toolbar-group">
+              <span class="toolbar-label">Statut</span>
+              <div class="mandates-status-filters" role="group" aria-label="Filtrer par statut">
+                <button type="button" class="btn btn-sm btn-secondary active" data-mandate-status="all">Tous</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mandate-status="draft">Brouillons</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mandate-status="sent">Envoyés</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mandate-status="signed">Signés</button>
+              </div>
+            </div>
+            <div class="mandates-toolbar-group mandates-toolbar-actions">
+              <button type="button" class="btn btn-secondary" id="btn-agency-legal-profile">Fiche agence</button>
+              <button type="button" class="btn btn-primary" id="btn-new-mandate-vente">Mandat vente</button>
+              <button type="button" class="btn btn-primary" id="btn-new-mandate-location">Mandat location</button>
+            </div>
+          </div>
+          <p class="module-empty-hint" id="mandates-empty-hint" hidden>
+            Aucun mandat — complétez d’abord la fiche agence, puis créez un mandat vente ou location.
+          </p>
+          <div class="mandates-list" id="mandates-list"></div>
+        </div>
+
+        <!-- Acheteurs / Locataires -->
+        <div class="view" id="view-clients">
+          <div class="clients-toolbar">
+            <div class="clients-segments">
+              <button type="button" class="btn btn-sm btn-primary active" data-client-segment="all">Tous</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-client-segment="acheteur">Acheteurs</button>
+              <button type="button" class="btn btn-sm btn-secondary" data-client-segment="locataire">Locataires</button>
+            </div>
+            <div class="clients-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-client-template">Modèle CSV</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-client-import">Importer CSV / Excel</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-new-client-acheteur">+ Acheteur</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-new-client-locataire">+ Locataire</button>
+            </div>
+          </div>
+          <p class="clients-hint" id="clients-empty-hint" hidden>
+            Aucune fiche — ajoutez un profil à la main ou importez un fichier CSV / Excel.
+          </p>
+          <div class="clients-grid" id="clients-grid"></div>
+          <input type="file" id="client-import-file" accept=".csv,.xlsx,.xlsm" hidden>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Drawer -->
+  <div class="drawer-overlay" id="drawer-overlay"></div>
+  <aside class="drawer" id="lead-drawer">
+    <div class="drawer-header">
+      <h3 id="drawer-title" style="font-size:1.1rem;font-weight:600">Détail prospect</h3>
+      <button class="btn btn-ghost" id="drawer-close">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="lead-refresh-panel" class="lead-refresh-panel" hidden aria-live="polite">
+      <div class="lead-refresh-panel-inner">
+        <div class="lead-refresh-head">
+          <div class="lead-refresh-spinner" aria-hidden="true"></div>
+          <div class="lead-refresh-copy">
+            <strong>Recrawl de l'annonce</strong>
+            <p id="lead-refresh-step">Connexion au portail…</p>
+          </div>
+        </div>
+        <div class="lead-refresh-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div id="lead-refresh-bar-fill" class="lead-refresh-bar-fill" style="width:8%"></div>
+        </div>
+        <ul id="lead-refresh-feed" class="lead-refresh-feed"></ul>
+        <div id="lead-refresh-fields" class="lead-refresh-fields"></div>
+      </div>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+    <div class="drawer-actions drawer-actions-stack">
+      <div class="drawer-portal-actions" id="drawer-portal-actions">
+        <a class="btn btn-view-listing" id="drawer-view-listing-btn" href="#" target="_blank" rel="noopener noreferrer" title="Ouvrir l'annonce sur le portail">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+          <span>Voir l'annonce</span>
+        </a>
+        <button type="button" class="btn btn-recrawl lead-refresh-btn" id="drawer-refresh-lead-btn" title="Recrawler l'annonce sur le portail (prix, contacts, type…)">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span>Recrawler</span>
+        </button>
+      </div>
+      <div class="drawer-pipeline-btns" id="drawer-pipeline-btns"></div>
+      <button type="button" class="btn btn-secondary" id="drawer-dvf-compare-btn">
+        Comparatif DVF
+      </button>
+      <button type="button" class="btn btn-secondary" id="drawer-call-script-btn">
+        Script d'appel
+      </button>
+      <button type="button" class="btn btn-secondary" id="drawer-mandate-vente">Créer mandat vente</button>
+      <button type="button" class="btn btn-secondary" id="drawer-mandate-location">Créer mandat location</button>
+      <a class="btn btn-primary" id="drawer-phone-btn" href="#">Appeler</a>
+      <button type="button" class="btn btn-danger-outline" id="drawer-delete-lead-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
+        Supprimer
+      </button>
+    </div>
+  </aside>
+
+  <!-- Dock crawl (réduit) -->
+  <div class="crawl-dock" id="crawl-dock" role="status" aria-live="polite">
+    <button type="button" class="crawl-dock-close" id="crawl-dock-cancel" title="Annuler ce crawl">×</button>
+    <div class="crawl-dock-scene" aria-hidden="true">
+      <span class="crawl-dock-icon crawl-dock-icon-house"></span>
+      <span class="crawl-dock-icon crawl-dock-icon-key"></span>
+      <span class="crawl-dock-icon crawl-dock-icon-pin"></span>
+    </div>
+    <div class="crawl-dock-title" id="crawl-dock-title">Crawl en cours</div>
+    <div class="crawl-dock-step" id="crawl-dock-step">…</div>
+    <p class="crawl-dock-tip" id="crawl-dock-tip"></p>
+    <div class="crawl-stats crawl-dock-stats" id="crawl-dock-stats">
+      <div class="crawl-stat"><span class="crawl-stat-val" id="cds-analyzed">0</span><span class="crawl-stat-lbl">analysées</span></div>
+      <div class="crawl-stat crawl-stat-ok"><span class="crawl-stat-val" id="cds-verified">0</span><span class="crawl-stat-lbl">vérif.</span></div>
+      <div class="crawl-stat crawl-stat-new"><span class="crawl-stat-val" id="cds-new">0</span><span class="crawl-stat-lbl">new</span></div>
+    </div>
+    <p class="crawl-eta" id="crawl-dock-eta"></p>
+    <div class="crawl-dock-bar"><div class="crawl-dock-fill" id="crawl-dock-fill"></div></div>
+    <div class="crawl-dock-meta">
+      <span id="crawl-dock-pct">0%</span>
+      <span id="crawl-dock-eta-right"></span>
+    </div>
+  </div>
+
+  <!-- Loader crawl -->
+  <div class="crawl-loader" id="crawl-loader">
+    <div class="crawl-loader-card">
+      <div class="crawl-loader-header">
+        <div class="crawl-loader-scene" aria-hidden="true">
+          <div class="crawl-scene-sky">
+            <div class="crawl-cloud crawl-cloud-1"></div>
+            <div class="crawl-cloud crawl-cloud-2"></div>
+          </div>
+          <div class="crawl-scene-city">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="crawl-scene-house">
+            <div class="crawl-house-roof"></div>
+            <div class="crawl-house-body">
+              <div class="crawl-house-window crawl-house-window-left"></div>
+              <div class="crawl-house-window crawl-house-window-right"></div>
+              <div class="crawl-house-door"></div>
+            </div>
+          </div>
+          <div class="crawl-scene-search">
+            <div class="crawl-search-ring"></div>
+            <div class="crawl-search-handle"></div>
+          </div>
+          <div class="crawl-scene-badge crawl-badge-m2">m²</div>
+          <div class="crawl-scene-badge crawl-badge-euro">€</div>
+          <div class="crawl-scene-badge crawl-badge-pin">📍</div>
+          <div class="crawl-scene-key">🔑</div>
+        </div>
+        <div class="crawl-loader-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Continuer en arrière-plan">⤓ Arrière-plan</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter le crawl">Arrêter</button>
+        </div>
+      </div>
+      <p class="crawl-loader-title" id="crawl-loader-title">Crawl en cours</p>
+      <div class="crawl-target" id="crawl-loader-target">
+        <span class="crawl-target-site" id="crawl-loader-site" hidden></span>
+        <span class="crawl-target-detail" id="crawl-loader-detail"></span>
+      </div>
+      <div class="crawl-activity" id="crawl-activity" data-phase="loading" aria-hidden="true">
+        <div class="crawl-activity-bar">
+          <span class="cab-dot"></span><span class="cab-dot"></span><span class="cab-dot"></span>
+          <span class="crawl-activity-url" id="crawl-activity-url">…</span>
+        </div>
+        <div class="crawl-activity-view">
+          <img class="cav-live" id="crawl-activity-img" alt="Vue en direct du crawler" hidden>
+          <div class="cav-lines">
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="cav-beam"></div>
+          <div class="cav-cursor"></div>
+          <span class="cav-phase" id="crawl-activity-phase">Chargement…</span>
+          <span class="cav-live-badge" id="crawl-activity-live" hidden>● LIVE</span>
+        </div>
+      </div>
+      <p class="crawl-loader-step" id="crawl-loader-step"><span class="crawl-step-dot" aria-hidden="true"></span><span id="crawl-loader-step-text">Initialisation…</span></p>
+      <div class="crawl-loader-bar">
+        <div class="crawl-loader-fill" id="crawl-loader-fill">
+          <span class="crawl-bar-walker" aria-hidden="true">🏠</span>
+        </div>
+      </div>
+      <div class="crawl-loader-progressline">
+        <span class="crawl-loader-pct" id="crawl-loader-pct">0%</span>
+        <span class="crawl-eta" id="crawl-loader-eta"></span>
+      </div>
+      <div class="crawl-stats" id="crawl-loader-stats" aria-live="polite">
+        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-analyzed">0</span><span class="crawl-stat-lbl">analysées</span></div>
+        <div class="crawl-stat crawl-stat-ok"><span class="crawl-stat-val" id="cls-verified">0</span><span class="crawl-stat-lbl">vérifiées</span></div>
+        <div class="crawl-stat crawl-stat-new"><span class="crawl-stat-val" id="cls-new">0</span><span class="crawl-stat-lbl">nouveaux</span></div>
+        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-updated">0</span><span class="crawl-stat-lbl">à jour</span></div>
+      </div>
+      <p class="crawl-loader-tip" id="crawl-loader-tip">On parcourt le marché immobilier pour vous…</p>
+      <ul class="crawl-loader-feed" id="crawl-loader-feed" aria-live="polite"></ul>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="radar-settings-modal" role="dialog">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="radar-settings-close" aria-label="Fermer">×</button>
+      <h2>Territoire de l'agence</h2>
+      <p class="form-hint">Villes cibles (séparées par des virgules) — le briefing du matin ne montre que les biens dans ces communes.</p>
+      <form id="radar-settings-form">
+        <label class="form-field">
+          <span>Villes</span>
+          <input type="text" id="radar-target-cities" placeholder="Lyon, Villeurbanne, Caluire">
+        </label>
+        <label class="form-field">
+          <span>Objectif mandats / mois</span>
+          <input type="number" id="radar-mandate-goal" min="1" max="50" value="5">
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Enregistrer</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="account-modal" role="dialog">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="account-modal-close" aria-label="Fermer">×</button>
+      <h2>Compte & agence</h2>
+      <div class="account-actions-stack">
+        <button type="button" class="btn btn-secondary btn-block" id="btn-agency-legal-from-account">Fiche agence (mandats)</button>
+        <button type="button" class="btn btn-secondary btn-block" id="btn-export-leads">Exporter mes prospects (CSV)</button>
+        <button type="button" class="btn btn-secondary btn-block" id="btn-billing-portal" hidden>Gérer l'abonnement & factures (Stripe)</button>
+        <a href="/cgv" class="btn btn-ghost btn-block" target="_blank" rel="noopener">CGV</a>
+        <a href="/confidentialite" class="btn btn-ghost btn-block" target="_blank" rel="noopener">Confidentialité</a>
+        <a href="/dpa" class="btn btn-ghost btn-block" target="_blank" rel="noopener">DPA — données leads</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="agency-profile-modal" role="dialog">
+    <div class="modal-card modal-card-wide">
+      <button type="button" class="modal-close" id="agency-profile-close" aria-label="Fermer">×</button>
+      <h2>Fiche agence — mandats</h2>
+      <p class="form-hint">Ces informations apparaissent sur vos mandats de vente et de location.</p>
+      <form id="agency-profile-form" class="agency-profile-form"></form>
+      <button type="submit" form="agency-profile-form" class="btn btn-primary btn-block">Enregistrer</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="mandate-editor-modal" role="dialog">
+    <div class="modal-card modal-card-wide mandate-editor-card">
+      <button type="button" class="modal-close" id="mandate-editor-close" aria-label="Fermer">×</button>
+      <div class="mandate-editor-header">
+        <h2 id="mandate-editor-title">Mandat</h2>
+        <div class="mandate-editor-meta">
+          <select id="mandate-editor-type" class="mandate-select" title="Type de mandat">
+            <option value="vente">Vente</option>
+            <option value="location">Location</option>
+          </select>
+          <select id="mandate-editor-exclusivity" class="mandate-select" title="Type d'exclusivité">
+            <option value="exclusif">Exclusif</option>
+            <option value="simple">Simple</option>
+            <option value="semi-exclusif">Semi-exclusif</option>
+          </select>
+          <span class="mandate-live-badge" id="mandate-live-badge" hidden>En direct</span>
+          <span class="mandate-status-pill" id="mandate-editor-status">Brouillon</span>
+        </div>
+      </div>
+      <div class="mandate-editor-tabs" role="tablist">
+        <button type="button" class="mandate-tab active" data-mandate-tab="contrat" role="tab">Contrat</button>
+        <button type="button" class="mandate-tab" data-mandate-tab="dossiers" role="tab">Dossiers client</button>
+      </div>
+      <div id="mandate-tab-contrat" class="mandate-tab-panel">
+      <div class="mandate-editor-layout">
+        <form id="mandate-fields-form" class="mandate-fields-form"></form>
+        <div class="mandate-preview-wrap">
+          <div class="mandate-preview-label">Aperçu en direct</div>
+          <div class="mandate-preview" id="mandate-preview"></div>
+        </div>
+      </div>
+      </div>
+      <div id="mandate-tab-dossiers" class="mandate-tab-panel" hidden>
+        <div class="mandate-dossiers-layout">
+          <aside class="mandate-dossiers-sidebar">
+            <button type="button" class="btn btn-primary btn-block" id="mandate-dossier-new">+ Nouveau dossier</button>
+            <button type="button" class="btn btn-secondary btn-block" id="mandate-dossier-from-mandate">Depuis le mandat</button>
+            <ul class="mandate-dossiers-list" id="mandate-dossiers-list"></ul>
+          </aside>
+          <div class="mandate-dossier-detail" id="mandate-dossier-detail">
+            <p class="mandate-dossier-empty">Sélectionnez ou créez un dossier pour y ajouter photos et clients.</p>
+          </div>
+        </div>
+      </div>
+      <div class="mandate-editor-footer">
+        <label class="form-field mandate-send-email-field">
+          <span>Email vendeur / bailleur</span>
+          <input type="email" id="mandate-send-email" placeholder="email@vendeur.fr" autocomplete="email">
+        </label>
+        <div class="mandate-editor-buttons">
+          <span class="mandate-autosave-hint" id="mandate-autosave-hint">Sauvegarde automatique</span>
+          <button type="button" class="btn btn-secondary" id="mandate-btn-save">Enregistrer</button>
+          <button type="button" class="btn btn-secondary" id="mandate-btn-signed">Marquer signé</button>
+          <button type="button" class="btn btn-secondary" id="mandate-btn-print">Imprimer / PDF</button>
+          <button type="button" class="btn btn-danger-outline" id="mandate-btn-delete">Supprimer</button>
+          <button type="button" class="btn btn-primary" id="mandate-btn-send">Envoyer au vendeur</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="client-import-modal" role="dialog">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="client-import-close" aria-label="Fermer">×</button>
+      <h2>Importer des fiches</h2>
+      <p class="form-hint">
+        Fichier <strong>CSV</strong> (séparateur <code>;</code> ou <code>,</code>) ou <strong>Excel (.xlsx)</strong>.
+        Colonnes : segment, prenom, nom, email, telephone, budget_min, budget_max, type_bien, pieces_min, surface_min, villes, notes.
+      </p>
+      <label class="form-field">
+        <span>Segment par défaut (si colonne absente)</span>
+        <select id="client-import-default-segment">
+          <option value="">Depuis le fichier</option>
+          <option value="acheteur">Acheteur</option>
+          <option value="locataire">Locataire</option>
+        </select>
+      </label>
+      <label class="form-field">
+        <span>Fichier</span>
+        <input type="file" id="client-import-modal-file" accept=".csv,.xlsx,.xlsm">
+      </label>
+      <button type="button" class="btn btn-secondary btn-block" id="btn-client-template-modal">Télécharger le modèle CSV</button>
+      <button type="button" class="btn btn-primary btn-block" id="client-import-submit">Lancer l'import</button>
+      <p class="import-result" id="client-import-result" hidden></p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="client-editor-modal" role="dialog">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="client-editor-close" aria-label="Fermer">×</button>
+      <h2 id="client-editor-title">Nouvelle fiche</h2>
+      <form id="client-editor-form">
+        <label class="form-field">
+          <span>Segment</span>
+          <select id="client-segment" required>
+            <option value="acheteur">Acheteur</option>
+            <option value="locataire">Locataire</option>
+          </select>
+        </label>
+        <div class="form-row-2">
+          <label class="form-field"><span>Prénom</span><input type="text" id="client-first-name"></label>
+          <label class="form-field"><span>Nom</span><input type="text" id="client-last-name"></label>
+        </div>
+        <label class="form-field"><span>Téléphone</span><input type="tel" id="client-phone"></label>
+        <label class="form-field"><span>Email</span><input type="email" id="client-email"></label>
+        <div class="form-row-2">
+          <label class="form-field"><span>Budget min (€)</span><input type="number" id="client-budget-min" min="0"></label>
+          <label class="form-field"><span>Budget max (€)</span><input type="number" id="client-budget-max" min="0"></label>
+        </div>
+        <label class="form-field"><span>Type de bien</span><input type="text" id="client-property-type" placeholder="Appartement, maison…"></label>
+        <div class="form-row-2">
+          <label class="form-field"><span>Pièces min</span><input type="number" id="client-rooms-min" min="0"></label>
+          <label class="form-field"><span>Surface min (m²)</span><input type="number" id="client-surface-min" min="0" step="0.1"></label>
+        </div>
+        <label class="form-field"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Lyon, Villeurbanne"></label>
+        <label class="form-field">
+          <span>Statut</span>
+          <select id="client-status">
+            <option value="actif">Actif</option>
+            <option value="en_veille">En veille</option>
+            <option value="archive">Archivé</option>
+          </select>
+        </label>
+        <label class="form-field"><span>Notes</span><textarea id="client-notes" rows="3"></textarea></label>
+        <button type="submit" class="btn btn-primary btn-block">Enregistrer</button>
+        <button type="button" class="btn btn-danger-outline btn-block" id="client-btn-delete" hidden>Supprimer</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="invite-modal" role="dialog" aria-labelledby="invite-modal-title">
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="invite-modal-close" aria-label="Fermer">×</button>
+      <h2 id="invite-modal-title">Inviter un collaborateur</h2>
+      <p class="form-hint">Compte rattaché à votre agence uniquement.</p>
+      <form id="invite-form">
+        <label class="form-field"><span>Email</span><input type="email" id="invite-email" required></label>
+        <label class="form-field"><span>Mot de passe temporaire</span><input type="password" id="invite-password" required minlength="8"></label>
+        <label class="form-field"><span>Prénom</span><input type="text" id="invite-first"></label>
+        <label class="form-field"><span>Nom</span><input type="text" id="invite-last"></label>
+        <button type="submit" class="btn btn-primary btn-block">Envoyer l'invitation</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Script d'appel — panneau + dock arrière-plan -->
+  <div class="script-dock" id="script-dock" role="complementary" aria-label="Script en arrière-plan" hidden>
+    <button type="button" class="script-dock-close" id="script-dock-close" title="Fermer le script">×</button>
+    <button type="button" class="script-dock-body" id="script-dock-expand" title="Rouvrir le script">
+      <span class="script-dock-icon" aria-hidden="true">📞</span>
+      <span class="script-dock-label" id="script-dock-label">Script d'appel</span>
+    </button>
+  </div>
+
+  <aside class="script-panel" id="script-panel" aria-label="Script d'appel" hidden>
+    <div class="script-panel-header">
+      <div class="script-panel-head-text">
+        <span class="script-panel-kicker">Script d'appel</span>
+        <h3 class="script-panel-title" id="script-panel-title">Prospect</h3>
+        <p class="script-panel-scenario" id="script-panel-scenario"></p>
+      </div>
+      <div class="script-panel-header-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="script-panel-minimize" title="Mettre en arrière-plan">⤓ Arrière-plan</button>
+        <button type="button" class="script-panel-close" id="script-panel-close" title="Fermer">×</button>
+      </div>
+    </div>
+    <div class="script-panel-body" id="script-panel-body"></div>
+    <div class="script-panel-footer">
+      <button type="button" class="btn btn-secondary btn-sm" id="script-panel-copy">Copier le script</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="script-panel-open-lead" hidden>Ouvrir la fiche</button>
+    </div>
+  </aside>
+
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="false"></div>
+
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Navigation principale">
+    <button type="button" data-view="dashboard" class="active"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Score</button>
+    <button type="button" data-view="leads"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Prospects</button>
+    <button type="button" data-view="crawler"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3"/></svg>Crawler</button>
+    <button type="button" data-view="pipeline"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2"/></svg>Pipeline</button>
+  </nav>
+
+  <script src="/crm/assets/js/data.js"></script>
+  <script src="/crm/assets/js/logos.js"></script>
+  <script src="/crm/assets/js/clients.js?v=28"></script>
+  <script src="/crm/assets/js/mandate-render.js?v=30"></script>
+  <script src="/crm/assets/js/mandates.js?v=30"></script>
+  <script src="/crm/assets/js/app.js?v=48"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/crm/sw.js").then((reg) => {
+        reg.update().catch(() => {});
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

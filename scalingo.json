@@ -1,0 +1,18 @@
+{
+  "name": "Veliora",
+  "description": "CRM immobilier — score mandat, crawler multi-portails, DVF",
+  "formation": {
+    "web": {
+      "amount": 1,
+      "size": "M"
+    }
+  },
+  "env": {
+    "VELIORA_DB_PATH": "/var/lib/data/propscout.db",
+    "CRAWL_PLAYWRIGHT_ENABLED": "false",
+    "AUTO_WARMUP_ANTIBOT": "false",
+    "DOMAIN_WARMUP": "false",
+    "CRAWL_SPEED_PROFILE": "balanced",
+    "STRIPE_REQUIRE_PAYMENT": "true"
+  }
+}

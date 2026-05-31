@@ -1,0 +1,21 @@
+.env
+.env.local
+*.pyc
+__pycache__/
+.venv/
+venv/
+.DS_Store
+.claude/
+
+# Données locales / runtime (SQLite, profil Chrome, captures crawl)
+data/*
+!data/.gitkeep
+!data/schema.sql
+!data/backups/.gitkeep
+data/backups/*
+
+# Logs
+*.log
+data/app_err.log
+data/app_run.log
+data/crawl_live.jpg
