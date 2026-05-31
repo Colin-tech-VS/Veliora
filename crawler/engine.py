@@ -1357,15 +1357,24 @@ class CrawlerEngine:
         from crawler.extractors import deep_enhance_listing_contacts
         from crawler.validation import _name_ok, missing_core_fields
 
+        def _type_uncertain(ld) -> bool:
+            # Détection agence/particulier peu fiable : on veut trancher avant
+            # d'enregistrer plutôt que d'affirmer un type à tort.
+            audit = ld.raw_extras.get("publisher_audit") or {}
+            return audit.get("confidence") == "low"
+
         def _needs_contact_pass(ld) -> bool:
-            # On veut récupérer obligatoirement contact + nom : on relance
-            # l'extraction profonde dès qu'il manque téléphone, email OU le nom
-            # du vendeur (le passage « révéler le contact » fait souvent
-            # apparaître le nom en même temps que le numéro/email).
+            # On veut récupérer obligatoirement contact + nom ET un type fiable :
+            # on relance l'extraction profonde dès qu'il manque téléphone, email,
+            # le nom du vendeur, ou que le type agence/particulier est incertain
+            # (le passage « révéler le contact » fait souvent apparaître nom,
+            # numéro et indices agence/particulier en même temps).
             miss = missing_core_fields(ld)
             if any(f in miss for f in ("phone", "email")):
                 return True
-            return not _name_ok(ld.first_name, ld.last_name)
+            if not _name_ok(ld.first_name, ld.last_name):
+                return True
+            return _type_uncertain(ld)
 
         core_miss = missing_core_fields(lead)
         if _needs_contact_pass(lead):
