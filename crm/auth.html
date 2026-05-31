@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f4f0">
   <title>Veliora — Connexion & abonnement agence</title>
   <link rel="stylesheet" href="/crm/assets/css/styles.css?v=39">
-  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=34">
   <style>
     .auth-pricing {
       background: var(--v-sand, #ebe6de);
@@ -71,7 +71,7 @@
     <form id="form-login" class="auth-panel active">
       <label class="form-field"><span>Email</span><input type="email" id="login-email" required autocomplete="email"></label>
       <label class="form-field"><span>Mot de passe</span><input type="password" id="login-password" required autocomplete="current-password"></label>
-      <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-login-submit">Se connecter</button>
       <p style="margin-top:0.75rem;text-align:center;font-size:0.85rem">
         <button type="button" class="btn btn-ghost btn-sm" id="btn-show-forgot">Mot de passe oublié ?</button>
       </p>
@@ -81,14 +81,14 @@
     <form id="form-forgot" class="auth-panel">
       <p class="form-hint">Entrez votre email administrateur — lien valable 1 h.</p>
       <label class="form-field"><span>Email</span><input type="email" id="forgot-email" required></label>
-      <button type="submit" class="btn btn-primary btn-block">Envoyer le lien</button>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-forgot-submit">Envoyer le lien</button>
       <button type="button" class="btn btn-ghost btn-block" id="btn-back-login">Retour connexion</button>
     </form>
 
     <form id="form-reset" class="auth-panel">
       <p class="form-hint">Choisissez un nouveau mot de passe (8 caractères min.).</p>
       <label class="form-field"><span>Nouveau mot de passe</span><input type="password" id="reset-password" required minlength="8"></label>
-      <button type="submit" class="btn btn-primary btn-block">Enregistrer</button>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-reset-submit">Enregistrer</button>
     </form>
 
     <form id="form-register" class="auth-panel">
@@ -274,6 +274,9 @@
 
     document.getElementById("form-forgot")?.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const btn = document.getElementById("btn-forgot-submit");
+      if (btn?.disabled) return;
+      setBtnLoading(btn, true, "Envoi en cours…");
       try {
         const r = await fetch(API + "/auth/forgot-password", {
           method: "POST",
@@ -285,12 +288,16 @@
         toast(d.message || "Email envoyé si le compte existe", true);
         tabs[0].click();
       } catch (err) { toast(err.message, false); }
+      finally { setBtnLoading(btn, false); }
     });
 
     document.getElementById("form-reset")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const token = resetToken || params.get("reset");
       if (!token) { toast("Lien invalide", false); return; }
+      const btn = document.getElementById("btn-reset-submit");
+      if (btn?.disabled) return;
+      setBtnLoading(btn, true, "Enregistrement…");
       try {
         const r = await fetch(API + "/auth/reset-password", {
           method: "POST",
@@ -305,6 +312,7 @@
         toast(d.message || "Mot de passe mis à jour", true);
         tabs[0].click();
       } catch (err) { toast(err.message, false); }
+      finally { setBtnLoading(btn, false); }
     });
 
     if (params.get("tab") === "register") tabs[1].click();
@@ -317,6 +325,33 @@
       setTimeout(() => { el.hidden = true; }, 6000);
     }
 
+    function setBtnLoading(btn, loading, busyText) {
+      if (!btn) return;
+      if (loading) {
+        if (!btn.dataset.origLabel) btn.dataset.origLabel = btn.textContent.trim();
+        btn.disabled = true;
+        btn.classList.add("is-loading");
+        btn.setAttribute("aria-busy", "true");
+        if (busyText) btn.textContent = busyText;
+      } else {
+        btn.disabled = false;
+        btn.classList.remove("is-loading");
+        btn.removeAttribute("aria-busy");
+        if (btn.dataset.origLabel) {
+          btn.textContent = btn.dataset.origLabel;
+          delete btn.dataset.origLabel;
+        }
+      }
+    }
+
+    function lockAuthForm(form, locked) {
+      if (!form) return;
+      form.querySelectorAll("input, button[type=submit]").forEach((el) => {
+        if (el.type === "submit") return;
+        el.disabled = locked;
+      });
+    }
+
     function saveSession(d) {
       if (d.token) localStorage.setItem(AUTH_TOKEN_KEY, d.token);
       if (d.user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(d.user));
@@ -324,6 +359,10 @@
 
     document.getElementById("form-login").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const btn = document.getElementById("btn-login-submit");
+      if (btn?.disabled) return;
+      let stayLoading = false;
+      setBtnLoading(btn, true, "Connexion…");
       try {
         const r = await fetch(API + "/auth/login", {
           method: "POST",
@@ -336,22 +375,38 @@
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || "Erreur");
         saveSession(d);
+        setBtnLoading(btn, true, "Vérification du compte…");
         const me = await fetch(API + "/auth/me", {
           headers: { Authorization: "Bearer " + d.token },
         }).then((res) => res.json());
         if (me.billing?.requires_payment && !me.billing?.active) {
           showBanner("Abonnement requis — redirection vers le paiement…", "");
+          setBtnLoading(btn, true, "Redirection Stripe…");
+          stayLoading = true;
           await startCheckout();
           return;
         }
+        setBtnLoading(btn, true, "Ouverture de votre espace…");
+        stayLoading = true;
         window.location.href = nextUrl;
       } catch (err) { toast(err.message, false); }
+      finally {
+        if (!stayLoading) setBtnLoading(btn, false);
+      }
     });
 
+    let registerSubmitLock = false;
     document.getElementById("form-register").addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (registerSubmitLock) return;
+      const form = document.getElementById("form-register");
       const btn = document.getElementById("btn-register-submit");
-      btn.disabled = true;
+      if (btn?.disabled) return;
+      registerSubmitLock = true;
+      let stayLoading = false;
+      setBtnLoading(btn, true, "Création du compte…");
+      lockAuthForm(form, true);
+      showBanner("Création de votre espace agence — merci de patienter quelques secondes.", "");
       try {
         const r = await fetch(API + "/auth/register-agency", {
           method: "POST",
@@ -370,17 +425,25 @@
         saveSession(d);
         if (billingConfig.require_payment && billingConfig.enabled) {
           showBanner("Compte créé — redirection vers le paiement sécurisé Stripe…", "ok");
+          setBtnLoading(btn, true, "Redirection Stripe…");
+          stayLoading = true;
           await startCheckout();
         } else if (d.token) {
+          setBtnLoading(btn, true, "Ouverture de votre espace…");
+          stayLoading = true;
           window.location.href = nextUrl;
         } else {
+          checkoutBanner.hidden = true;
           toast("Agence créée — connectez-vous", true);
           tabs[0].click();
         }
       } catch (err) {
+        checkoutBanner.hidden = true;
         toast(err.message, false);
       } finally {
-        btn.disabled = false;
+        registerSubmitLock = false;
+        lockAuthForm(form, false);
+        if (!stayLoading) setBtnLoading(btn, false);
       }
     });
 

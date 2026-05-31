@@ -592,7 +592,7 @@ async function loadData() {
   state.crawlerRunning = crawlerStatus.running;
 
   await refreshAgencySettings().catch(() => {
-    applyAgencyCityToCrawl(true);
+    applyAgencyCityToCrawl();
   });
 
   RADAR = await fetchRadarBriefing();
@@ -624,59 +624,35 @@ function agencyPrimaryCity() {
   return first ? String(first).trim() : "";
 }
 
-/** Met à jour le champ ville du crawler (visible immédiatement). */
-function setCrawlCityField(city, { force = false } = {}) {
-  const el = document.getElementById("crawl-city-filter");
-  if (!el) return;
-  const label = document.getElementById("crawl-city-territory-hint");
-  const trimmed = (city || "").trim();
+/** Affiche la ville de crawl (lecture seule — réglée via Territoire ou Fiche agence). */
+function updateCrawlCityDisplay() {
+  const display = document.getElementById("crawl-city-display");
+  const hint = document.getElementById("crawl-city-territory-hint");
+  if (!display) return;
 
-  if (!trimmed) {
-    if (force) {
-      el.value = "";
-      delete el.dataset.agencyCity;
-      delete el.dataset.userCleared;
+  const city = agencyPrimaryCity();
+  const cities = (state.settings?.target_cities || []).map((c) => String(c).trim()).filter(Boolean);
+
+  if (city) {
+    display.textContent =
+      cities.length > 1 ? `${city} (+ ${cities.length - 1} autre${cities.length > 2 ? "s" : ""})` : city;
+    display.classList.remove("is-wide");
+    if (hint) {
+      hint.textContent =
+        "Filtre actif sur cette ville (1ʳᵉ ville du territoire). Pour modifier : Territoire (Radar) ou Fiche agence → Enregistrer. Pour tout le pays, videz les villes dans Territoire.";
     }
-    if (label) {
-      label.textContent = "Territoire non renseigné — Radar → Territoire ou Fiche agence";
+  } else {
+    display.textContent = "Toute la France — aucune ville définie";
+    display.classList.add("is-wide");
+    if (hint) {
+      hint.textContent =
+        "Définissez au moins une ville dans Territoire (Radar) ou Fiche agence, puis enregistrez — le crawl s’alignera automatiquement.";
     }
-    return;
-  }
-
-  const prevAgency = (el.dataset.agencyCity || "").trim();
-  const currentVal = el.value.trim();
-  const userOverride =
-    el.dataset.userCleared !== "1" &&
-    currentVal &&
-    trimmed &&
-    currentVal.toLowerCase() !== trimmed.toLowerCase() &&
-    currentVal.toLowerCase() !== prevAgency.toLowerCase();
-
-  if (force && !userOverride) {
-    delete el.dataset.userCleared;
-    el.value = trimmed;
-    el.dataset.agencyCity = trimmed;
-  } else if (!userOverride && el.dataset.userCleared !== "1") {
-    if (
-      !currentVal ||
-      !prevAgency ||
-      currentVal.toLowerCase() === prevAgency.toLowerCase() ||
-      prevAgency.toLowerCase() !== trimmed.toLowerCase()
-    ) {
-      el.value = trimmed;
-      el.dataset.agencyCity = trimmed;
-    }
-  }
-
-  el.placeholder = `${trimmed} — effacez pour crawler sans limite ville`;
-  if (label) {
-    label.textContent = `Territoire agence : ${trimmed}`;
   }
 }
 
-// Ville optionnelle : vide = crawl sans filtre géographique (plus de résultats).
-function applyAgencyCityToCrawl(force = false) {
-  setCrawlCityField(agencyPrimaryCity(), { force });
+function applyAgencyCityToCrawl() {
+  updateCrawlCityDisplay();
 }
 
 /** Recharge les réglages agence depuis l’API et synchronise le champ crawl. */
@@ -687,7 +663,7 @@ async function refreshAgencySettings() {
   } catch {
     /* garde state.settings actuel */
   }
-  applyAgencyCityToCrawl(true);
+  applyAgencyCityToCrawl();
   scheduleSourceUrlsForCity();
   return state.settings;
 }
@@ -696,9 +672,8 @@ window.VelioraRefreshAgencySettings = refreshAgencySettings;
 window.VelioraScheduleSourceUrlsForCity = scheduleSourceUrlsForCity;
 
 function getCrawlCity() {
-  const el = document.getElementById("crawl-city-filter");
-  const v = (el?.value || "").trim();
-  return v || null;
+  const city = agencyPrimaryCity();
+  return city || null;
 }
 
 function crawlBodyExtra() {
@@ -1128,7 +1103,7 @@ async function ensureAuth() {
     const me = await api("/auth/me");
     state.user = me.user;
     state.settings = normalizeSettingsPayload(me.settings || state.settings || {});
-    applyAgencyCityToCrawl(true);
+    applyAgencyCityToCrawl();
     scheduleSourceUrlsForCity();
     const cached = localStorage.getItem(AUTH_USER_KEY);
     if (cached) {
@@ -1327,7 +1302,7 @@ async function switchView(view) {
   }
   if (view === "crawler") {
     refreshAgencySettings().catch(() => {
-      applyAgencyCityToCrawl(true);
+      applyAgencyCityToCrawl();
       scheduleSourceUrlsForCity();
     });
   }
@@ -1900,31 +1875,12 @@ function setupDrawer() {
 }
 
 function setupCrawler() {
-  const cityEl = document.getElementById("crawl-city-filter");
-  if (cityEl) {
-    cityEl.addEventListener("input", () => {
-      const agency = agencyPrimaryCity();
-      const v = cityEl.value.trim();
-      if (!v) {
-        cityEl.dataset.userCleared = "1";
-        scheduleSourceUrlsForCity();
-      } else if (agency && v.toLowerCase() === agency.toLowerCase()) {
-        delete cityEl.dataset.userCleared;
-        cityEl.dataset.agencyCity = agency;
-        scheduleSourceUrlsForCity();
-      } else {
-        delete cityEl.dataset.userCleared;
-        delete cityEl.dataset.agencyCity;
-        scheduleSourceUrlsForCity();
-      }
-    });
-    cityEl.addEventListener("focus", () => {
-      refreshAgencySettings().catch(() => {
-        applyAgencyCityToCrawl(true);
-        scheduleSourceUrlsForCity();
-      });
-    });
-  }
+  document.getElementById("crawl-city-open-territory")?.addEventListener("click", () => {
+    document.getElementById("radar-settings-btn")?.click();
+  });
+  document.getElementById("crawl-city-open-profile")?.addEventListener("click", () => {
+    document.getElementById("btn-agency-legal-profile")?.click();
+  });
   document.getElementById("crawler-toggle").addEventListener("click", toggleCrawler);
   document.getElementById("crawler-scan-btn").addEventListener("click", runManualScan);
   document.getElementById("crawler-all-btn").addEventListener("click", runManualScan);
@@ -4028,7 +3984,7 @@ function setupRadar() {
       if (!state.settings.target_cities?.length) {
         state.settings.target_cities = cities;
       }
-      setCrawlCityField(agencyPrimaryCity(), { force: true });
+      updateCrawlCityDisplay();
       scheduleSourceUrlsForCity();
       showToast("Territoire enregistré — liens sources mis à jour", "success");
       document.getElementById("radar-settings-modal")?.classList.remove("open");

@@ -1021,6 +1021,31 @@
   justify-content: center;
 }
 
+.auth-page .btn.is-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  pointer-events: none;
+  cursor: wait;
+  opacity: 0.92;
+}
+
+.auth-page .btn.is-loading::before {
+  content: "";
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: auth-btn-spin 0.7s linear infinite;
+}
+
+@keyframes auth-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
 .auth-toast {
   margin-top: 1rem;
   padding: 0.75rem;

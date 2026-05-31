@@ -2081,22 +2081,61 @@ tr.lead-row-flash td {
 /* ─── Crawler View ─── */
 .crawl-city-bar {
   margin-top: 1rem;
-  max-width: 480px;
+  max-width: 520px;
 }
 
-.crawl-city-field span small {
-  font-weight: 400;
+.crawl-city-readonly {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.crawl-city-readonly-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.35rem;
 }
 
-.crawl-city-field input {
-  width: 100%;
-  padding: 0.6rem 0.75rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.2);
+.crawl-city-readonly-value {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
   color: #fff;
-  font-size: 16px;
+  line-height: 1.35;
+}
+
+.crawl-city-readonly-value.is-wide {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.crawl-city-readonly-hint {
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.crawl-city-readonly-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.crawler-hero .crawl-city-open-profile {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.crawler-hero .crawl-city-open-profile:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .crawler-hero {

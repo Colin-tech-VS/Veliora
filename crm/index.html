@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=39">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=40">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
 </head>
 <body>
@@ -523,12 +523,18 @@
                 </div>
                 <p class="custom-crawl-hint">Mode 2 — une fiche, Score Mandat™ et recommandation. Pour le radar continu, ajoutez des sources ci-dessous.</p>
               </form>
-              <div class="crawl-city-bar">
-                <label class="form-field crawl-city-field">
-                  <span>Ville crawlée <small>(optionnel — vide = toutes zones)</small></span>
-                  <input type="text" id="crawl-city-filter" placeholder="Ex. Lyon — laissez vide pour tout le pays" autocomplete="off" spellcheck="false">
-                  <p class="form-hint crawl-city-hint" id="crawl-city-territory-hint">Synchronisé avec Territoire (Radar) et ville de la fiche agence</p>
-                </label>
+              <div class="crawl-city-bar" id="crawl-city-bar">
+                <div class="crawl-city-readonly">
+                  <span class="crawl-city-readonly-label">Ville ciblée pour le crawl</span>
+                  <p class="crawl-city-readonly-value" id="crawl-city-display" aria-live="polite">—</p>
+                  <p class="crawl-city-readonly-hint" id="crawl-city-territory-hint">
+                    Lecture seule ici — modifiez le territoire ou la fiche agence, puis enregistrez.
+                  </p>
+                  <div class="crawl-city-readonly-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" id="crawl-city-open-territory">Territoire (Radar)</button>
+                    <button type="button" class="btn btn-ghost btn-sm crawl-city-open-profile" id="crawl-city-open-profile">Fiche agence</button>
+                  </div>
+                </div>
               </div>
               <div class="crawler-controls">
                 <button class="btn btn-primary" id="crawler-toggle">
