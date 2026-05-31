@@ -1,12 +1,32 @@
 /* Veliora — Page d'accueil commerciale */
 
+/* Modèle de boîte cohérent : padding/bordure inclus dans la largeur.
+   Évite que les sections en width:100% + padding (hero, pricing, CTA…)
+   ne dépassent du viewport sur mobile. */
+.vitrine,
+.vitrine *,
+.vitrine *::before,
+.vitrine *::after {
+  box-sizing: border-box;
+}
+
 html:has(body.vitrine),
 body.vitrine {
   margin: 0;
   padding: 0;
   width: 100%;
+  max-width: 100%;
   min-height: 100%;
+  overflow-x: hidden;
   background: var(--v-gradient-page, #eef1f8);
+}
+
+/* Garde-fou global : aucun média ou tableau ne déborde horizontalement. */
+.vitrine img,
+.vitrine svg,
+.vitrine video,
+.vitrine table {
+  max-width: 100%;
 }
 
 body.vitrine {
@@ -1968,6 +1988,7 @@ body.vitrine-legal {
   .v-positioning { padding: 1.1rem 1rem; }
   .v-trust { padding: 1.25rem 1rem; }
   .v-roi { padding: 2rem 1rem; }
+  .v-roi-math { min-width: 0; width: 100%; }
   .v-pricing { padding: 3rem 1rem; }
   .v-cta-final { padding: 3.5rem 1rem calc(3.5rem + env(safe-area-inset-bottom)); }
   .v-footer { padding: 2rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }

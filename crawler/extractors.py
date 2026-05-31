@@ -454,6 +454,58 @@ def normalize_phone(raw: str) -> str:
     return raw.strip()
 
 
+# Numéros manifestement bidons / placeholders rencontrés sur les fiches.
+_PHONE_FAKE_SET = frozenset({
+    "0123456789", "0102030405", "0606060606", "0707070707",
+    "0612345678", "0698765432", "0123456788", "0000000000",
+    "0102030400", "0101010101",
+})
+
+
+def is_fake_phone_digits(digits: str) -> bool:
+    """True si le numéro (10 chiffres normalisés) est factice (placeholder/test).
+
+    On refuse : numéros connus de test, < 3 chiffres distincts
+    (06 06 06 06 06, 01 11 11 11 11…) et les séquences strictement
+    croissantes/décroissantes (0123456789).
+    """
+    if len(digits) != 10 or not digits.isdigit():
+        return True
+    if digits in _PHONE_FAKE_SET:
+        return True
+    if len(set(digits)) < 3:
+        return True
+    asc = all(int(digits[i + 1]) - int(digits[i]) == 1 for i in range(9))
+    desc = all(int(digits[i]) - int(digits[i + 1]) == 1 for i in range(9))
+    return asc or desc
+
+
+# Emails « placeholder » qui ne sont jamais le vrai contact du vendeur.
+_EMAIL_FAKE_LOCAL_RE = re.compile(
+    r"^(?:no[-_.]?reply|donotreply|do-not-reply|ne[-_]?pas[-_]?repondre|"
+    r"nepasrepondre|mailer-daemon|postmaster|abuse|test|exemple|example|"
+    r"votre[._-]?(?:email|mail|adresse)|prenom[._-]?nom|nom[._-]?prenom|"
+    r"john[._-]?doe)$",
+    re.I,
+)
+_EMAIL_FAKE_DOMAIN_RE = re.compile(
+    r"@(?:example|exemple|domain|domaine|votredomaine|mondomaine|test)\."
+    r"(?:com|fr|org|net|eu)$",
+    re.I,
+)
+
+
+def is_placeholder_email(email: str | None) -> bool:
+    """True si l'email est un placeholder/no-reply (pas un vrai contact)."""
+    em = (email or "").strip().lower()
+    if "@" not in em:
+        return True
+    local = em.split("@", 1)[0]
+    if _EMAIL_FAKE_LOCAL_RE.match(local):
+        return True
+    return bool(_EMAIL_FAKE_DOMAIN_RE.search(em))
+
+
 def parse_euro_amount(
     raw: str,
     *,
@@ -823,18 +875,30 @@ def detect_publisher_type(
     elif lead.type == "particulier":
         score_particulier += 10
 
+    margin = abs(score_agency - score_particulier)
+
     if score_agency > score_particulier and score_agency >= 25:
         lead.raw_extras["publisher_audit"] = {
             "type": "agence",
             "score_agency": score_agency,
             "score_particulier": score_particulier,
             "agency": agency_name,
+            "confidence": "high" if margin >= 25 else "medium",
         }
         return "agence", agency_name
+
+    # Particulier = valeur par défaut. On distingue le « vrai » particulier
+    # (signaux nets) du simple « aucun signal » pour éviter d'affirmer un type
+    # à tort : confidence=low => à vérifier côté CRM.
+    if score_particulier >= 25 and score_particulier > score_agency:
+        confidence = "high" if margin >= 25 else "medium"
+    else:
+        confidence = "low"
     lead.raw_extras["publisher_audit"] = {
         "type": "particulier",
         "score_agency": score_agency,
         "score_particulier": score_particulier,
+        "confidence": confidence,
     }
     return "particulier", None
 

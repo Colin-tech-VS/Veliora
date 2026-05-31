@@ -6,7 +6,14 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from crawler.extractors import CORE_CRAWL_FIELDS, LeadData, normalize_phone, parse_euro_amount
+from crawler.extractors import (
+    CORE_CRAWL_FIELDS,
+    LeadData,
+    is_fake_phone_digits,
+    is_placeholder_email,
+    normalize_phone,
+    parse_euro_amount,
+)
 from crawler.hub_detection import is_hub_listing_address, is_site_navigation_name, is_listing_title_name
 from crawler.config import (
     PRICE_MAX_RENT_EUR,
@@ -62,7 +69,10 @@ def _phone_ok(phone: str | None) -> bool:
     digits = re.sub(r"\D", "", phone)
     if digits.startswith("33") and len(digits) >= 11:
         digits = "0" + digits[2:]
-    return bool(PHONE_DIGITS_RE.match(digits))
+    if not PHONE_DIGITS_RE.match(digits):
+        return False
+    # Refuse les numéros factices (06 06 06 06 06, 0123456789, etc.)
+    return not is_fake_phone_digits(digits)
 
 
 def _email_ok(email: str | None) -> bool:
@@ -71,7 +81,10 @@ def _email_ok(email: str | None) -> bool:
     em = email.strip().lower()
     if em.endswith((".png", ".jpg", ".webp", ".svg")):
         return False
-    return bool(EMAIL_RE.match(em))
+    if not EMAIL_RE.match(em):
+        return False
+    # Refuse les emails placeholder / no-reply (jamais le vrai vendeur)
+    return not is_placeholder_email(em)
 
 
 def _name_ok(first: str | None, last: str | None) -> bool:
