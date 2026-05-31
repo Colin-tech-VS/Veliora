@@ -742,6 +742,18 @@ def get_active_crawl_job(agency_id: str | None = None) -> dict | None:
         return _row_to_job(row) if row else None
 
 
+def _json_job_field(raw, default=None):
+    default = default if default is not None else []
+    if raw is None or raw == "":
+        return default
+    if isinstance(raw, (list, dict)):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+
+
 def _row_to_job(row: sqlite3.Row) -> dict:
     keys = row.keys()
     return {
@@ -754,8 +766,8 @@ def _row_to_job(row: sqlite3.Row) -> dict:
         "leads_found": row["leads_found"],
         "leads_saved": row["leads_saved"],
         "leads_updated": row["leads_updated"] if "leads_updated" in keys else 0,
-        "errors": json.loads(row["errors"] or "[]"),
-        "warnings": json.loads(row["warnings"] or "[]"),
+        "errors": _json_job_field(row["errors"] if "errors" in keys else None),
+        "warnings": _json_job_field(row["warnings"] if "warnings" in keys else None),
         "message": row["message"],
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],

@@ -2876,18 +2876,26 @@ tr.lead-row-flash td {
   background: var(--surface);
 }
 
-.analyze-loading-body {
+.analyze-loading-panel {
+  padding: 1.25rem 1.35rem 1.1rem;
+}
+
+.analyze-loading-head {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 2rem;
-  text-align: center;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.analyze-loading-head > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .analyze-loading-spinner {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   border: 3px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
@@ -2896,13 +2904,85 @@ tr.lead-row-flash td {
 
 .analyze-loading-title {
   font-weight: 700;
-  margin: 0;
+  margin: 0 0 0.25rem;
 }
 
 .analyze-loading-msg {
   margin: 0;
   color: var(--text-muted);
   font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.analyze-loader-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border-light, #e8e4de);
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.analyze-loader-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--v-brass-light, #c4a574), var(--v-sage, #5a7a6a));
+  transition: width 0.35s ease;
+}
+
+.analyze-loader-progressline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.analyze-loader-pct {
+  font-weight: 600;
+  color: var(--v-ink, #1e3340);
+}
+
+.analyze-loader-phase {
+  text-align: right;
+}
+
+.analyze-loader-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.analyze-loader-feed li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+}
+
+.analyze-loader-feed li:last-child {
+  border-bottom: none;
+}
+
+.analyze-loader-feed li.feed-ok {
+  color: var(--emerald-700, #047857);
+}
+
+.analyze-loader-feed li.feed-warn {
+  color: var(--amber-700, #b45309);
+}
+
+.analyze-loader-feed li.feed-error {
+  color: var(--rose-700, #be123c);
+}
+
+.analyze-loader-feed li.feed-step {
+  color: var(--text-muted);
 }
 
 .analyze-result-header {

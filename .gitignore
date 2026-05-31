@@ -11,6 +11,7 @@ venv/
 data/*
 !data/.gitkeep
 !data/schema.sql
+!data/fr_communes.json
 !data/backups/.gitkeep
 data/backups/*
 

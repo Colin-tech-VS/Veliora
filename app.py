@@ -127,6 +127,25 @@ def _aid() -> str:
     return agency_id
 
 
+@app.route("/api/geo/communes", methods=["GET"])
+def api_geo_communes():
+    """Autocomplete : toutes les communes françaises (référentiel geo.api.gouv.fr)."""
+    from crawler.fr_communes import all_communes, search_communes
+
+    q = (request.args.get("q") or request.args.get("query") or "").strip()
+    postcode = (request.args.get("postcode") or request.args.get("cp") or "").strip() or None
+    limit = request.args.get("limit", 25, type=int)
+    if not q:
+        return jsonify({"ok": True, "total": len(all_communes()), "communes": []})
+    return jsonify(
+        {
+            "ok": True,
+            "total": len(all_communes()),
+            "communes": search_communes(q, limit=limit, postcode=postcode),
+        }
+    )
+
+
 @app.route("/api/health")
 def api_health():
     return jsonify({
@@ -901,29 +920,30 @@ def api_crawler_live_frame():
 
 @app.route("/api/crawler/jobs/<job_id>")
 def api_crawl_job(job_id):
-    job = get_crawl_job(job_id, _aid())
-    if not job:
-        return jsonify({"error": "Job introuvable"}), 404
+    try:
+        job = get_crawl_job(job_id, _aid())
+        if not job:
+            return jsonify({"error": "Job introuvable"}), 404
 
-    lite = request.args.get("lite") in ("1", "true", "yes")
-    done = job["status"] in ("completed", "failed")
+        lite = request.args.get("lite") in ("1", "true", "yes")
+        done = job["status"] in ("completed", "failed")
+        include_logs = request.args.get("logs") in ("1", "true", "yes")
 
-    payload = {**job}
-    if lite and not done:
-        payload["logs"] = []
-    else:
-        payload["logs"] = get_crawl_logs_for_job(job_id)
+        payload = {**job}
+        if lite and not include_logs:
+            payload["logs"] = []
+        else:
+            payload["logs"] = get_crawl_logs_for_job(job_id)
 
-    if done:
-        payload["leads"] = get_leads(_aid())
-        payload["sources"] = get_sources(_aid())
-        payload["stats"] = get_stats(_aid())
-    else:
+        # Ne pas renvoyer toute la base à chaque poll (timeout / 500 côté client).
         payload["leads"] = None
         payload["sources"] = None
         payload["stats"] = None
 
-    return jsonify(payload)
+        return jsonify(payload)
+    except Exception as exc:
+        logging.exception("crawl job %s", job_id)
+        return jsonify({"error": f"État du crawl indisponible : {exc}"}), 500
 
 
 @app.route("/api/crawler/jobs/active")

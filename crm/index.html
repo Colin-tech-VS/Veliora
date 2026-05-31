@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=41">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=42">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
 </head>
 <body>
@@ -330,10 +330,23 @@
           </section>
 
           <div class="analyze-loading card" id="analyze-loading" hidden>
-            <div class="card-body analyze-loading-body">
-              <div class="analyze-loading-spinner" aria-hidden="true"></div>
-              <p class="analyze-loading-title">Analyse en cours…</p>
-              <p class="analyze-loading-msg" id="analyze-loading-msg">Extraction de l'annonce et calcul du Score Mandat™</p>
+            <div class="card-body analyze-loading-panel">
+              <div class="analyze-loading-head">
+                <div class="analyze-loading-spinner" aria-hidden="true"></div>
+                <div>
+                  <p class="analyze-loading-title">Analyse en cours…</p>
+                  <p class="analyze-loading-msg" id="analyze-loading-msg">Extraction de l'annonce et calcul du Score Mandat™</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="analyze-cancel-btn" title="Annuler l'analyse">Annuler</button>
+              </div>
+              <div class="analyze-loader-bar" aria-hidden="true">
+                <div class="analyze-loader-fill" id="analyze-loader-fill"></div>
+              </div>
+              <div class="analyze-loader-progressline">
+                <span class="analyze-loader-pct" id="analyze-loader-pct">0%</span>
+                <span class="analyze-loader-phase" id="analyze-loader-phase">Initialisation</span>
+              </div>
+              <ul class="analyze-loader-feed" id="analyze-loader-feed" aria-live="polite"></ul>
             </div>
           </div>
 
@@ -879,11 +892,11 @@
     <div class="modal-card">
       <button type="button" class="modal-close" id="radar-settings-close" aria-label="Fermer">×</button>
       <h2>Territoire de l'agence</h2>
-      <p class="form-hint">Villes cibles (séparées par des virgules) — le briefing du matin ne montre que les biens dans ces communes.</p>
+      <p class="form-hint">Villes cibles (virgules) — toutes les communes de France : saisissez 2 lettres pour l’autocomplétion.</p>
       <form id="radar-settings-form">
         <label class="form-field">
           <span>Villes</span>
-          <input type="text" id="radar-target-cities" placeholder="Lyon, Villeurbanne, Caluire">
+          <input type="text" id="radar-target-cities" placeholder="Lorient, Lyon, Villeurbanne…" autocomplete="off">
         </label>
         <label class="form-field">
           <span>Objectif mandats / mois</span>
@@ -1107,7 +1120,8 @@
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
-  <script src="/crm/assets/js/app.js?v=50"></script>
+  <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
+  <script src="/crm/assets/js/app.js?v=52"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/crm/sw.js?v=5").then((reg) => {

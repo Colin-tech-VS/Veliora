@@ -684,6 +684,33 @@ function crawlBodyExtra() {
   return city ? { city } : {};
 }
 
+function countEnabledCrawlSources(list = SOURCES) {
+  return (list || []).filter(
+    (s) =>
+      s.enabled !== false &&
+      String(s.search_url || s.base_url || "").trim().startsWith("http"),
+  ).length;
+}
+
+/** Met à jour le titre du modal si le job serveur indique le nombre de sites. */
+function applyCrawlLabelFromJobMessage(label, jobMessage) {
+  if (!jobMessage) return label;
+  const m = String(jobMessage).match(/(\d+)\s+site/i);
+  if (!m) return label;
+  const n = m[1];
+  const city = getCrawlCity();
+  return city ? `Tous les sites (${n}) — ${city}` : `Tous les sites (${n})`;
+}
+
+function setCrawlModalTitles(label, { prefix = "Crawl — " } = {}) {
+  const title = `${prefix}${label}`;
+  crawlState.label = label;
+  const loaderTitle = document.getElementById("crawl-loader-title");
+  const dockTitle = document.getElementById("crawl-dock-title");
+  if (loaderTitle) loaderTitle.textContent = title;
+  if (dockTitle) dockTitle.textContent = title;
+}
+
 function formatEtaRemaining(job) {
   if (!job?.eta_seconds) return "";
   const elapsed = crawlState.startedAt ? (Date.now() - crawlState.startedAt) / 1000 : 0;
@@ -922,7 +949,7 @@ async function finishCrawlFromJob(job, label, options = {}) {
     const lbl = label || crawlState.label;
     setCrawlLoaderStep(job?.message || "Terminé");
     const finalJob = jobId
-      ? await api(`/crawler/jobs/${jobId}`).catch(() => job)
+      ? await api(`/crawler/jobs/${jobId}?lite=1`).catch(() => job)
       : job;
     await refreshAppData();
     notifyCrawlResult(finalJob, lbl);
@@ -1167,6 +1194,7 @@ async function init() {
   setupCustomUrlCrawl();
   setupProductModes();
   setupAnalyzeForm();
+  setupCityAutocompletes();
   setupCrawlUrlModal();
   document.getElementById("btn-logout")?.addEventListener("click", logout);
   document.getElementById("btn-invite-collab")?.addEventListener("click", () => {
@@ -1287,6 +1315,13 @@ function setupNavigation() {
 }
 
 async function switchView(view) {
+  if (
+    state.currentView === "analyze" &&
+    view !== "analyze" &&
+    analyzeImportState.active
+  ) {
+    cancelAnalyzeImport({ silent: true });
+  }
   state.currentView = view;
   syncProductModeTabs(view);
   document.querySelectorAll(".nav-item").forEach((el) => {
@@ -1331,7 +1366,11 @@ async function switchView(view) {
   if (view === "dashboard") {
     markOnboardingStep3Seen();
   }
-  if (view === "analyze" && !state.onDemandAnalysis?.analysis) {
+  if (
+    view === "analyze" &&
+    !state.onDemandAnalysis?.analysis &&
+    !analyzeImportState.active
+  ) {
     setAnalyzeUiState("empty");
   }
   refreshOnboardingUi();
@@ -1550,6 +1589,207 @@ function setAnalyzeUiState(phase) {
   if (result) result.hidden = phase !== "result";
 }
 
+/** Import fiche pour analyse — progression dans la vue Score Mandat (sans modal crawl) */
+const analyzeImportState = {
+  active: false,
+  aborted: false,
+  jobId: null,
+  url: "",
+  pollTimer: null,
+  lastProgress: 0,
+  lastMessage: "",
+  networkFails: 0,
+  pollErrors: 0,
+};
+
+const analyzeFeedState = {
+  seenMessages: new Set(),
+  seenLogIds: new Set(),
+};
+
+let analyzeWaitTimer = null;
+
+const ANALYZE_WAIT_MSGS = [
+  "Lecture de l'annonce…",
+  "Extraction prix, surface et localisation…",
+  "Comparatif DVF et signaux vendeur…",
+  "Calcul du Score Mandat™…",
+];
+
+function setAnalyzeFormDisabled(disabled) {
+  document.getElementById("analyze-url-submit")?.toggleAttribute("disabled", disabled);
+  document.getElementById("analyze-url-input")?.toggleAttribute("disabled", disabled);
+}
+
+function startAnalyzeWaitAnimation() {
+  stopAnalyzeWaitAnimation();
+  let i = 0;
+  const tick = () => {
+    const el = document.getElementById("analyze-loading-msg");
+    if (el) el.textContent = ANALYZE_WAIT_MSGS[i % ANALYZE_WAIT_MSGS.length];
+    i += 1;
+  };
+  tick();
+  analyzeWaitTimer = setInterval(tick, 2800);
+}
+
+function stopAnalyzeWaitAnimation() {
+  if (analyzeWaitTimer) {
+    clearInterval(analyzeWaitTimer);
+    analyzeWaitTimer = null;
+  }
+}
+
+function resetAnalyzeFeed() {
+  analyzeFeedState.seenMessages = new Set();
+  analyzeFeedState.seenLogIds = new Set();
+  const feed = document.getElementById("analyze-loader-feed");
+  if (feed) feed.innerHTML = "";
+}
+
+function appendAnalyzeFeedLine(text, type = "step") {
+  if (!text || analyzeFeedState.seenMessages.has(text)) return;
+  analyzeFeedState.seenMessages.add(text);
+  const feed = document.getElementById("analyze-loader-feed");
+  if (!feed) return;
+  const li = document.createElement("li");
+  li.className = `feed-${type} feed-enter`;
+  li.innerHTML = `<span>${escapeHtml(text)}</span>`;
+  feed.appendChild(li);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function ingestAnalyzeJobLogs(logs) {
+  if (!Array.isArray(logs)) return;
+  for (const log of logs) {
+    if (!log.id || analyzeFeedState.seenLogIds.has(log.id)) continue;
+    analyzeFeedState.seenLogIds.add(log.id);
+    const line = formatCrawlLogLine(log);
+    appendAnalyzeFeedLine(line, crawlLogFeedType(log.status));
+  }
+}
+
+function updateAnalyzeProgressUi(job) {
+  const msg = job?.message || "Traitement…";
+  analyzeImportState.lastProgress = job?.progress ?? analyzeImportState.lastProgress ?? 0;
+  analyzeImportState.lastMessage = msg;
+  const main = document.getElementById("analyze-loading-msg");
+  if (main) main.textContent = msg;
+  const phaseEl = document.getElementById("analyze-loader-phase");
+  if (phaseEl) phaseEl.textContent = crawlActivityPhase(msg)[1];
+  const progress = Math.min(100, Math.max(0, job?.progress ?? 0));
+  const fill = document.getElementById("analyze-loader-fill");
+  if (fill) fill.style.width = `${progress}%`;
+  const pct = document.getElementById("analyze-loader-pct");
+  if (pct) pct.textContent = `${progress}%`;
+  if (msg !== analyzeImportState._lastFeedMsg) {
+    analyzeImportState._lastFeedMsg = msg;
+    appendAnalyzeFeedLine(msg, "step");
+  }
+  ingestAnalyzeJobLogs(job?.logs);
+}
+
+function stopAnalyzeImportPoll() {
+  analyzeImportState.active = false;
+  analyzeImportState.jobId = null;
+  analyzeImportState._lastFeedMsg = "";
+  if (analyzeImportState.pollTimer) {
+    clearTimeout(analyzeImportState.pollTimer);
+    analyzeImportState.pollTimer = null;
+  }
+  setAnalyzeFormDisabled(false);
+}
+
+function cancelAnalyzeImport({ silent = false } = {}) {
+  analyzeImportState.aborted = true;
+  const jobId = analyzeImportState.jobId;
+  stopAnalyzeImportPoll();
+  stopAnalyzeWaitAnimation();
+  setAnalyzeUiState("empty");
+  setAnalyzeFormDisabled(false);
+  if (jobId) {
+    api("/crawler/jobs/cancel", { method: "POST" }).catch(() => {});
+  }
+  if (!silent) {
+    showToast("Analyse annulée", "info");
+  }
+}
+
+function runAnalyzeImportPoll(jobId, url) {
+  analyzeImportState.active = true;
+  analyzeImportState.aborted = false;
+  analyzeImportState.jobId = jobId;
+  analyzeImportState.url = url;
+  analyzeImportState.networkFails = 0;
+  analyzeImportState.pollErrors = 0;
+  analyzeImportState.lastProgress = 5;
+  setAnalyzeUiState("loading");
+  setAnalyzeFormDisabled(true);
+  resetAnalyzeFeed();
+  updateAnalyzeProgressUi({ progress: 5, message: "Connexion au portail — extraction de la fiche…" });
+
+  const tick = async () => {
+    if (!analyzeImportState.active || analyzeImportState.aborted) return;
+    try {
+      const job = await api(`/crawler/jobs/${jobId}?lite=1&logs=1`);
+      updateAnalyzeProgressUi(job);
+      analyzeImportState.networkFails = 0;
+      analyzeImportState.pollErrors = 0;
+
+      if (job.status === "completed" || job.status === "failed") {
+        stopAnalyzeImportPoll();
+        if (job.status === "failed") {
+          setAnalyzeUiState("empty");
+          const errMsg =
+            job.errors?.[0]?.message || job.message || "Import de la fiche échoué";
+          showToast(errMsg, "error", 8000);
+          return;
+        }
+        await completeOnDemandAnalysisAfterImport(url);
+        return;
+      }
+      analyzeImportState.pollTimer = setTimeout(tick, 600);
+    } catch (err) {
+      if (analyzeImportState.aborted) return;
+      if (isNetworkFetchError(err) || err.message?.includes("Connexion perdue")) {
+        analyzeImportState.networkFails += 1;
+        updateAnalyzeProgressUi({
+          progress: analyzeImportState.lastProgress,
+          message: `Connexion interrompue (${analyzeImportState.networkFails}/40) — import serveur actif…`,
+        });
+        if (analyzeImportState.networkFails >= 40) {
+          stopAnalyzeImportPoll();
+          setAnalyzeUiState("empty");
+          showToast("Connexion perdue — relancez l'analyse", "error");
+          return;
+        }
+        analyzeImportState.pollTimer = setTimeout(tick, 1500);
+        return;
+      }
+      if (/Erreur serveur|50\d|État du crawl/i.test(err.message || "")) {
+        analyzeImportState.pollErrors += 1;
+        updateAnalyzeProgressUi({
+          progress: analyzeImportState.lastProgress,
+          message: `Synchronisation (${analyzeImportState.pollErrors}/15) — import en cours sur le serveur…`,
+        });
+        if (analyzeImportState.pollErrors >= 15) {
+          stopAnalyzeImportPoll();
+          setAnalyzeUiState("empty");
+          showToast(err.message || "Suivi interrompu — relancez l'analyse", "error");
+          return;
+        }
+        analyzeImportState.pollTimer = setTimeout(tick, 2000);
+        return;
+      }
+      stopAnalyzeImportPoll();
+      setAnalyzeUiState("empty");
+      showToast(err.message, "error");
+    }
+  };
+
+  analyzeImportState.pollTimer = setTimeout(tick, 400);
+}
+
 function renderOnDemandAnalysis(analysis, lead) {
   if (!analysis) {
     setAnalyzeUiState("empty");
@@ -1706,7 +1946,11 @@ async function fetchOnDemandAnalysis(url) {
 }
 
 async function runOnDemandAnalysis(url, { skipViewSwitch } = {}) {
-  if (!url || state.loading) return;
+  if (!url) return;
+  if (analyzeImportState.active) {
+    showToast("Analyse déjà en cours…", "warning");
+    return;
+  }
   const normalized = url.trim();
   if (!isUrl(normalized)) {
     showToast("Collez un lien http(s) valide vers une fiche annonce", "error");
@@ -1723,20 +1967,18 @@ async function runOnDemandAnalysis(url, { skipViewSwitch } = {}) {
   if (!skipViewSwitch) switchView("analyze");
   const input = document.getElementById("analyze-url-input");
   if (input) input.value = normalized;
+  analyzeImportState.aborted = false;
   setAnalyzeUiState("loading");
-  const msg = document.getElementById("analyze-loading-msg");
-  if (msg) msg.textContent = "Lecture de l'annonce et calcul du Score Mandat™…";
+  resetAnalyzeFeed();
+  setAnalyzeFormDisabled(true);
+  startAnalyzeWaitAnimation();
 
   try {
     const res = await fetchOnDemandAnalysis(normalized);
+    if (analyzeImportState.aborted) return;
     if (res.status === "importing" && res.job_id) {
-      const label = guessSiteNameFromUrl(normalized);
-      if (msg) msg.textContent = "Import de la fiche — extraction contacts, type, prix…";
-      await runCrawlJob(null, null, `Analyse — ${label}`, {
-        existingJobId: res.job_id,
-        goToAnalyze: true,
-        importUrl: normalized,
-      });
+      stopAnalyzeWaitAnimation();
+      runAnalyzeImportPoll(res.job_id, normalized);
       return;
     }
     if (res.status === "ready" && res.analysis) {
@@ -1754,16 +1996,28 @@ async function runOnDemandAnalysis(url, { skipViewSwitch } = {}) {
   } catch (err) {
     setAnalyzeUiState("empty");
     showToast(err.message, "error");
+  } finally {
+    stopAnalyzeWaitAnimation();
+    if (!analyzeImportState.active) {
+      setAnalyzeFormDisabled(false);
+    }
   }
 }
 
 async function completeOnDemandAnalysisAfterImport(url) {
   setAnalyzeUiState("loading");
-  const msg = document.getElementById("analyze-loading-msg");
-  if (msg) msg.textContent = "Calcul du Score Mandat™ et comparatif DVF…";
+  setAnalyzeFormDisabled(true);
+  stopAnalyzeWaitAnimation();
+  resetAnalyzeFeed();
+  updateAnalyzeProgressUi({
+    progress: 92,
+    message: "Calcul du Score Mandat™ et comparatif DVF…",
+  });
   try {
     await refreshAppData();
+    if (analyzeImportState.aborted) return;
     const res = await fetchOnDemandAnalysis(url);
+    if (analyzeImportState.aborted) return;
     if (res.status === "ready" && res.analysis) {
       renderOnDemandAnalysis(res.analysis, res.lead);
       showToast(`Score Mandat™ : ${res.analysis.mandate_score}/100`, "success", 6000);
@@ -1774,12 +2028,25 @@ async function completeOnDemandAnalysisAfterImport(url) {
   } catch (err) {
     setAnalyzeUiState("empty");
     showToast(err.message, "error");
+  } finally {
+    setAnalyzeFormDisabled(false);
   }
+}
+
+function setupCityAutocompletes() {
+  if (typeof setupFrenchCityAutocomplete !== "function") return;
+  setupFrenchCityAutocomplete(document.getElementById("radar-target-cities"), {
+    multi: true,
+  });
+  setupFrenchCityAutocomplete(document.getElementById("client-cities"), { multi: true });
 }
 
 function setupAnalyzeForm() {
   const form = document.getElementById("analyze-url-form");
   if (!form) return;
+  document.getElementById("analyze-cancel-btn")?.addEventListener("click", () => {
+    cancelAnalyzeImport();
+  });
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const input = document.getElementById("analyze-url-input");
@@ -2044,10 +2311,28 @@ async function crawlSingleSource(sourceId, sourceName) {
 
 async function runManualScan() {
   const city = getCrawlCity();
-  const count = SOURCES.filter((s) => s.search_url || s.base_url).length;
+  let count = countEnabledCrawlSources();
+  if (!count) {
+    try {
+      const fresh = await api("/sources");
+      if (Array.isArray(fresh)) SOURCES = fresh;
+      count = countEnabledCrawlSources();
+    } catch {
+      /* garde le label sans (0) */
+    }
+  }
+  if (!count) {
+    try {
+      const st = await api("/crawler/status");
+      count = st.active_sources || 0;
+    } catch {
+      /* ignore */
+    }
+  }
+  const countLabel = count > 0 ? String(count) : "…";
   const label = city
-    ? `Tous les sites (${count}) — ${city}`
-    : `Tous les sites (${count})`;
+    ? `Tous les sites (${countLabel}) — ${city}`
+    : `Tous les sites (${countLabel})`;
   await runCrawlJob("/crawler/scan", crawlBodyExtra(), label);
 }
 
@@ -3115,6 +3400,13 @@ function showCrawlLoader(title, message, progress) {
 }
 
 function hideCrawlLoader() {
+  const analyzeHandoff =
+    crawlState.pollOptions?.goToAnalyze &&
+    crawlState.pollOptions?.importUrl &&
+    crawlState.jobId
+      ? { jobId: crawlState.jobId, url: crawlState.pollOptions.importUrl }
+      : null;
+
   crawlState.active = false;
   crawlState.minimized = false;
   crawlState.jobId = null;
@@ -3136,6 +3428,11 @@ function hideCrawlLoader() {
   document.getElementById("crawl-dock")?.classList.remove("open");
   state.loading = false;
   document.querySelectorAll(".source-crawl-btn").forEach((b) => (b.disabled = false));
+
+  if (analyzeHandoff && !analyzeImportState.active) {
+    setAnalyzeUiState("loading");
+    runAnalyzeImportPoll(analyzeHandoff.jobId, analyzeHandoff.url);
+  }
 }
 
 function sleep(ms) {
@@ -3144,20 +3441,27 @@ function sleep(ms) {
 
 async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
   const now = Date.now();
-  const useLite = now - lastLogsFetch < 2500;
-  const job = await api(useLite ? `/crawler/jobs/${jobId}?lite=1` : `/crawler/jobs/${jobId}`);
-  const newFetch = !useLite || job.logs?.length ? now : lastLogsFetch;
+  const wantLogs = now - lastLogsFetch >= 4000;
+  const qs = wantLogs ? "?lite=1&logs=1" : "?lite=1";
+  const job = await api(`/crawler/jobs/${jobId}${qs}`);
+  const newFetch = wantLogs || job.logs?.length ? now : lastLogsFetch;
+  let displayLabel = label;
+  if (label.startsWith("Tous les sites")) {
+    displayLabel = applyCrawlLabelFromJobMessage(label, job.message) || label;
+  }
   const title =
     job.status === "completed" || job.status === "failed"
-      ? `Crawl terminé — ${label}`
-      : `Crawl — ${label}`;
+      ? `Crawl terminé — ${displayLabel}`
+      : `Crawl — ${displayLabel}`;
   updateCrawlLoaderUI(job, title);
-  return { job, lastLogsFetch: newFetch };
+  return { job, lastLogsFetch: newFetch, displayLabel };
 }
 
 function startCrawlPolling(jobId, label, options = {}) {
   let networkFails = 0;
+  let pollErrors = 0;
   let lastLogsFetch = 0;
+  let displayLabel = label;
   crawlState.pollOptions = options;
 
   const tick = async () => {
@@ -3165,9 +3469,12 @@ function startCrawlPolling(jobId, label, options = {}) {
     if (crawlState.pagePollPaused) return;
 
     try {
-      const { job, lastLogsFetch: lf } = await pollCrawlJobOnce(jobId, label, lastLogsFetch);
+      const polled = await pollCrawlJobOnce(jobId, displayLabel, lastLogsFetch);
+      const { job, lastLogsFetch: lf } = polled;
+      if (polled.displayLabel) displayLabel = polled.displayLabel;
       lastLogsFetch = lf;
       networkFails = 0;
+      pollErrors = 0;
 
       const savedDelta = (job.leads_saved || 0) !== crawlState.lastSavedCount;
       const foundDelta = (job.leads_found || 0) !== crawlState.lastFoundCount;
@@ -3176,7 +3483,7 @@ function startCrawlPolling(jobId, label, options = {}) {
       }
 
       if (job.status === "completed" || job.status === "failed") {
-        await finishCrawlFromJob(job, label, options);
+        await finishCrawlFromJob(job, displayLabel, options);
         return;
       }
 
@@ -3200,6 +3507,24 @@ function startCrawlPolling(jobId, label, options = {}) {
         crawlState.pollTimer = setTimeout(tick, 1500);
         return;
       }
+      if (/Erreur serveur|50\d|État du crawl/i.test(err.message || "")) {
+        pollErrors += 1;
+        const msg = `Synchronisation du crawl (${pollErrors}/15) — le scan continue sur le serveur…`;
+        setCrawlLoaderStep(msg);
+        const dockStep = document.getElementById("crawl-dock-step");
+        if (dockStep) dockStep.textContent = msg;
+        if (pollErrors >= 15) {
+          await handoffCrawlToBackground();
+          showToast(
+            "Suivi UI interrompu — le crawl continue. Rechargez la page ou attendez la notification.",
+            "warning",
+            9000,
+          );
+          return;
+        }
+        crawlState.pollTimer = setTimeout(tick, 2000);
+        return;
+      }
       showToast(err.message, "error");
       hideCrawlLoader();
     }
@@ -3210,8 +3535,16 @@ function startCrawlPolling(jobId, label, options = {}) {
 }
 
 async function cancelStaleCrawlUi() {
+  const wasAnalyzeImport = Boolean(
+    crawlState.pollOptions?.goToAnalyze && crawlState.pollOptions?.importUrl,
+  );
   if (window.CrawlWatch) await CrawlWatch.stop();
   hideCrawlLoader();
+  if (wasAnalyzeImport) {
+    cancelAnalyzeImport({ silent: true });
+    showToast("Import annulé", "info");
+    return;
+  }
   try {
     await api("/crawler/jobs/cancel", { method: "POST" });
   } catch {
@@ -3291,7 +3624,13 @@ async function runCrawlJob(endpoint, body, label, options = {}) {
       updateEtaDisplay(start.job);
     }
 
-    startCrawlPolling(jobId, label, options);
+    let pollingLabel = label;
+    if (label.startsWith("Tous les sites") && start.job?.message) {
+      pollingLabel = applyCrawlLabelFromJobMessage(label, start.job.message) || label;
+      setCrawlModalTitles(pollingLabel);
+    }
+
+    startCrawlPolling(jobId, pollingLabel, options);
   } catch (err) {
     const msg = err.message || "Erreur crawl";
     showToast(msg, "error", msg.length > 80 ? 12000 : 6000);

@@ -18,6 +18,7 @@ PUBLIC_API_PATHS = frozenset({
     "/api/billing/webhook",
     "/api/billing/config",
     "/api/clients/import/template",
+    "/api/geo/communes",
 })
 
 

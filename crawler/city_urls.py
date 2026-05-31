@@ -6,35 +6,84 @@ import json
 import re
 from urllib.parse import quote, urlencode, urlparse, parse_qs, urlunparse
 
+from crawler.fr_communes import (
+    department_code_from_path_slug,
+    path_slug_for_city,
+    slugify,
+)
 from crawler.portals import resolve_base_portal_id
 
 _CITY_SLUG = re.compile(r"[^a-z0-9]+")
-
-# Slugs « ville-département » pour les portails qui utilisent des chemins (pas ?ville=).
-_CITY_PATH_SLUGS: dict[str, str] = {
-    "paris": "paris-75",
-    "marseille": "marseille-13",
-    "lyon": "lyon-69",
-    "toulouse": "toulouse-31",
-    "nice": "nice-06",
-    "nantes": "nantes-44",
-    "strasbourg": "strasbourg-67",
-    "montpellier": "montpellier-34",
-    "bordeaux": "bordeaux-33",
-    "lille": "lille-59",
-}
+_DEPT_IN_PATH = re.compile(r"-((?:\d{2,3}|2[ab]))(?:\.html)?$", re.I)
 
 
 def _slug(city: str) -> str:
-    return _CITY_SLUG.sub("-", city.lower().strip()).strip("-")
+    return slugify(city) or _CITY_SLUG.sub("-", city.lower().strip()).strip("-")
 
 
-def _city_path_slug(city: str) -> str:
-    sl = _slug(city)
-    return _CITY_PATH_SLUGS.get(sl, sl)
+def _city_path_slug(city: str, postcode: str | None = None) -> str:
+    return path_slug_for_city(city, postcode)
 
 
-def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) -> str:
+def city_department_code(city: str, postcode: str | None = None) -> str | None:
+    """Code département (56, 2A, 971…) pour la commune si connue."""
+    return department_code_from_path_slug(_city_path_slug(city, postcode))
+
+
+def search_url_targets_city(url: str, city: str) -> bool:
+    """True si l’URL de liste cible explicitement la ville (pas une page nationale)."""
+    city = (city or "").strip()
+    if not city or not url:
+        return True
+    slug = _slug(city)
+    path_slug = _city_path_slug(city)
+    ul = url.lower()
+    if slug in ul or path_slug in ul:
+        return True
+    if f"ville={quote(city.lower())}" in ul or f"locations=" in ul:
+        return True
+    return False
+
+
+def listing_url_likely_in_city(url: str, city: str) -> bool:
+    """Filtre les fiches dont le chemin indique une autre commune (ex. alpes-de-haute-provence-04)."""
+    city = (city or "").strip()
+    if not city or not url:
+        return True
+    slug = _slug(city)
+    path_slug = _city_path_slug(city)
+    target_dept = city_department_code(city)
+    path = urlparse(url).path.lower()
+    if slug in path or path_slug in path:
+        return True
+    if f"locations" in url.lower() and slug in url.lower():
+        return True
+
+    for seg in path.split("/"):
+        if not seg or len(seg) < 4:
+            continue
+        if slug in seg or path_slug in seg:
+            return True
+        m = _DEPT_IN_PATH.search(seg)
+        if not m:
+            continue
+        dept = m.group(1).upper()
+        if target_dept and dept != target_dept.upper():
+            return False
+        if not target_dept and slug not in seg and len(seg) > 14:
+            return False
+
+    if target_dept:
+        return False
+    return slug in path
+
+
+def apply_city_to_search_url(
+    search_url: str,
+    source_id: str,
+    city: str | None,
+    postcode: str | None = None,
+) -> str:
     """Retourne l’URL de liste avec filtre ville si possible."""
     city = (city or "").strip()
     if not city:
@@ -42,6 +91,7 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
 
     portal = resolve_base_portal_id(source_id) or (source_id or "").lower()
     slug = _slug(city)
+    path_slug = _city_path_slug(city, postcode)
     q_city = quote(city)
 
     if portal == "leboncoin":
@@ -59,11 +109,11 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
         return search_url
 
     if portal == "seloger":
-        cands = city_search_url_candidates(search_url, source_id, city)
+        cands = city_search_url_candidates(search_url, source_id, city, postcode=postcode)
         return cands[0] if cands else search_url
 
     if portal == "logicimmo":
-        cands = city_search_url_candidates(search_url, source_id, city)
+        cands = city_search_url_candidates(search_url, source_id, city, postcode=postcode)
         return cands[0] if cands else search_url
 
     if portal == "bienici":
@@ -75,8 +125,8 @@ def apply_city_to_search_url(search_url: str, source_id: str, city: str | None) 
         return f"{search_url.rstrip('/')}?ville={q_city}"
 
     if portal == "lefigaro" or "figaro" in search_url:
-        path_slug = _city_path_slug(city).replace("-", "+")
-        return f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{path_slug}.html"
+        fig_slug = path_slug.replace("-", "+")
+        return f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{fig_slug}.html"
 
     parsed = urlparse(search_url)
     sep = "&" if parsed.query else "?"
@@ -87,6 +137,7 @@ def city_search_url_candidates(
     search_url: str,
     source_id: str,
     city: str | None,
+    postcode: str | None = None,
 ) -> list[str]:
     """URLs de liste ville, du plus fiable au repli (testées par le moteur au crawl)."""
     city = (city or "").strip()
@@ -95,7 +146,7 @@ def city_search_url_candidates(
 
     portal = resolve_base_portal_id(source_id) or (source_id or "").lower()
     slug = _slug(city)
-    path_slug = _city_path_slug(city)
+    path_slug = _city_path_slug(city, postcode)
     q_city = quote(city)
     out: list[str] = []
 
@@ -104,6 +155,9 @@ def city_search_url_candidates(
             out.append(u.split("#")[0].rstrip("/") or u)
 
     if portal == "seloger":
+        immo = path_slug
+        _add(f"https://www.seloger.com/immobilier/achat/immo-{immo}/")
+        _add(f"https://www.seloger.com/immobilier/tout/immo-{immo}/")
         places = json.dumps([{"label": city}], ensure_ascii=False, separators=(",", ":"))
         base = (
             search_url
@@ -113,8 +167,6 @@ def city_search_url_candidates(
         parsed = urlparse(base)
         qs = {"types": "1", "projects": "2", "places": places}
         _add(f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(qs)}")
-        _add(f"https://www.seloger.com/immobilier/achat/bien/ile-de-france/{path_slug}/")
-        _add(f"https://www.seloger.com/immobilier/achat/ile-de-france/{path_slug}/")
         return out
 
     if portal == "logicimmo":
@@ -150,7 +202,7 @@ def city_search_url_candidates(
         _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement-{ps}.html")
         return out
 
-    _add(apply_city_to_search_url(search_url, source_id, city))
+    _add(apply_city_to_search_url(search_url, source_id, city, postcode))
     parsed = urlparse(search_url)
     if parsed.scheme and parsed.netloc:
         sep = "&" if parsed.query else "?"
@@ -163,15 +215,34 @@ def pick_working_city_search_url(
     source_id: str,
     city: str | None,
     probe,
+    postcode: str | None = None,
 ) -> str:
-    """Choisit la première URL ville pour laquelle `probe(url)` renvoie True."""
-    for url in city_search_url_candidates(search_url, source_id, city):
+    """Choisit la première URL ville locale pour laquelle `probe(url)` renvoie True."""
+    city = (city or "").strip()
+    candidates = city_search_url_candidates(search_url, source_id, city, postcode=postcode)
+    if city:
+
+        def _rank(u: str) -> tuple:
+            ul = u.lower()
+            ps = _city_path_slug(city, postcode)
+            sl = _slug(city)
+            if f"immo-{ps}" in ul or ps in ul:
+                return (0, u)
+            if sl in ul:
+                return (1, u)
+            return (2, u)
+
+        candidates = sorted(candidates, key=_rank)
+
+    for url in candidates:
+        if city and not search_url_targets_city(url, city):
+            continue
         try:
             if probe(url):
                 return url
         except Exception:
             continue
-    return apply_city_to_search_url(search_url, source_id, city)
+    return apply_city_to_search_url(search_url, source_id, city, postcode)
 
 
 # Gabarits de chemins « ville » fréquents sur les sites immobiliers génériques.
@@ -231,6 +302,7 @@ def preview_search_urls_for_sources(
     city: str | None,
     *,
     adapter_search_urls: dict[str, str] | None = None,
+    postcode: str | None = None,
 ) -> dict[str, str]:
     """URLs de liste affichables / crawlables pour chaque source et une ville donnée."""
     city = (city or "").strip()
@@ -247,5 +319,7 @@ def preview_search_urls_for_sources(
         )
         if not base:
             continue
-        out[sid] = apply_city_to_search_url(base, sid, city) if city else base
+        out[sid] = (
+            apply_city_to_search_url(base, sid, city, postcode) if city else base
+        )
     return out

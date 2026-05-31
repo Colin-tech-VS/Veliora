@@ -14,6 +14,7 @@ from crawler.browser import close_browser_session, fetch_page
 from crawler.browser import warmup_domain
 from crawler.city_urls import (
     apply_city_to_search_url,
+    listing_url_likely_in_city,
     build_city_seed_urls,
     pick_working_city_search_url,
 )
@@ -138,9 +139,8 @@ class CrawlerEngine:
         tslug = self._city_slug(target)
         if not tslug:
             return True
-        # Localisation inconnue → on garde (évite 0 résultat si l'adresse est incomplète).
         if not hay or len(hay) < 4:
-            return True
+            return False
         padded = f" {hay} "
         if f" {tslug} " in padded or hay.endswith(tslug) or hay.startswith(tslug):
             return True
@@ -148,7 +148,6 @@ class CrawlerEngine:
         for part in tslug.split():
             if len(part) >= 4 and part in hay:
                 return True
-        # Ville non trouvée dans l'annonce → on garde (évite 0 résultat si adresse incomplète).
         loc_city = self._city_slug(loc.get("city"))
         if loc_city:
             for part in tslug.split():
@@ -159,7 +158,7 @@ class CrawlerEngine:
                     return True
             if loc_city != tslug and len(loc_city) >= 4:
                 return False
-        return True
+        return False
 
     def _load_adapters(self, agency_id: str) -> dict[str, BaseAdapter]:
         return build_adapters(get_sources(agency_id))
@@ -548,7 +547,13 @@ class CrawlerEngine:
                 )
                 if not fetched.ok:
                     return False
-                return bool(adapter.find_listings(fetched.html or "", u, limit=4))
+                listings = adapter.find_listings(fetched.html or "", u, limit=8)
+                if not listings:
+                    return False
+                in_city = sum(
+                    1 for link in listings if listing_url_likely_in_city(link, city)
+                )
+                return in_city >= max(1, len(listings) // 3)
 
             search_url = pick_working_city_search_url(
                 base_search, source_id, city, _probe_city_list_url
@@ -701,13 +706,26 @@ class CrawlerEngine:
             for i, listing_url in enumerate(targets):
                 if not result.can_process_more_listings():
                     break
+                if self._crawl_city and not listing_url_likely_in_city(
+                    listing_url, self._crawl_city
+                ):
+                    result.out_of_city += 1
+                    add_crawl_log(
+                        source_id or adapter.source_id,
+                        listing_url,
+                        "skip_city",
+                        f"Hors {self._crawl_city} (URL) — ignorée",
+                        job_id,
+                    )
+                    continue
                 if job_id:
                     pct = 50 + int((i / max(len(targets), 1)) * 40)
                     path_hint = urlparse(listing_url).path.rstrip("/").split("/")[-1][:40] or "annonce"
+                    city_tag = f"{self._crawl_city} · " if self._crawl_city else ""
                     update_crawl_job(
                         job_id,
                         progress=pct,
-                        message=f"Annonce {i + 1}/{len(targets)} — lecture « {path_hint} »…",
+                        message=f"Annonce {i + 1}/{len(targets)} — {city_tag}{path_hint}…",
                     )
                 self._process_listing(
                     listing_url, adapter, result, source_id, job_id, index=i, total=len(targets)
@@ -785,11 +803,7 @@ class CrawlerEngine:
         city_slug = _re.sub(r"[^a-z0-9]+", "-", (city or "").lower().strip()).strip("-")
 
         def _category_in_city(cat_url: str) -> bool:
-            # Sans ville : toutes les catégories. Avec ville : priorité locale, mais
-            # si peu d'annonces trouvées on élargit pour ne pas rester à 0.
             if not city_slug:
-                return True
-            if len(all_links) < 12:
                 return True
             return city_slug in cat_url.lower()
 
@@ -901,6 +915,8 @@ class CrawlerEngine:
                 adapter.find_listings(fetched.html, page_url, limit=MAX_LISTING_LINKS)
             )
             for link in batch:
+                if city and not listing_url_likely_in_city(link, city):
+                    continue
                 if link not in seen:
                     seen.add(link)
                     all_links.append(link)
@@ -911,7 +927,8 @@ class CrawlerEngine:
                 zero_yield_pages += 1
 
             if (
-                not fallback_seeds_done
+                not city_slug
+                and not fallback_seeds_done
                 and zero_yield_pages >= 6
                 and len(all_links) < 3
                 and pages_to_visit

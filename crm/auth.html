@@ -93,7 +93,7 @@
 
     <form id="form-register" class="auth-panel">
       <label class="form-field"><span>Nom de l'agence</span><input type="text" id="reg-agency" required></label>
-      <label class="form-field"><span>Ville de l'agence</span><input type="text" id="reg-city" placeholder="Ex. Lyon, Clamart, Bordeaux…" autocomplete="address-level2" required></label>
+      <label class="form-field"><span>Ville de l'agence</span><input type="text" id="reg-city" placeholder="Saisissez 2 lettres (ex. Lorient, Lyon…)" autocomplete="off" required></label>
       <label class="form-field"><span>Votre email (administrateur)</span><input type="email" id="reg-email" required></label>
       <label class="form-field"><span>Mot de passe</span><input type="password" id="reg-password" required minlength="8"></label>
       <label class="form-field"><span>Prénom</span><input type="text" id="reg-first"></label>
@@ -111,6 +111,7 @@
       <a href="/">← Retour au site</a>
     </p>
   </div>
+  <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script>
     const API = "/api";
     const AUTH_TOKEN_KEY = "propscout_token";
@@ -455,6 +456,10 @@
       handleCheckoutReturn();
       redirectIfActive();
     });
+
+    if (typeof setupFrenchCityAutocomplete === "function") {
+      setupFrenchCityAutocomplete(document.getElementById("reg-city"));
+    }
   </script>
 </body>
 </html>
