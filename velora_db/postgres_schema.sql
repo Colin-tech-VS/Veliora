@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS sources (
     name            TEXT NOT NULL,
     base_url        TEXT NOT NULL,
     search_url      TEXT,
-    enabled         BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled         SMALLINT NOT NULL DEFAULT 1,
     found_total     INTEGER NOT NULL DEFAULT 0,
     found_today     INTEGER NOT NULL DEFAULT 0,
     last_scan       TIMESTAMPTZ,
     last_error      TEXT,
-    is_custom       BOOLEAN NOT NULL DEFAULT FALSE,
+    is_custom       SMALLINT NOT NULL DEFAULT 0,
     agency_id       TEXT,
     logo_url        TEXT,
     logo_fallback   TEXT,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS agency_users (
     role            TEXT NOT NULL DEFAULT 'collaborator',
     first_name      TEXT,
     last_name       TEXT,
-    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    active          SMALLINT NOT NULL DEFAULT 1,
     last_login_at   TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     user_id         TEXT NOT NULL,
     email           TEXT NOT NULL,
     expires_at      TIMESTAMPTZ NOT NULL,
-    used            BOOLEAN NOT NULL DEFAULT FALSE,
+    used            SMALLINT NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS agency_settings (
     target_neighborhoods JSONB NOT NULL DEFAULT '[]',
     mandate_goal_month  INTEGER NOT NULL DEFAULT 5,
     onboarding_step     INTEGER NOT NULL DEFAULT 0,
-    onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    onboarding_completed SMALLINT NOT NULL DEFAULT 0,
     updated_at          TIMESTAMPTZ
 );
 
