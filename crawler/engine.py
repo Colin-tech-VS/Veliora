@@ -330,7 +330,7 @@ class CrawlerEngine:
         elif result.leads_found:
             msg = (
                 f"{label} — {result.leads_found} annonce(s) analysée(s), "
-                f"{result.leads_saved} enregistrée(s)"
+                f"0 enregistrée(s) (données insuffisantes ou pages bloquées)"
             )
         elif result.errors:
             msg = result.errors[0]["message"]
@@ -1744,7 +1744,7 @@ class CrawlerEngine:
                         deep_refresh=deep_refresh,
                     )
 
-        if saved and saved.get("verified") and saved.get("id"):
+        if saved and saved.get("id") and saved.get("verified"):
             if self._dvf_queue:
                 self._dvf_queue.submit_lead(
                     int(saved["id"]),

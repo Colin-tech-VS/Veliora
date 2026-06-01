@@ -276,7 +276,7 @@ def _address_ok(address: str | None) -> bool:
         # Titre / descriptif d'annonce capté comme adresse (ex. « Vente appartement
         # 3 pièces 65 m² ») → pas une vraie adresse.
         return False
-    return len(a) >= 8 and re.search(r"\d|[A-Za-zÀ-ÿ]{3,}", a)
+    return bool(len(a) >= 8 and re.search(r"\d|[A-Za-zÀ-ÿ]{3,}", a))
 
 
 def _surface_ok(surface: float | None) -> bool:
@@ -333,7 +333,8 @@ def prepare_lead_defaults(lead: LeadData) -> LeadData:
         else:
             lead.last_name = None
     elif not lead.first_name and not lead.last_name:
-        pass
+        if lead.price or lead.surface:
+            lead.first_name = "Prospect"
     return lead
 
 
@@ -355,13 +356,18 @@ def verify_lead_minimal(lead: LeadData) -> VerificationResult:
 
     contact_ok = has_phone or has_email
     property_ok = has_address and (has_surface or has_price)
-    metrics_only = (has_surface or has_price) and bool(
+    listing_ok = (has_surface or has_price) and (
+        has_address or bool((lead.source_url or "").startswith("http"))
+    )
+    metrics_only = listing_ok and bool(
         (lead.owner or "").strip() and (lead.owner or "").strip() != "—"
     )
-    if not contact_ok and not property_ok and not metrics_only:
+    if not contact_ok and not property_ok and not metrics_only and not listing_ok:
         errors.append("téléphone, adresse ou prix/surface requis")
 
-    complete = len(errors) == 0 and (contact_ok or property_ok or metrics_only)
+    complete = len(errors) == 0 and (
+        contact_ok or property_ok or metrics_only or listing_ok
+    )
     score = 40
     if has_phone:
         score += 25
@@ -379,25 +385,114 @@ def verify_lead_minimal(lead: LeadData) -> VerificationResult:
     )
 
 
+def verify_lead_crawl_snapshot(lead: LeadData) -> VerificationResult:
+    """Enregistrement crawl : annonce identifiable (URL + au moins un indicateur bien)."""
+    lead = prepare_lead_defaults(lead)
+    errors: list[str] = []
+    if not lead.source_url or not lead.source_url.startswith("http"):
+        errors.append("URL annonce invalide")
+
+    has_price = lead.price is not None and lead.price > 0
+    has_surface = _surface_ok(lead.surface)
+    addr = (lead.address or "").strip()
+    has_loose_address = bool(addr and addr != "—" and len(addr) >= 5 and not is_hub_listing_address(addr))
+    has_contact = _phone_ok(lead.phone) or _email_ok(lead.email)
+
+    if not (has_price or has_surface or has_loose_address or has_contact):
+        errors.append("aucune donnée exploitable (prix, surface, adresse ou contact)")
+
+    ok = len(errors) == 0
+    score = 35
+    if has_contact:
+        score += 25
+    if has_loose_address:
+        score += 20
+    if has_price or has_surface:
+        score += 20
+
+    return VerificationResult(
+        ok=ok,
+        complete=False,
+        errors=errors,
+        warnings=["fiche crawl — compléter téléphone / email si besoin"] if ok else [],
+        score=min(100, score),
+    )
+
+
 def verify_lead_actionable(lead: LeadData) -> VerificationResult:
     """
-    Minimum obligatoire pour enregistrer un crawl : adresse, téléphone, email, m².
+    Minimum pour enregistrer un crawl : contact (tél. ou email) + adresse + prix ou m².
+    L'email seul sur l'annonce est rare — le téléphone suffit.
     """
     from crawler.errors import FIELD_LABELS
 
     lead = prepare_lead_defaults(lead)
-    missing = missing_core_fields(lead)
-    errors = [f"{FIELD_LABELS.get(f, f)} manquant" for f in missing]
+    errors: list[str] = []
+    has_phone = _phone_ok(lead.phone)
+    has_email = _email_ok(lead.email)
+    has_address = _address_ok(lead.address)
+    has_surface = _surface_ok(lead.surface)
+    has_price = lead.price is not None and lead.price > 0
+
+    if not has_phone and not has_email:
+        errors.append(f"{FIELD_LABELS.get('phone', 'téléphone')} ou email requis")
+    if not has_address:
+        errors.append(f"{FIELD_LABELS.get('address', 'adresse')} manquant")
+    if not has_surface and not has_price:
+        errors.append("surface ou prix requis")
+
     complete = len(errors) == 0
-    score = max(0, int((len(CORE_CRAWL_FIELDS) - len(missing)) / len(CORE_CRAWL_FIELDS) * 100))
+    filled = (
+        int(has_phone or has_email)
+        + int(has_address)
+        + int(has_surface or has_price)
+    )
+    score = max(0, int(filled / 3 * 100))
 
     return VerificationResult(
         ok=complete,
         complete=complete,
         errors=errors,
-        warnings=["fiche complète (4 champs minimum)"] if complete else [],
+        warnings=["fiche exploitable (contact + bien)"] if complete else [],
         score=score,
     )
+
+
+def resolve_crawl_verification(
+    lead: LeadData,
+    *,
+    require_verification: bool = True,
+) -> tuple[VerificationResult, bool]:
+    """Choisit le niveau de vérification (strict → snapshot). Retourne (résultat, partial)."""
+    from crawler.config import (
+        SAVE_ACTIONABLE_LEADS,
+        SAVE_CRAWL_SNAPSHOT,
+        SAVE_MINIMAL_LEADS,
+    )
+
+    lead = prepare_lead_defaults(lead)
+    if not require_verification:
+        snap = verify_lead_crawl_snapshot(lead)
+        return snap, not snap.complete
+
+    strict = verify_lead(lead, strict_complete=True)
+    if strict.complete:
+        return strict, False
+
+    attempts: list[tuple[str, VerificationResult]] = []
+    if SAVE_ACTIONABLE_LEADS:
+        attempts.append(("actionable", verify_lead_actionable(lead)))
+    if SAVE_MINIMAL_LEADS:
+        attempts.append(("minimal", verify_lead_minimal(lead)))
+    if SAVE_CRAWL_SNAPSHOT:
+        attempts.append(("snapshot", verify_lead_crawl_snapshot(lead)))
+
+    for _name, result in attempts:
+        if result.ok:
+            return result, not result.complete
+
+    last = attempts[-1][1] if attempts else strict
+    return last, False
 
 
 def verify_lead(lead: LeadData, *, strict_complete: bool = True) -> VerificationResult:

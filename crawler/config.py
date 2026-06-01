@@ -34,9 +34,11 @@ CRAWL_PLAYWRIGHT_ENABLED = os.getenv("CRAWL_PLAYWRIGHT_ENABLED", "true").strip()
     "yes",
 )
 
-# Enregistrer si les 4 champs minimum sont présents : adresse, tél., email, m²
+# Enregistrer si contact + bien exploitables (tél. ou email + adresse + prix/surface)
 SAVE_ACTIONABLE_LEADS = os.getenv("SAVE_ACTIONABLE_LEADS", "true").lower() in ("1", "true", "yes")
 SAVE_MINIMAL_LEADS = os.getenv("SAVE_MINIMAL_LEADS", "true").lower() in ("1", "true", "yes")
+# Dernier recours crawl : fiche visible dans Prospects (URL + prix ou surface ou adresse)
+SAVE_CRAWL_SNAPSHOT = os.getenv("SAVE_CRAWL_SNAPSHOT", "true").lower() in ("1", "true", "yes")
 
 # DVF en parallèle pendant le crawl (ne ralentit pas Playwright)
 DVF_PARALLEL_DURING_CRAWL = True

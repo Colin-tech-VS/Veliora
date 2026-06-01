@@ -205,6 +205,7 @@ def validate_listing_coherence_import(
         or (addr and len(addr) >= 5)
         or lead.surface
         or lead.price
+        or (lead.price and lead.surface)
     )
     if has_partial and len(core_miss) <= 2:
         return True, ""

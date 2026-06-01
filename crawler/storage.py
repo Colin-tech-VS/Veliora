@@ -1003,6 +1003,27 @@ def record_lead_outcome_event(
         conn.commit()
 
 
+def _coerce_source_id(conn, source_id: str | None, agency_id: str) -> str | None:
+    """Évite les échecs FK Postgres si la source n'existe pas encore."""
+    if not source_id:
+        return None
+    row = conn.execute(
+        "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
+        (source_id, agency_id),
+    ).fetchone()
+    if row:
+        return source_id
+    sync_default_sources_for_agency(agency_id)
+    row = conn.execute(
+        "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
+        (source_id, agency_id),
+    ).fetchone()
+    if row:
+        return source_id
+    logger.warning("source_id inconnu pour INSERT lead — %s (agence %s)", source_id, agency_id)
+    return None
+
+
 def save_lead(
     lead: LeadData,
     source_id: str | None = None,
@@ -1017,11 +1038,8 @@ def save_lead(
         lead_from_db_row,
         merge_lead_for_update,
         prepare_lead_defaults,
-        verify_lead,
-        verify_lead_actionable,
-        verify_lead_minimal,
+        resolve_crawl_verification,
     )
-    from crawler.config import SAVE_ACTIONABLE_LEADS, SAVE_MINIMAL_LEADS
 
     if not lead.source_url or not agency_id:
         logger.warning("save_lead ignoré — source_url ou agency_id manquant")
@@ -1035,56 +1053,17 @@ def save_lead(
         lead = merge_lead_for_update(existing_lead, lead, deep_refresh=deep_refresh)
 
     lead = prepare_lead_defaults(lead)
-    verification = verify_lead(lead, strict_complete=True)
-    partial = False
-    if require_verification and not verification.complete:
-        if SAVE_ACTIONABLE_LEADS:
-            actionable = verify_lead_actionable(lead)
-            if actionable.ok:
-                verification = actionable
-                partial = True
-            elif SAVE_MINIMAL_LEADS:
-                minimal = verify_lead_minimal(lead)
-                if minimal.ok:
-                    verification = minimal
-                    partial = True
-                else:
-                    return {
-                        "id": existing_row["id"] if existing_row else None,
-                        "created": False,
-                        "verified": False,
-                        "verification": minimal.summary(),
-                        "errors": minimal.errors,
-                    }
-            else:
-                return {
-                    "id": existing_row["id"] if existing_row else None,
-                    "created": False,
-                    "verified": False,
-                    "verification": actionable.summary(),
-                    "errors": actionable.errors,
-                }
-        elif SAVE_MINIMAL_LEADS:
-            minimal = verify_lead_minimal(lead)
-            if minimal.ok:
-                verification = minimal
-                partial = True
-            else:
-                return {
-                    "id": existing_row["id"] if existing_row else None,
-                    "created": False,
-                    "verified": False,
-                    "verification": minimal.summary(),
-                    "errors": minimal.errors,
-                }
-        else:
-            return {
-                "id": existing_row["id"] if existing_row else None,
-                "created": False,
-                "verified": False,
-                "verification": verification.summary(),
-                "errors": verification.errors,
-            }
+    verification, partial = resolve_crawl_verification(
+        lead, require_verification=require_verification
+    )
+    if require_verification and not verification.ok:
+        return {
+            "id": existing_row["id"] if existing_row else None,
+            "created": False,
+            "verified": False,
+            "verification": verification.summary(),
+            "errors": verification.errors,
+        }
 
     missing_json = json.dumps(lead.missing_fields() if partial else [])
 
@@ -1149,6 +1128,7 @@ def save_lead(
     lead_sector = getattr(lead, "sector", None)
 
     with get_connection() as conn:
+        source_id = _coerce_source_id(conn, source_id, agency_id)
         if existing_row:
             old_p = existing_row.get("price") or 0
             new_p = lead.price or 0
@@ -1247,51 +1227,79 @@ def save_lead(
                 "surface_changed": surface_changed,
             }
 
-        cur = conn.execute(
-            """INSERT INTO leads
-               (first_name, last_name, phone, email, address, city, postcode, sector,
-                surface, price, transaction_type, price_period, published_at, source, source_id,
-                source_url, listing_type, agency, agency_id, score,
-                mandate_score, mandate_score_reason, priority_tier, score_explanation,
-                scores_computed_at, missing_fields,
-                listing_title, facts_audit, pipeline, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                lead.first_name,
-                lead.last_name,
-                lead.phone,
-                lead.email,
-                lead.address,
-                lead_city,
-                lead_postcode,
-                lead_sector,
-                lead.surface,
-                lead.price,
-                lead.transaction_type,
-                lead.price_period,
-                lead.published_at,
-                lead.source,
-                source_id,
-                lead.source_url,
-                segment["listing_type"],
-                lead.agency,
+        try:
+            cur = conn.execute(
+                """INSERT INTO leads
+                   (first_name, last_name, phone, email, address, city, postcode, sector,
+                    surface, price, transaction_type, price_period, published_at, source, source_id,
+                    source_url, listing_type, agency, agency_id, score,
+                    mandate_score, mandate_score_reason, priority_tier, score_explanation,
+                    scores_computed_at, missing_fields,
+                    listing_title, facts_audit, pipeline, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    lead.first_name,
+                    lead.last_name,
+                    lead.phone,
+                    lead.email,
+                    lead.address,
+                    lead_city,
+                    lead_postcode,
+                    lead_sector,
+                    lead.surface,
+                    lead.price,
+                    lead.transaction_type,
+                    lead.price_period,
+                    lead.published_at,
+                    lead.source,
+                    source_id,
+                    lead.source_url,
+                    segment["listing_type"],
+                    lead.agency,
+                    agency_id,
+                    score,
+                    mandate_score,
+                    mandate_reason,
+                    priority_tier,
+                    score_explanation_json,
+                    now,
+                    missing_json,
+                    listing_title,
+                    facts_audit_json,
+                    segment["pipeline"],
+                    segment["status"],
+                    now,
+                    now,
+                ),
+            )
+        except Exception as exc:
+            logger.exception(
+                "INSERT lead échoué — %s (agence %s): %s",
+                lead.source_url[:80],
                 agency_id,
-                score,
-                mandate_score,
-                mandate_reason,
-                priority_tier,
-                score_explanation_json,
-                now,
-                missing_json,
-                listing_title,
-                facts_audit_json,
-                segment["pipeline"],
-                segment["status"],
-                now,
-                now,
-            ),
-        )
+                exc,
+            )
+            return {
+                "id": None,
+                "created": False,
+                "verified": False,
+                "verification": str(exc)[:200],
+                "errors": [str(exc)[:200]],
+            }
         new_id = cur.lastrowid
+        if not new_id:
+            logger.error(
+                "INSERT lead sans id retourné — %s (agence %s)",
+                lead.source_url[:80],
+                agency_id,
+            )
+            return {
+                "id": None,
+                "created": False,
+                "verified": False,
+                "verification": "échec enregistrement base",
+                "errors": ["id prospect non créé"],
+            }
         if agency_id and new_id and lead.price:
             _record_price_change(conn, int(new_id), agency_id, int(lead.price), now=now)
         conn.commit()
