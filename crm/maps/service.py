@@ -413,7 +413,7 @@ def geocode_map_leads_sync(
     ensure_map_schema()
     done = 0
     deadline = time.monotonic() + _GEOCODE_TIME_BUDGET_SEC
-    use_nominatim = not bool(google_maps_api_key())
+    use_nominatim = not bool(google_geocoding_api_key())
     with get_connection() as conn:
         rows = conn.execute(
             """
