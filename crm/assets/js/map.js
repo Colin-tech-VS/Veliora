@@ -765,16 +765,24 @@
 
   wireControls();
 
-  // Filet de sécurité : la popup Google (InfoWindow) est rendue dans un DOM
-  // détaché et le câblage par popup peut rater (timing / conteneur). Une
-  // délégation globale garantit que « Ouvrir la fiche » fonctionne toujours.
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest?.(".map-infowindow-btn");
-    if (!btn) return;
-    e.preventDefault();
-    const id = parseInt(btn.dataset.leadId, 10);
-    if (id && deps().openDrawer) deps().openDrawer(id);
-  });
+  // Filet de sécurité : « Ouvrir la fiche » des popups.
+  // En phase CAPTURE (true) : l'écouteur s'exécute AVANT que Google Maps ne
+  // stoppe la propagation dans son conteneur (la bulle classique ne recevait
+  // jamais le clic en mode Google). Couvre aussi Leaflet (OSM).
+  document.addEventListener(
+    "click",
+    (e) => {
+      const t = e.target;
+      const btn =
+        (t.closest && t.closest(".map-infowindow-btn")) ||
+        (t.classList && t.classList.contains("map-infowindow-btn") ? t : null);
+      if (!btn) return;
+      e.preventDefault();
+      const id = parseInt(btn.dataset.leadId, 10);
+      if (id && deps().openDrawer) deps().openDrawer(id);
+    },
+    true,
+  );
 
   function resize() {
     if (!state.map) return;
