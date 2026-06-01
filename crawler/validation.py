@@ -32,6 +32,16 @@ GENERIC_NAMES = frozenset({
     "n/a", "na", "inconnu", "anonymous", "particulier", "sans agence", "annonce",
 })
 
+# Fragments de descriptif d'annonce captés à tort comme « nom » (ex. « Nombre de
+# lots de la copropriété »). Ces termes n'apparaissent jamais dans un vrai nom de
+# vendeur / d'agence → on rejette pour ne pas enregistrer de fausse donnée.
+_LISTING_DETAIL_IN_NAME_RE = re.compile(
+    r"copropri[ée]t|copro\b|lots?\s+de|nombre\s+de|charges|honoraires|mensualit|"
+    r"d[ée]p[ôo]t\s+de\s+garantie|diagnostic|\bdpe\b|loyer|\bm²|\bm2\b|"
+    r"pi[èe]ces?|[ée]tages?|chambres?|s[ée]jour|surface\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class VerificationResult:
@@ -101,6 +111,8 @@ def _name_ok(first: str | None, last: str | None) -> bool:
             return False
     combined = " ".join(p.strip() for p in (first, last) if p and p.strip())
     if is_site_navigation_name(combined):
+        return False
+    if _LISTING_DETAIL_IN_NAME_RE.search(combined):
         return False
     return True
 

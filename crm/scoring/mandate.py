@@ -243,7 +243,9 @@ def compute_mandate_score(
 
     created = lead.get("created_at") or ""
     if created:
-        d_new = days_since(created[:10] if len(created) >= 10 else None)
+        # created_at peut être un datetime (Postgres) ou une chaîne : days_since
+        # normalise déjà via str(iso)[:10], inutile (et risqué) de faire len()/slice ici.
+        d_new = days_since(created)
         if d_new is not None and d_new <= 2:
             pts = apply_weight(12, "nouveau", w)
             contributions.append(
