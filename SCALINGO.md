@@ -79,10 +79,13 @@ scalingo --app veliora env-set FLASK_SECRET_KEY="$(openssl rand -hex 32)"
 | `SAVE_ACTIONABLE_LEADS` | `true` | Enregistrer leads exploitables |
 | `CRAWL_PROXY_ROTATE_EACH_CRAWL` | `true` | Nouvelle IP en début de job / portail |
 | `CRAWL_PROXY_ROTATE_ON_BLOCK` | `true` | Nouvelle IP si anti-bot / Cloudflare |
+| `CRAWL_AUTO_FREE_PROXIES` | `true` | Sans `CRAWL_PROXIES`, charge au 1ᵉʳ blocage un pool de proxies publics testés pour tourner l'IP (best-effort, gratuit) |
 
 ### Proxies (rotation IP — fortement recommandé en prod)
 
-Pour limiter les blocages (Cloudflare, DataDome), utilisez des **proxies résidentiels rotatifs** (IPRoyal, Bright Data, Oxylabs, Smartproxy, etc.) :
+**Sans configuration**, Veliora active déjà une rotation d'IP gratuite : avec `CRAWL_AUTO_FREE_PROXIES=true` (défaut Scalingo), dès qu'un portail bloque, l'app récupère et teste un pool de proxies HTTP publics puis change d'IP automatiquement. C'est suffisant contre les blocages par rate-limit d'IP, **mais pas** contre DataDome / Cloudflare avancés.
+
+Pour une fiabilité maximale (Cloudflare, DataDome), utilisez des **proxies résidentiels rotatifs** (IPRoyal, Bright Data, Oxylabs, Smartproxy, etc.) — ils prennent automatiquement le dessus sur le pool gratuit :
 
 ```bash
 # Un ou plusieurs proxies (séparés par des virgules)

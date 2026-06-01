@@ -752,7 +752,15 @@ def fetch_page(
     if not _is_block_result(result):
         return result
 
-    from crawler.proxy_manager import max_rotations_on_block, rotate_proxy_on_block
+    from crawler.proxy_manager import (
+        ensure_proxy_pool,
+        max_rotations_on_block,
+        rotate_proxy_on_block,
+    )
+
+    # Pas de proxy configuré ? Si l'auto-free est activé, on charge un pool public
+    # testé à la volée (1ʳᵉ fois seulement, puis caché) pour pouvoir tourner l'IP.
+    ensure_proxy_pool()
 
     if _block_retry >= max_rotations_on_block():
         return result

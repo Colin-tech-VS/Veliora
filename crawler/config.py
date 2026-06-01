@@ -225,6 +225,16 @@ CRAWL_PROXY_ROTATE_ON_BLOCK = os.getenv("CRAWL_PROXY_ROTATE_ON_BLOCK", "true").s
     "yes",
 )
 
+# Si CRAWL_PROXIES est vide ET qu'un portail bloque : récupérer automatiquement un
+# pool de proxies HTTP publics (testés) pour faire tourner l'IP sans abonnement.
+# Best-effort (rate-limit par IP surtout) ; de vrais proxies résidentiels via
+# CRAWL_PROXIES restent bien plus fiables et prennent le dessus s'ils sont fournis.
+CRAWL_AUTO_FREE_PROXIES = os.getenv("CRAWL_AUTO_FREE_PROXIES", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Ne pas ouvrir Chrome pour « tester » les URLs ville avant le crawl.
 CRAWL_SKIP_CITY_PROBE = os.getenv("CRAWL_SKIP_CITY_PROBE", "true").strip().lower() in (
     "1",
