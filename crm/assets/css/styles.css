@@ -1503,6 +1503,29 @@ body {
   line-height: 1.4;
 }
 
+.drawer-estimator-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.est-pdf-btn {
+  font-weight: 600;
+}
+
+.drawer-estimator-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--v-sage);
+  background: rgba(74, 107, 101, 0.1);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+
 .drawer-estimator-loading {
   font-size: 0.85rem;
   color: var(--text-secondary);

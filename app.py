@@ -771,6 +771,18 @@ def api_lead_price_estimate(lead_id):
     except Exception as exc:
         logging.exception("POST /api/leads/%s/estimate", lead_id)
         return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # Persistance pour cohérence inter-onglets : l'estimation vit sur le lead,
+    # visible depuis Prospects, Carte, fiche, etc.
+    if result.get("ok") and data.get("save"):
+        try:
+            from crm.estimator.storage import save_lead_estimate
+
+            saved_at = save_lead_estimate(lead_id, agency_id, result)
+            result["saved_at"] = saved_at
+            result["lead"] = get_lead(lead_id, agency_id)
+        except Exception:
+            logging.exception("save_lead_estimate %s", lead_id)
     return jsonify(result)
 
 

@@ -44,6 +44,19 @@ def _compute_property_fingerprint(
     return f"{pc}_{surf_bucket}_{price_bucket}"
 
 
+def _parse_lead_estimate(raw):
+    """Décode price_estimate (JSON TEXT) en dict pour l'API, ou None."""
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 def _annotate_dedup(leads: list[dict]) -> list[dict]:
     """Annonce les doublons cross-portail SANS jamais masquer de lead.
 
@@ -1828,6 +1841,16 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             else None
         ),
         "priority_tier": row["priority_tier"] if "priority_tier" in keys else None,
+        "price_estimate": (
+            _parse_lead_estimate(row["price_estimate"])
+            if "price_estimate" in keys and row["price_estimate"]
+            else None
+        ),
+        "price_estimate_at": (
+            _iso_datetime_str(row["price_estimate_at"])
+            if "price_estimate_at" in keys and row["price_estimate_at"]
+            else None
+        ),
         "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
     }
     try:

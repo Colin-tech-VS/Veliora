@@ -5748,7 +5748,19 @@ function renderPriceEstimateResultHtml(result) {
       ${adj}
       ${method ? `<ol class="drawer-estimator-method">${method}</ol>` : ""}
       <p class="drawer-estimator-disclaimer">${escapeHtml(result.disclaimer || "")}</p>
+      <div class="drawer-estimator-actions">
+        <button type="button" class="btn btn-primary btn-sm est-pdf-btn">📄 Dossier d'estimation (PDF)</button>
+      </div>
     </div>`;
+}
+
+function resolveEstimatorContextLead() {
+  if (state.currentView === "estimateur") {
+    const l = resolveEstimatorLead();
+    if (l) return l;
+  }
+  if (state.selectedLead) return state.selectedLead;
+  return null;
 }
 
 function renderEstimatorFormHtml(lead, prefix = "tab-est") {
@@ -5765,7 +5777,7 @@ function renderEstimatorFormHtml(lead, prefix = "tab-est") {
     ([key, label]) =>
       `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
   ).join("");
-  const cached = drawerEstimates.get(lead.id);
+  const cached = drawerEstimates.get(lead.id) || lead.price_estimate || null;
   return `
     <form id="${prefix}-form" class="drawer-estimator-form" onsubmit="return false">
       <div class="drawer-estimator-grid">
@@ -5919,10 +5931,11 @@ async function runPriceEstimate(lead, prefix = "tab-est") {
   }
   wrap.innerHTML = `<p class="drawer-estimator-loading">Analyse DVF et ajustements…</p>`;
   try {
+    // save:true -> l'estimation est persistée sur le lead (cohérence inter-onglets)
     const result = await api(`/leads/${lead.id}/estimate`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-      body: JSON.stringify({ inputs }),
+      body: JSON.stringify({ inputs, save: true }),
     });
     if (!result.ok) {
       wrap.innerHTML = renderPriceEstimateResultHtml(result);
@@ -5930,6 +5943,12 @@ async function runPriceEstimate(lead, prefix = "tab-est") {
       return;
     }
     drawerEstimates.set(lead.id, result);
+    // Synchronise le lead en mémoire (fiche, liste, carte) avec l'estimation enregistrée.
+    if (result.lead) {
+      const idx = LEADS.findIndex((l) => Number(l.id) === Number(lead.id));
+      if (idx >= 0) LEADS[idx] = result.lead;
+      if (Number(state.selectedLead?.id) === Number(lead.id)) state.selectedLead = result.lead;
+    }
     wrap.innerHTML = renderPriceEstimateResultHtml(result);
     animateEstimatorTotal(wrap);
     showToast(
@@ -5943,6 +5962,110 @@ async function runPriceEstimate(lead, prefix = "tab-est") {
       btn.textContent = "Calculer l'estimation";
     }
   }
+}
+
+// ─── Dossier d'estimation imprimable (PDF) ───
+function estimatorDossierData(lead) {
+  return drawerEstimates.get(lead?.id) || lead?.price_estimate || null;
+}
+
+function buildEstimationDossierHtml(lead, est, profile) {
+  const ag = profile || {};
+  const agencyName = escapeHtml(ag.brand_name || ag.legal_name || state.user?.agency_name || "Votre agence");
+  const agencyLines = [
+    ag.address,
+    [ag.postal_code, ag.city].filter(Boolean).join(" "),
+    ag.phone ? `Tél. ${ag.phone}` : "",
+    ag.email || "",
+    ag.rsac || ag.siren ? `SIREN ${escapeHtml(ag.siren || ag.rsac)}` : "",
+  ].filter(Boolean).map((l) => escapeHtml(l)).join("<br>");
+  const today = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  const owner = escapeHtml(lead.owner || "—");
+  const addr = escapeHtml([lead.address, [lead.postcode, lead.city].filter(Boolean).join(" ")].filter((s) => s && s !== "—").join(", ") || "—");
+  const adjRows = (est.adjustments || [])
+    .map((a) => `<tr><td>${escapeHtml(a.label)}</td><td class="num">${a.pct > 0 ? "+" : ""}${a.pct} %</td></tr>`)
+    .join("");
+  const method = (est.methodology || []).map((m) => `<li>${escapeHtml(m)}</li>`).join("");
+  const typeLabel = { appartement: "Appartement", maison: "Maison", studio: "Studio", terrain: "Terrain", autre: "Autre" }[est.property_type] || "Bien";
+  return `
+  <div class="est-doc">
+    <header class="est-head">
+      <div class="est-agency">${agencyName}<br><span class="est-agency-sub">${agencyLines}</span></div>
+      <div class="est-doc-meta">Avis de valeur indicatif<br><span>${today}</span></div>
+    </header>
+    <h1>Dossier d'estimation</h1>
+    <section class="est-bien">
+      <h2>Le bien</h2>
+      <table class="est-kv">
+        <tr><td>Propriétaire</td><td>${owner}</td></tr>
+        <tr><td>Adresse</td><td>${addr}</td></tr>
+        <tr><td>Type</td><td>${escapeHtml(typeLabel)}${est.rooms ? ` · ${est.rooms} pièce(s)` : ""}</td></tr>
+        <tr><td>Surface</td><td>${est.surface} m²</td></tr>
+        <tr><td>État</td><td>${escapeHtml(est.condition || "standard")}</td></tr>
+      </table>
+    </section>
+    <section class="est-value">
+      <h2>Estimation de valeur vénale</h2>
+      <div class="est-total">${fmtEuro(est.estimate_total)}</div>
+      <div class="est-range">Fourchette : ${fmtEuro(est.range_low)} – ${fmtEuro(est.range_high)} · ${escapeHtml(est.price_per_m2 ? est.price_per_m2.toLocaleString("fr-FR") + " €/m²" : "")}</div>
+      <p class="est-conf">Confiance ${escapeHtml(est.confidence_label || "")} · ${est.sample_count || 0} ventes DVF (${escapeHtml(est.reference_period || "")}) · ${escapeHtml(est.commune || est.sector || "")}</p>
+    </section>
+    ${adjRows ? `<section><h2>Ajustements appliqués</h2><table class="est-adj"><tbody>${adjRows}</tbody></table></section>` : ""}
+    ${method ? `<section><h2>Méthodologie</h2><ol class="est-method">${method}</ol></section>` : ""}
+    <p class="est-disclaimer">${escapeHtml(est.disclaimer || "")}</p>
+    <div class="est-sig">
+      <div><span>Le propriétaire</span></div>
+      <div><span>${agencyName}</span></div>
+    </div>
+  </div>`;
+}
+
+async function printEstimationDossier(lead) {
+  const est = estimatorDossierData(lead);
+  if (!est || !est.ok) {
+    showToast("Lancez d'abord une estimation", "warning");
+    return;
+  }
+  let profile = null;
+  try {
+    const r = await api("/mandates/agency-profile", { headers: getAuthHeaders() });
+    profile = r?.profile || null;
+  } catch {
+    /* en-tête optionnel */
+  }
+  const w = window.open("", "_blank");
+  if (!w) {
+    showToast("Autorisez les pop-ups pour générer le PDF", "warning");
+    return;
+  }
+  const body = buildEstimationDossierHtml(lead, est, profile);
+  w.document.write(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Dossier d'estimation</title>
+    <style>
+      body { font-family: Georgia, 'Times New Roman', serif; max-width: 820px; margin: 2rem auto; padding: 0 2rem; color: #1e3340; line-height: 1.55; }
+      .est-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #9a7349; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+      .est-agency { font-size: 1.05rem; font-weight: 700; }
+      .est-agency-sub { font-size: 0.78rem; font-weight: 400; color: #555; }
+      .est-doc-meta { text-align: right; font-size: 0.9rem; color: #9a7349; font-weight: 600; }
+      .est-doc-meta span { color: #555; font-weight: 400; }
+      h1 { font-size: 1.6rem; text-align: center; margin: 0 0 1.5rem; letter-spacing: 0.02em; }
+      h2 { font-size: 1rem; color: #9a7349; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; margin: 1.4rem 0 0.6rem; }
+      table { width: 100%; border-collapse: collapse; }
+      .est-kv td, .est-adj td { padding: 0.35rem 0; border-bottom: 1px solid #eee; font-size: 0.92rem; }
+      .est-kv td:first-child { color: #555; width: 35%; }
+      .est-adj td.num, .num { text-align: right; font-weight: 600; }
+      .est-value { text-align: center; background: #f6f4f0; border: 1px solid #ddd6cb; border-radius: 10px; padding: 1.2rem; margin: 1rem 0; }
+      .est-total { font-size: 2.4rem; font-weight: 700; color: #1e3340; }
+      .est-range { font-size: 1rem; color: #333; margin-top: 0.3rem; }
+      .est-conf { font-size: 0.82rem; color: #666; margin-top: 0.4rem; }
+      .est-method { font-size: 0.85rem; color: #444; padding-left: 1.2rem; }
+      .est-disclaimer { font-size: 0.72rem; color: #777; margin-top: 1.5rem; font-style: italic; }
+      .est-sig { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; margin-top: 2.5rem; }
+      .est-sig div { border-top: 1px solid #999; padding-top: 0.4rem; font-size: 0.85rem; min-height: 4rem; }
+      @media print { body { margin: 0; max-width: none; } @page { margin: 1.5cm; } }
+    </style></head><body>${body}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 350);
 }
 
 function setupEstimateur() {
@@ -5968,6 +6091,15 @@ function setupEstimateur() {
       const lead = resolveEstimatorLead();
       if (lead) openDrawer(lead.id);
     }
+  });
+
+  // Bouton « Dossier d'estimation (PDF) » — présent dans l'estimateur ET la fiche.
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".est-pdf-btn")) return;
+    e.preventDefault();
+    const lead = resolveEstimatorContextLead();
+    if (lead) printEstimationDossier(lead).catch((err) => showToast(err.message, "error"));
+    else showToast("Sélectionnez un prospect", "warning");
   });
 }
 
@@ -6167,8 +6299,11 @@ function updateDrawerChrome(lead) {
 
 function restoreDrawerEstimatePanel(lead) {
   const wrap = document.getElementById("drawer-estimator-result");
-  const est = drawerEstimates.get(lead.id);
-  if (wrap && est) wrap.innerHTML = renderPriceEstimateResultHtml(est);
+  const est = drawerEstimates.get(lead.id) || lead.price_estimate || null;
+  if (wrap && est) {
+    wrap.innerHTML = renderPriceEstimateResultHtml(est);
+    animateEstimatorTotal(wrap);
+  }
 }
 
 function setDrawerBodyHtml(lead, html) {
