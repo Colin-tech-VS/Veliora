@@ -43,6 +43,10 @@ const state = {
 
 const POLL_IDLE_MS = 18000;
 const POLL_CRAWL_MS = 12000;
+/** Pendant un crawl, le worker Flask est occupé — poll léger, timeouts longs. */
+const CRAWL_JOB_POLL_MS = 3000;
+const CRAWL_JOB_POLL_TIMEOUT_MS = 90000;
+const CRAWL_LEADS_REFRESH_MS = 20000;
 let backgroundPollTimer = null;
 
 /** Crawl en arrière-plan — navigation libre pendant le job */
@@ -2896,19 +2900,19 @@ function setLeadsLiveIndicator(on) {
 
 function scheduleLeadsRefreshDuringCrawl(job) {
   if (crawlState.leadsRefreshTimer) return;
-  // 8 s : évite de saturer le worker avec /leads en boucle pendant le crawl.
   crawlState.leadsRefreshTimer = setTimeout(async () => {
     crawlState.leadsRefreshTimer = null;
     await refreshLeadsDuringCrawl(job);
-  }, 8000);
+  }, CRAWL_LEADS_REFRESH_MS);
 }
 
 async function refreshLeadsDuringCrawl(job) {
+  if (crawlState.pagePollPaused) return;
   try {
     crawlState.lastJob = job || crawlState.lastJob;
     const prevCount = LEADS.length;
     const prevFp = leadsDataFingerprint(LEADS);
-    const leads = await api("/leads");
+    const leads = await api("/leads", { timeoutMs: CRAWL_JOB_POLL_TIMEOUT_MS });
     const fp = leadsDataFingerprint(leads);
     const changed = fp !== prevFp || leads.length !== prevCount;
 
@@ -3779,9 +3783,9 @@ function startLiveFramePolling() {
       liveFrameMisses += 1;
     }
     if (liveFrameMisses >= 5) hideLiveFrame();
-    if (crawlState.active) liveFrameTimer = setTimeout(tick, 2200);
+    if (crawlState.active) liveFrameTimer = setTimeout(tick, 5000);
   };
-  liveFrameTimer = setTimeout(tick, 700);
+  liveFrameTimer = setTimeout(tick, 1200);
 }
 
 function stopLiveFramePolling() {
@@ -3915,7 +3919,9 @@ async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
   const now = Date.now();
   const wantLogs = now - lastLogsFetch >= 4000;
   const qs = wantLogs ? "?lite=1&logs=1" : "?lite=1";
-  const job = await api(`/crawler/jobs/${jobId}${qs}`);
+  const job = await api(`/crawler/jobs/${jobId}${qs}`, {
+    timeoutMs: CRAWL_JOB_POLL_TIMEOUT_MS,
+  });
   const newFetch = wantLogs || job.logs?.length ? now : lastLogsFetch;
   let displayLabel = label;
   if (label.startsWith("Portails recommandés") || label.startsWith("Tous les sites")) {
@@ -3927,6 +3933,10 @@ async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
       : `Crawl — ${displayLabel}`;
   updateCrawlLoaderUI(job, title);
   return { job, lastLogsFetch: newFetch, displayLabel };
+}
+
+function crawlPollBackoffMs(networkFails) {
+  return Math.min(12000, CRAWL_JOB_POLL_MS + networkFails * 1200);
 }
 
 function startCrawlPolling(jobId, label, options = {}) {
@@ -3959,26 +3969,29 @@ function startCrawlPolling(jobId, label, options = {}) {
         return;
       }
 
-      // 1,5 s (au lieu de 600 ms) : moins de requêtes concurrentes avec le thread
-      // de crawl (1 worker) → réduit les « Connexion interrompue » sans perdre le suivi.
-      crawlState.pollTimer = setTimeout(tick, 1500);
+      crawlState.pollTimer = setTimeout(tick, CRAWL_JOB_POLL_MS);
     } catch (err) {
       if (isNetworkFetchError(err) || err.message?.includes("Connexion perdue")) {
         networkFails += 1;
-        const msg = `Connexion interrompue (${networkFails}/40) — crawl serveur actif…`;
-        setCrawlLoaderStep(msg);
-        const dockStep = document.getElementById("crawl-dock-step");
-        if (dockStep) dockStep.textContent = msg;
-        if (networkFails >= 8) {
+        if (networkFails >= 2) {
+          const msg =
+            networkFails >= 6
+              ? `Serveur très occupé (${networkFails}/40) — le crawl continue en arrière-plan…`
+              : `Synchronisation lente (${networkFails}/40) — le crawl continue sur le serveur…`;
+          setCrawlLoaderStep(msg);
+          const dockStep = document.getElementById("crawl-dock-step");
+          if (dockStep) dockStep.textContent = msg;
+        }
+        if (networkFails >= 10) {
           await handoffCrawlToBackground();
           showToast(
-            "Connexion coupée — le crawl continue. Notification à la fin du crawl.",
+            "Suivi allégé — le crawl continue. Notification à la fin.",
             "warning",
             9000,
           );
           return;
         }
-        crawlState.pollTimer = setTimeout(tick, 1500);
+        crawlState.pollTimer = setTimeout(tick, crawlPollBackoffMs(networkFails));
         return;
       }
       if (/Erreur serveur|50\d|État du crawl/i.test(err.message || "")) {
@@ -6572,13 +6585,18 @@ async function runBackgroundPoll() {
     return;
   }
   try {
+    if (crawlState.active && !crawlState.pagePollPaused) {
+      // Suivi détaillé déjà fait par startCrawlPolling — pas de /leads en parallèle.
+      scheduleBackgroundPoll(45000);
+      return;
+    }
+
     const status = await api("/crawler/status");
     state.crawlerRunning = status.running;
     syncCrawlerUI();
 
     if (crawlState.active) {
-      scheduleLeadsRefreshDuringCrawl(null);
-      scheduleBackgroundPoll(POLL_CRAWL_MS);
+      scheduleBackgroundPoll(45000);
       return;
     }
 
