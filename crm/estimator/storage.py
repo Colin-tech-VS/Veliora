@@ -1,90 +1,60 @@
-"""Persistance de l'estimation de prix sur le lead (cohérence inter-onglets)."""
+"""Persistance de l'estimation de prix — table dédiée lead_estimates.
+
+Conception : on N'ajoute PAS de colonne à la table `leads` (un ALTER y exige un
+verrou ACCESS EXCLUSIVE qui entre en conflit avec les UPDATE leads du crawl /
+géocodage → statement_timeout sur PostgreSQL). On utilise une table séparée,
+créée via CREATE TABLE IF NOT EXISTS (aucun verrou sur leads), et on rattache
+l'estimation au lead à la lecture.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
-import time
 from datetime import datetime, timezone
 
 from crawler.storage import get_connection
-from velora_db.config import is_postgres
 
 logger = logging.getLogger(__name__)
 
 _SCHEMA_READY = False
-_LAST_FAIL = 0.0
-_RETRY_COOLDOWN = 300.0  # 5 min : évite de marteler un ALTER bloqué par un verrou
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _columns_present(conn) -> bool:
-    if is_postgres():
-        cur = conn.execute(
-            """
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'leads'
-              AND column_name IN ('price_estimate', 'price_estimate_at')
-            """
-        )
-        cols = {
-            r[0] if isinstance(r, (tuple, list)) else r["column_name"]
-            for r in cur.fetchall()
-        }
-    else:
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(leads)").fetchall()}
-    return "price_estimate" in cols and "price_estimate_at" in cols
-
-
 def ensure_estimate_schema() -> bool:
-    """Garantit price_estimate + price_estimate_at sur leads. Renvoie True si prêt.
-
-    Ne lève jamais : sur PostgreSQL, l'ALTER peut être bloqué par un verrou
-    (UPDATE leads concurrents) et dépasser le statement_timeout. Dans ce cas on
-    renvoie False (la persistance est simplement différée) ; la migration au
-    démarrage (postgres_schema.sql) ajoute proprement les colonnes hors charge.
-    """
-    global _SCHEMA_READY, _LAST_FAIL
+    """Crée la table lead_estimates si besoin (léger, sans verrou sur leads)."""
+    global _SCHEMA_READY
     if _SCHEMA_READY:
         return True
-    if _LAST_FAIL and (time.monotonic() - _LAST_FAIL) < _RETRY_COOLDOWN:
-        return False
     try:
         with get_connection() as conn:
-            if _columns_present(conn):
-                _SCHEMA_READY = True
-                return True
-            if is_postgres():
-                # IF NOT EXISTS + lock_timeout court : on échoue vite plutôt que
-                # de consommer tout le statement_timeout en attendant le verrou.
-                conn.execute("SET LOCAL lock_timeout = '3s'")
-                conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate TEXT")
-                conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate_at TEXT")
-            else:
-                lcols = {r[1] for r in conn.execute("PRAGMA table_info(leads)").fetchall()}
-                if lcols:
-                    if "price_estimate" not in lcols:
-                        conn.execute("ALTER TABLE leads ADD COLUMN price_estimate TEXT")
-                    if "price_estimate_at" not in lcols:
-                        conn.execute("ALTER TABLE leads ADD COLUMN price_estimate_at TEXT")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lead_estimates (
+                    lead_id INTEGER NOT NULL,
+                    agency_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (lead_id, agency_id)
+                )
+                """
+            )
             conn.commit()
         _SCHEMA_READY = True
         return True
     except Exception as exc:
-        _LAST_FAIL = time.monotonic()
-        logger.warning("ensure_estimate_schema différé (verrou/timeout): %s", str(exc)[:160])
+        logger.warning("ensure_estimate_schema: %s", str(exc)[:160])
         return False
 
 
 def save_lead_estimate(lead_id: int, agency_id: str, estimate: dict) -> str | None:
-    """Enregistre la dernière estimation sur le lead. Renvoie l'horodatage ISO, ou None."""
+    """Enregistre/écrase l'estimation du lead. Renvoie l'horodatage ISO, ou None."""
     if not estimate or not estimate.get("ok"):
         return None
     if not ensure_estimate_schema():
-        # Schéma pas encore prêt : on n'échoue pas, la persistance est différée.
         return None
     at = _now()
     payload = json.dumps(estimate, ensure_ascii=False)
@@ -92,10 +62,13 @@ def save_lead_estimate(lead_id: int, agency_id: str, estimate: dict) -> str | No
         with get_connection() as conn:
             conn.execute(
                 """
-                UPDATE leads SET price_estimate = ?, price_estimate_at = ?, updated_at = ?
-                WHERE id = ? AND agency_id = ?
+                INSERT INTO lead_estimates (lead_id, agency_id, payload, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(lead_id, agency_id) DO UPDATE SET
+                    payload = excluded.payload,
+                    updated_at = excluded.updated_at
                 """,
-                (payload, at, at, lead_id, agency_id),
+                (lead_id, agency_id, payload, at),
             )
             conn.commit()
     except Exception as exc:
@@ -104,14 +77,53 @@ def save_lead_estimate(lead_id: int, agency_id: str, estimate: dict) -> str | No
     return at
 
 
-def parse_lead_estimate(raw) -> dict | None:
-    """Décode la colonne price_estimate (JSON) en dict, ou None."""
-    if not raw:
+def _parse(payload) -> dict | None:
+    if not payload:
         return None
-    if isinstance(raw, dict):
-        return raw
+    if isinstance(payload, dict):
+        return payload
     try:
-        data = json.loads(raw)
+        data = json.loads(payload)
         return data if isinstance(data, dict) else None
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def get_lead_estimate(lead_id: int, agency_id: str) -> tuple[dict | None, str | None]:
+    if not ensure_estimate_schema():
+        return None, None
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT payload, updated_at FROM lead_estimates WHERE lead_id = ? AND agency_id = ?",
+                (lead_id, agency_id),
+            ).fetchone()
+    except Exception:
+        return None, None
+    if not row:
+        return None, None
+    payload = row["payload"] if not isinstance(row, (tuple, list)) else row[0]
+    at = row["updated_at"] if not isinstance(row, (tuple, list)) else row[1]
+    return _parse(payload), at
+
+
+def get_estimates_for_agency(agency_id: str) -> dict[int, tuple[dict | None, str | None]]:
+    """Toutes les estimations d'une agence en une requête (rattachement liste)."""
+    if not ensure_estimate_schema():
+        return {}
+    out: dict[int, tuple[dict | None, str | None]] = {}
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT lead_id, payload, updated_at FROM lead_estimates WHERE agency_id = ?",
+                (agency_id,),
+            ).fetchall()
+    except Exception:
+        return {}
+    for r in rows:
+        if isinstance(r, (tuple, list)):
+            lid, payload, at = r[0], r[1], r[2]
+        else:
+            lid, payload, at = r["lead_id"], r["payload"], r["updated_at"]
+        out[int(lid)] = (_parse(payload), at)
+    return out

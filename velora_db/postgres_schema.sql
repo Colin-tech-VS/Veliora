@@ -75,22 +75,25 @@ CREATE TABLE IF NOT EXISTS leads (
     listing_image_url TEXT,
     image_custom    SMALLINT NOT NULL DEFAULT 0,
     image_updated_at TIMESTAMPTZ,
-    price_estimate  TEXT,
-    price_estimate_at TEXT,
     missing_fields  TEXT NOT NULL DEFAULT '[]',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Migrations idempotentes (bases existantes) — exécutées au démarrage, hors charge,
--- donc sans contention de verrou avec les UPDATE leads du crawl/géocodage.
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate TEXT;
-ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate_at TEXT;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_agency_url ON leads(agency_id, source_url);
 CREATE INDEX IF NOT EXISTS idx_leads_source_id ON leads(source_id);
 CREATE INDEX IF NOT EXISTS idx_leads_agency_id ON leads(agency_id);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+
+-- Estimations de prix : table dédiée (pas de colonne sur leads -> pas de verrou
+-- ACCESS EXCLUSIVE en conflit avec les UPDATE leads du crawl/géocodage).
+CREATE TABLE IF NOT EXISTS lead_estimates (
+    lead_id    INTEGER NOT NULL,
+    agency_id  TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (lead_id, agency_id)
+);
 
 -- Crawl jobs
 CREATE TABLE IF NOT EXISTS crawl_jobs (

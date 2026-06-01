@@ -44,17 +44,24 @@ def _compute_property_fingerprint(
     return f"{pc}_{surf_bucket}_{price_bucket}"
 
 
-def _parse_lead_estimate(raw):
-    """Décode price_estimate (JSON TEXT) en dict pour l'API, ou None."""
-    if not raw:
-        return None
-    if isinstance(raw, dict):
-        return raw
+def _attach_estimates(leads: list[dict], agency_id: str) -> None:
+    """Rattache price_estimate / price_estimate_at depuis lead_estimates (1 requête)."""
+    if not leads:
+        return
     try:
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else None
-    except (json.JSONDecodeError, TypeError):
-        return None
+        from crm.estimator.storage import get_estimates_for_agency
+
+        est = get_estimates_for_agency(agency_id)
+        if not est:
+            return
+        for lead in leads:
+            lid = lead.get("id")
+            if lid is not None and int(lid) in est:
+                payload, at = est[int(lid)]
+                lead["price_estimate"] = payload
+                lead["price_estimate_at"] = at
+    except Exception:
+        logger.warning("attach_estimates ignoré", exc_info=False)
 
 
 def _annotate_dedup(leads: list[dict]) -> list[dict]:
@@ -1605,6 +1612,7 @@ def get_leads(agency_id: str, *, enrich: bool = True) -> list[dict]:
         from crm.scoring.recalc import hydrate_leads_for_list
 
         leads = hydrate_leads_for_list(leads, agency_id)
+    _attach_estimates(leads, agency_id)
     return _annotate_dedup(leads)
 
 
@@ -1614,7 +1622,19 @@ def get_lead(lead_id: int, agency_id: str) -> dict | None:
             "SELECT * FROM leads WHERE id = ? AND agency_id = ?",
             (lead_id, agency_id),
         ).fetchone()
-        return _row_to_lead(row) if row else None
+    if not row:
+        return None
+    lead = _row_to_lead(row)
+    try:
+        from crm.estimator.storage import get_lead_estimate
+
+        payload, at = get_lead_estimate(lead_id, agency_id)
+        if payload:
+            lead["price_estimate"] = payload
+            lead["price_estimate_at"] = at
+    except Exception:
+        pass
+    return lead
 
 
 def recalc_source_found_counts(agency_id: str | None = None) -> None:
@@ -1841,16 +1861,10 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             else None
         ),
         "priority_tier": row["priority_tier"] if "priority_tier" in keys else None,
-        "price_estimate": (
-            _parse_lead_estimate(row["price_estimate"])
-            if "price_estimate" in keys and row["price_estimate"]
-            else None
-        ),
-        "price_estimate_at": (
-            _iso_datetime_str(row["price_estimate_at"])
-            if "price_estimate_at" in keys and row["price_estimate_at"]
-            else None
-        ),
+        # price_estimate / price_estimate_at sont rattachés par get_lead / get_leads
+        # depuis la table dédiée lead_estimates (pas de colonne sur leads).
+        "price_estimate": None,
+        "price_estimate_at": None,
         "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
     }
     try:

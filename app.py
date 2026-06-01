@@ -423,22 +423,37 @@ def service_worker():
     return send_from_directory(CRM_DIR, "sw.js", mimetype="application/javascript")
 
 
+def _with_asset_cache(resp):
+    """Cache navigateur : immuable si versionné par ?v= (cache-bust), sinon court.
+
+    Accélère fortement les chargements répétés (les assets ne sont re-téléchargés
+    que lorsque ?v= change). Le service worker reste en network-first.
+    """
+    if request.args.get("v"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/crm/assets/<path:filename>")
 def crm_assets(filename):
-    return send_from_directory(
+    resp = send_from_directory(
         CRM_DIR / "assets",
         filename,
         mimetype=_static_mimetype(filename),
     )
+    return _with_asset_cache(resp)
 
 
 @app.route("/vitrine/assets/<path:filename>")
 def vitrine_assets(filename):
-    return send_from_directory(
+    resp = send_from_directory(
         VITRINE_DIR / "assets",
         filename,
         mimetype=_static_mimetype(filename),
     )
+    return _with_asset_cache(resp)
 
 
 @app.route("/assets/<path:filename>")
