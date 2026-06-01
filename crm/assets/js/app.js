@@ -56,6 +56,7 @@ const crawlState = {
   leadsRefreshTimer: null,
   lastJob: null,
   drawerShowAllFields: false,
+  estimatorLeadId: null,
 };
 
 /** Script d'appel — panneau repliable (fermer / arrière-plan / rouvrir) */
@@ -76,6 +77,10 @@ const viewTitles = {
   map: {
     title: "Carte",
     subtitle: "Vos annonces, votre agence et votre position (mobile & bureau)",
+  },
+  estimateur: {
+    title: "Estimateur de prix",
+    subtitle: "Fourchette indicative DVF (ventes réelles) + critères du bien",
   },
   mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
   clients: {
@@ -1380,6 +1385,7 @@ async function init() {
   setupFilters();
   setupViewToggle();
   setupDrawer();
+  setupEstimateur();
   setupLeadRefresh();
   setupLeadsActions();
   setupLeadsListDelegation();
@@ -2416,9 +2422,9 @@ function setupDrawer() {
       compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
       return;
     }
-    if (e.target.closest("#drawer-estimate-btn")) {
+    if (e.target.closest("#drawer-open-estimator-btn")) {
       e.preventDefault();
-      runPriceEstimate(lead).catch((err) => showToast(err.message, "error"));
+      openEstimateurTab(lead.id);
       return;
     }
     if (e.target.closest("#drawer-call-script-btn")) {
@@ -4140,6 +4146,9 @@ function renderView(view = state.currentView) {
     case "clients":
       if (typeof renderClientsModule === "function") renderClientsModule();
       break;
+    case "estimateur":
+      renderEstimateurView();
+      break;
     default:
       break;
   }
@@ -5555,24 +5564,25 @@ function fmtEuro(n) {
   return `${Math.round(n).toLocaleString("fr-FR")} €`;
 }
 
-function collectEstimatorInputs(lead) {
-  const form = document.getElementById("drawer-estimator-form");
+function collectEstimatorInputs(lead, prefix = "tab-est") {
+  const form = document.getElementById(`${prefix}-form`);
   const surface =
-    parseFloat(form?.querySelector("#est-surface")?.value) ||
+    parseFloat(form?.querySelector(`#${prefix}-surface`)?.value) ||
     parseFloat(lead.surface) ||
     0;
   const inputs = {
     surface,
-    property_type: form?.querySelector("#est-property-type")?.value || guessLeadPropertyType(lead),
-    rooms: form?.querySelector("#est-rooms")?.value || parseLeadRooms(lead) || null,
-    condition: form?.querySelector("#est-condition")?.value || "standard",
-    address: form?.querySelector("#est-address")?.value || lead.address || "",
-    city: form?.querySelector("#est-city")?.value || lead.city || "",
-    postcode: form?.querySelector("#est-postcode")?.value || lead.postcode || "",
+    property_type:
+      form?.querySelector(`#${prefix}-property-type`)?.value || guessLeadPropertyType(lead),
+    rooms: form?.querySelector(`#${prefix}-rooms`)?.value || parseLeadRooms(lead) || null,
+    condition: form?.querySelector(`#${prefix}-condition`)?.value || "standard",
+    address: form?.querySelector(`#${prefix}-address`)?.value || lead.address || "",
+    city: form?.querySelector(`#${prefix}-city`)?.value || lead.city || "",
+    postcode: form?.querySelector(`#${prefix}-postcode`)?.value || lead.postcode || "",
     sector: lead.sector || lead.dvf_sector || "",
   };
   ESTIMATOR_FEATURES.forEach(([key]) => {
-    inputs[key] = !!form?.querySelector(`#est-${key}`)?.checked;
+    inputs[key] = !!form?.querySelector(`#${prefix}-${key}`)?.checked;
   });
   return inputs;
 }
@@ -5622,10 +5632,7 @@ function renderPriceEstimateResultHtml(result) {
     </div>`;
 }
 
-function renderPriceEstimatorSection(lead) {
-  if ((lead.transaction_type || "vente").toLowerCase() === "location") {
-    return "";
-  }
+function renderEstimatorFormHtml(lead, prefix = "tab-est") {
   const propType = guessLeadPropertyType(lead);
   const rooms = parseLeadRooms(lead);
   const addr = lead.address && lead.address !== "—" ? lead.address : "";
@@ -5637,59 +5644,150 @@ function renderPriceEstimatorSection(lead) {
   ).join("");
   const featHtml = ESTIMATOR_FEATURES.map(
     ([key, label]) =>
-      `<label class="drawer-estimator-check"><input type="checkbox" id="est-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
+      `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
   ).join("");
   const cached = drawerEstimates.get(lead.id);
   return `
-    <div class="drawer-section drawer-estimator" id="drawer-estimator-section">
+    <form id="${prefix}-form" class="drawer-estimator-form" onsubmit="return false">
+      <div class="drawer-estimator-grid">
+        <label class="drawer-estimator-field">
+          <span>Surface (m²)</span>
+          <input type="number" id="${prefix}-surface" min="1" step="0.1" required value="${lead.surface != null ? lead.surface : ""}">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Pièces</span>
+          <input type="number" id="${prefix}-rooms" min="1" max="15" placeholder="—" value="${rooms}">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Type de bien</span>
+          <select id="${prefix}-property-type">${typeOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>État</span>
+          <select id="${prefix}-condition">${condOpts}</select>
+        </label>
+        <label class="drawer-estimator-field drawer-estimator-field--wide">
+          <span>Adresse</span>
+          <input type="text" id="${prefix}-address" value="${escapeAttr(addr)}" placeholder="Rue, n°">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Ville</span>
+          <input type="text" id="${prefix}-city" value="${escapeAttr(lead.city || "")}">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>CP</span>
+          <input type="text" id="${prefix}-postcode" value="${escapeAttr(lead.postcode || "")}" maxlength="5">
+        </label>
+      </div>
+      <div class="drawer-estimator-features">${featHtml}</div>
+      <button type="button" class="btn btn-primary" id="${prefix}-calc-btn">Calculer l'estimation</button>
+    </form>
+    <div id="${prefix}-result" class="drawer-estimator-result-wrap">${cached ? renderPriceEstimateResultHtml(cached) : ""}</div>`;
+}
+
+function renderDrawerEstimatorCta(lead) {
+  if ((lead.transaction_type || "vente").toLowerCase() === "location") {
+    return `<div class="drawer-section drawer-estimator-cta">
       <div class="drawer-section-title">Estimateur de prix</div>
-      <p class="drawer-estimator-intro">
-        Fourchette indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
-        ajustée selon le bien — comme une première passe Meilleurs Agents / DVF.
-      </p>
-      <form id="drawer-estimator-form" class="drawer-estimator-form" onsubmit="return false">
-        <div class="drawer-estimator-grid">
-          <label class="drawer-estimator-field">
-            <span>Surface (m²)</span>
-            <input type="number" id="est-surface" min="1" step="0.1" required value="${lead.surface != null ? lead.surface : ""}">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Pièces</span>
-            <input type="number" id="est-rooms" min="1" max="15" placeholder="—" value="${rooms}">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Type de bien</span>
-            <select id="est-property-type">${typeOpts}</select>
-          </label>
-          <label class="drawer-estimator-field">
-            <span>État</span>
-            <select id="est-condition">${condOpts}</select>
-          </label>
-          <label class="drawer-estimator-field drawer-estimator-field--wide">
-            <span>Adresse</span>
-            <input type="text" id="est-address" value="${escapeAttr(addr)}" placeholder="Rue, n°">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Ville</span>
-            <input type="text" id="est-city" value="${escapeAttr(lead.city || "")}">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>CP</span>
-            <input type="text" id="est-postcode" value="${escapeAttr(lead.postcode || "")}" maxlength="5">
-          </label>
+      <p class="form-hint">Réservé aux biens en <strong>vente</strong>.</p>
+    </div>`;
+  }
+  return `<div class="drawer-section drawer-estimator-cta">
+    <div class="drawer-section-title">Estimateur de prix</div>
+    <p class="form-hint">Fourchette DVF + critères du bien.</p>
+    <button type="button" class="btn btn-primary btn-sm" id="drawer-open-estimator-btn">Ouvrir l'estimateur</button>
+  </div>`;
+}
+
+function getVenteLeadsForEstimator() {
+  return LEADS.filter((l) => (l.transaction_type || "vente").toLowerCase() !== "location");
+}
+
+function resolveEstimatorLead() {
+  const vente = getVenteLeadsForEstimator();
+  if (!vente.length) return null;
+  const id = state.estimatorLeadId;
+  if (id) {
+    const found = vente.find((l) => l.id === id);
+    if (found) return found;
+  }
+  if (state.selectedLead && (state.selectedLead.transaction_type || "vente") !== "location") {
+    const fromDrawer = vente.find((l) => l.id === state.selectedLead.id);
+    if (fromDrawer) return fromDrawer;
+  }
+  return vente[0];
+}
+
+function renderEstimateurView() {
+  const root = document.getElementById("estimateur-root");
+  if (!root) return;
+
+  const vente = getVenteLeadsForEstimator();
+  if (!vente.length) {
+    root.innerHTML = `
+      <div class="estimateur-empty">
+        <h3>Aucun prospect en vente</h3>
+        <p class="form-hint">L'estimateur s'applique aux annonces <strong>vente</strong>. Crawlez des sources ou importez une fiche vente.</p>
+        <button type="button" class="btn btn-secondary" onclick="switchView('crawler')">Alimenter le radar</button>
+      </div>`;
+    return;
+  }
+
+  const lead = resolveEstimatorLead();
+  if (!lead) return;
+  state.estimatorLeadId = lead.id;
+
+  const options = vente
+    .map((l) => {
+      const label = [
+        l.property_title || l.listing_title || l.address || `Prospect #${l.id}`,
+        l.city,
+        l.price ? `${Number(l.price).toLocaleString("fr-FR")} €` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `<option value="${l.id}"${l.id === lead.id ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+
+  const priceLine = lead.price ? formatPrice(lead) : "—";
+  const ms = lead.mandate_score || 0;
+
+  root.innerHTML = `
+    <div class="estimateur-layout">
+      <aside class="estimateur-sidebar">
+        <p class="estimateur-intro">
+          Estimation indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
+          ajustée selon le bien — première passe type Meilleurs Agents.
+        </p>
+        <label class="estimateur-lead-picker">
+          <span class="estimateur-lead-picker-label">Prospect à estimer</span>
+          <select id="tab-est-lead-select" class="estimateur-lead-select">${options}</select>
+        </label>
+        <div class="estimateur-lead-card">
+          <strong>${escapeHtml(lead.property_title || lead.listing_title || "Bien")}</strong>
+          <p>${escapeHtml(lead.address || "—")}${lead.city ? `, ${escapeHtml(lead.city)}` : ""}</p>
+          <p class="estimateur-lead-meta">${escapeHtml(priceLine)} · Score Mandat ${ms}</p>
+          <button type="button" class="btn btn-ghost btn-sm" id="tab-est-open-drawer">Voir la fiche</button>
         </div>
-        <div class="drawer-estimator-features">${featHtml}</div>
-        <button type="button" class="btn btn-primary btn-sm" id="drawer-estimate-btn">Calculer l'estimation</button>
-      </form>
-      <div id="drawer-estimator-result" class="drawer-estimator-result-wrap">${cached ? renderPriceEstimateResultHtml(cached) : ""}</div>
+      </aside>
+      <div class="estimateur-main drawer-estimator">
+        <h3 class="estimateur-form-title">Critères du bien</h3>
+        ${renderEstimatorFormHtml(lead, "tab-est")}
+      </div>
     </div>`;
 }
 
-async function runPriceEstimate(lead) {
-  const btn = document.getElementById("drawer-estimate-btn");
-  const wrap = document.getElementById("drawer-estimator-result");
-  if (!wrap) return;
-  const inputs = collectEstimatorInputs(lead);
+function openEstimateurTab(leadId) {
+  if (leadId != null) state.estimatorLeadId = leadId;
+  switchView("estimateur");
+}
+
+async function runPriceEstimate(lead, prefix = "tab-est") {
+  const btn = document.getElementById(`${prefix}-calc-btn`);
+  const wrap = document.getElementById(`${prefix}-result`);
+  if (!wrap || !lead) return;
+  const inputs = collectEstimatorInputs(lead, prefix);
   if (!inputs.surface || inputs.surface <= 0) {
     showToast("Indiquez une surface en m² pour estimer", "warning");
     return;
@@ -5723,6 +5821,32 @@ async function runPriceEstimate(lead) {
       btn.textContent = "Calculer l'estimation";
     }
   }
+}
+
+function setupEstimateur() {
+  const root = document.getElementById("view-estimateur");
+  if (!root || root.dataset.wired === "1") return;
+  root.dataset.wired = "1";
+
+  root.addEventListener("change", (e) => {
+    if (e.target.id !== "tab-est-lead-select") return;
+    state.estimatorLeadId = parseInt(e.target.value, 10);
+    renderEstimateurView();
+  });
+
+  root.addEventListener("click", (e) => {
+    if (e.target.closest("#tab-est-calc-btn")) {
+      e.preventDefault();
+      const lead = resolveEstimatorLead();
+      if (lead) runPriceEstimate(lead, "tab-est").catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#tab-est-open-drawer")) {
+      e.preventDefault();
+      const lead = resolveEstimatorLead();
+      if (lead) openDrawer(lead.id);
+    }
+  });
 }
 
 function buildDrawerDvfHtml(lead) {
@@ -5850,7 +5974,7 @@ function buildDrawerBodyHtml(lead) {
     </div>
     ${renderFactsVerificationHtml(lead)}
     ${buildDrawerDvfHtml(lead)}
-    ${renderPriceEstimatorSection(lead)}
+    ${renderDrawerEstimatorCta(lead)}
     ${renderDrawerEditSection(lead)}
     <div class="drawer-section drawer-readonly-summary">
       <div class="drawer-section-title">Résumé</div>
