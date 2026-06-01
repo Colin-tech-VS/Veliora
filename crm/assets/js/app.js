@@ -579,31 +579,69 @@ async function fetchRadarBriefing() {
   }
 }
 
-function buildClientBriefing() {
-  const enriched = [...LEADS].sort(
-    (a, b) => (b.mandate_score || b.score || 0) - (a.mandate_score || a.score || 0),
-  );
+function activeLeads(leads = LEADS) {
+  return (leads || []).filter((l) => (l.status || "").toLowerCase() !== "retire");
+}
+
+function computeLiveRadarCounts(leads = LEADS) {
+  const enriched = activeLeads(leads);
   const particuliers = enriched.filter((l) => l.type !== "agence");
+  const newSansAgence = particuliers.filter(
+    (l) =>
+      l.status === "nouveau" ||
+      (l.alert_tags || []).includes("nouveau") ||
+      (l.alert_tags || []).includes("sans_agence"),
+  );
+  return {
+    new_without_agency: newSansAgence.length,
+    price_drops: enriched.filter((l) => (l.alert_tags || []).includes("baisse_prix")).length,
+    hot_mandate: enriched.filter((l) => (l.mandate_score || l.score || 0) >= 85).length,
+    old_listings: particuliers.filter(
+      (l) =>
+        (l.days_on_market || 0) >= 30 &&
+        ["nouveau", "a_contacter"].includes(l.pipeline || l.status || "nouveau"),
+    ).length,
+    total_opportunities: enriched.length,
+    sans_agence: particuliers.length,
+    mandats_month: enriched.filter((l) => l.pipeline === "mandat" || l.status === "mandat").length,
+    dvf_sous_marche: enriched.filter(
+      (l) =>
+        (l.alert_tags || []).includes("dvf_sous_marche") ||
+        ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
+    ).length,
+    dvf_compared: enriched.filter((l) => l.dvf_verdict).length,
+  };
+}
+
+function liveRadarPriorities(leads = LEADS, limit = 20) {
+  return [...activeLeads(leads)]
+    .sort((a, b) => (b.mandate_score || b.score || 0) - (a.mandate_score || a.score || 0))
+    .slice(0, limit);
+}
+
+/** Met à jour RADAR depuis LEADS (sans requête /radar) — live pendant/après crawl. */
+function syncRadarFromLeads(leads = LEADS) {
+  const briefing = buildClientBriefing(leads);
+  if (!RADAR) {
+    RADAR = briefing;
+    return;
+  }
+  RADAR.counts = briefing.counts;
+  RADAR.priorities = briefing.priorities;
+  RADAR.date = briefing.date;
+  if (!RADAR.agency_name) RADAR.agency_name = briefing.agency_name;
+}
+
+function buildClientBriefing(leads = LEADS) {
+  const enriched = liveRadarPriorities(leads, 50);
   const today = new Date().toISOString().slice(0, 10);
 
   return {
-    agency_name: state.user?.agency_name || "",
+    agency_name: state.user?.agency_name || RADAR?.agency_name || "",
     date: today,
-    counts: {
-      new_without_agency: particuliers.filter((l) => l.status === "nouveau").length,
-      price_drops: enriched.filter((l) => (l.alert_tags || []).includes("baisse_prix")).length,
-      hot_mandate: enriched.filter((l) => (l.mandate_score || 0) >= 85).length,
-      old_listings: 0,
-      total_opportunities: enriched.length,
-      sans_agence: particuliers.length,
-      mandats_month: enriched.filter((l) => l.pipeline === "mandat" || l.status === "mandat").length,
-      dvf_sous_marche: enriched.filter((l) =>
-        ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
-      ).length,
-      dvf_compared: enriched.filter((l) => l.dvf_verdict).length,
-    },
+    counts: computeLiveRadarCounts(leads),
     priorities: enriched.slice(0, 20),
-    alerts: [],
+    alerts: RADAR?.alerts || [],
     _clientFallback: true,
   };
 }
@@ -613,6 +651,7 @@ function applyBootstrapPayload(data) {
   if (!Array.isArray(data.leads) || !Array.isArray(data.sources)) return false;
   LEADS = data.leads;
   SOURCES = data.sources;
+  syncRadarFromLeads(LEADS);
   const stats = data.stats || {};
   state.appStats = stats;
   ACTIVITIES = data.activities || [];
@@ -2918,39 +2957,36 @@ async function refreshLeadsDuringCrawl(job) {
 
     LEADS = leads;
     crawlState.lastLeadCount = leads.length;
+    syncRadarFromLeads(leads);
     updateSourceCardsLive(crawlState.lastJob);
     updateCrawlerSummary();
-
-    if (!changed) return;
-
-    const added = Math.max(0, leads.length - prevCount);
-
-    if (state.currentView === "dashboard" || state.currentView === "playbook") {
-      void loadRadarAndPlaybook().then(() => {
-        renderRadarBriefing();
-        if (state.currentView === "playbook") renderPlaybook();
-      });
-    }
     await refreshStats();
     updateSidebarCount();
     updateBadges();
 
-    if (state.currentView === "leads") {
-      renderLeads();
-      document.getElementById("leads-table-wrapper")?.classList.add("leads-live-flash");
-      setTimeout(
-        () => document.getElementById("leads-table-wrapper")?.classList.remove("leads-live-flash"),
-        600,
-      );
-    } else if (state.currentView === "dashboard") {
-      renderDashboardTopLeads();
+    if (state.currentView === "dashboard") {
       renderRadarBriefing();
+      renderDashboardTopLeads();
       renderStats();
+    } else if (state.currentView === "playbook") {
+      renderRadarBriefing();
+      renderPlaybook();
+    } else if (state.currentView === "leads") {
+      renderLeads();
+      if (changed) {
+        document.getElementById("leads-table-wrapper")?.classList.add("leads-live-flash");
+        setTimeout(
+          () => document.getElementById("leads-table-wrapper")?.classList.remove("leads-live-flash"),
+          600,
+        );
+      }
     } else if (state.currentView === "pipeline") {
       renderPipeline();
     }
 
-    renderStats();
+    if (!changed) return;
+
+    const added = Math.max(0, leads.length - prevCount);
     renderActivity();
 
     if (added > 0) {
@@ -4310,6 +4346,8 @@ function mergeLeadInCache(lead) {
   const idx = LEADS.findIndex((l) => l.id === lead.id);
   if (idx >= 0) LEADS[idx] = { ...LEADS[idx], ...lead };
   if (state.selectedLead?.id === lead.id) state.selectedLead = LEADS[idx] || lead;
+  syncRadarFromLeads(LEADS);
+  if (state.currentView === "dashboard") renderRadarBriefing();
   return idx;
 }
 
@@ -4432,8 +4470,21 @@ async function compareAllLeadsDvf() {
   );
 }
 
+function pulseHeroStat(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const next = String(value ?? 0);
+  if (el.textContent !== next) {
+    el.textContent = next;
+    el.classList.remove("bump");
+    void el.offsetWidth;
+    el.classList.add("bump");
+  }
+}
+
 function renderRadarBriefing() {
-  const counts = RADAR?.counts || {};
+  const counts =
+    LEADS.length > 0 ? computeLiveRadarCounts(LEADS) : RADAR?.counts || computeLiveRadarCounts([]);
   const set = (id, v) => {
     const el = document.getElementById(id);
     if (el) el.textContent = v ?? 0;
@@ -4444,17 +4495,20 @@ function renderRadarBriefing() {
   set("radar-count-hot", counts.hot_mandate);
   set("radar-count-dvf", counts.dvf_sous_marche);
 
-  const list = RADAR?.priorities?.length
-    ? RADAR.priorities
-    : [...LEADS].sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0)).slice(0, 12);
+  const list =
+    LEADS.length > 0
+      ? liveRadarPriorities(LEADS, 12)
+      : RADAR?.priorities?.length
+        ? RADAR.priorities
+        : [];
 
-  const totalOpps = counts.total_opportunities ?? LEADS.filter((l) => l.type !== "agence").length;
-  const hotCount = counts.hot_mandate ?? list.filter((l) => (l.mandate_score || 0) >= 85).length;
-  const callToday = list.filter((l) => (l.mandate_score || 0) >= 85).length || hotCount;
+  const totalOpps = counts.total_opportunities ?? activeLeads().length;
+  const hotCount = counts.hot_mandate ?? 0;
+  const callToday = hotCount;
 
-  set("radar-total-opps", totalOpps);
-  set("radar-hero-hot", hotCount);
-  set("radar-hero-call-today", callToday);
+  pulseHeroStat("radar-total-opps", totalOpps);
+  pulseHeroStat("radar-hero-hot", hotCount);
+  pulseHeroStat("radar-hero-call-today", callToday);
 
   const greeting = document.getElementById("radar-greeting");
   if (greeting) {
@@ -4474,9 +4528,11 @@ function renderRadarBriefing() {
 
   const prioMeta = document.getElementById("radar-prio-meta");
   if (prioMeta) {
-    prioMeta.textContent = list.length
-      ? `${list.length} vendeur(s) · tri Score Mandat™`
-      : "Classées par Score Mandat™";
+    prioMeta.textContent = totalOpps
+      ? `${totalOpps} opportunité(s) sur votre marché · tri Score Mandat™`
+      : list.length
+        ? `${list.length} vendeur(s) · tri Score Mandat™`
+        : "Classées par Score Mandat™";
   }
 
   const featuredEl = document.getElementById("radar-hero-featured");
@@ -6605,13 +6661,18 @@ async function runBackgroundPoll() {
     const prevFp = leadsDataFingerprint(LEADS);
     const changed = fp !== prevFp;
     LEADS = leads;
+    syncRadarFromLeads(leads);
     if (changed) {
-      if (state.currentView === "dashboard" || state.currentView === "playbook") {
-        await loadRadarAndPlaybook().catch(() => {});
-      }
       await refreshStats();
       renderViewLight(state.currentView);
+      void loadRadarAndPlaybook().then(() => {
+        if (state.currentView === "dashboard" || state.currentView === "playbook") {
+          renderRadarBriefing();
+          if (state.currentView === "playbook") renderPlaybook();
+        }
+      });
     } else {
+      if (state.currentView === "dashboard") renderRadarBriefing();
       updateSidebarCount();
     }
   } catch {

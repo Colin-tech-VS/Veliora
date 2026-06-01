@@ -4984,6 +4984,10 @@ body:has(.crawl-dock.open) .script-dock.open {
   transition: transform 0.25s var(--ease-out);
 }
 
+.crm-hero-stat .n.bump {
+  animation: crawl-stat-bump 0.45s ease;
+}
+
 .crawl-stat-val.bump {
   animation: crawlStatBump 0.4s var(--ease-out);
 }
