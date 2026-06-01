@@ -45,6 +45,7 @@ class AdapterConfig:
     base_url: str
     search_url: str
     listing_patterns: list[str]
+    enabled: bool = True  # False = portail mort/injoignable, exclu du crawl
 
 
 class BaseAdapter(ABC):
@@ -419,7 +420,7 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="lefigaro",
         name="Le Figaro Immobilier",
         base_url="https://immobilier.lefigaro.fr",
-        search_url="https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement.html",
+        search_url="https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-france.html",
         listing_patterns=[
             r"immobilier\.lefigaro\.fr/annonces/annonce-[^/\"'\s]+",
             r"immobilier\.lefigaro\.fr/annonces/[^/\"'\s]+-\d{7,}\.html",
@@ -442,6 +443,7 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         name="AvendreAouer",
         base_url="https://www.avendrealouer.fr",
         search_url="https://www.avendrealouer.fr/vente/appartement.html",
+        enabled=False,  # toutes les URLs renvoient 404 (SPA / schéma inconnu)
         listing_patterns=[
             r"avendrealouer\.fr/[^/\"'\s]+-\d{5,}\.htm",
             r"avendrealouer\.fr/vente/[^/\"'\s]+-\d+",
@@ -462,6 +464,7 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         name="Maison & Appartement",
         base_url="https://www.maison-et-appartement.fr",
         search_url="https://www.maison-et-appartement.fr/vente-appartement",
+        enabled=False,  # domaine mort (DNS ne résout plus)
         listing_patterns=[
             r"maison-et-appartement\.fr/[^/\"'\s]+-\d{5,}\.html",
             r"maison-et-appartement\.fr/annonce/\d+",
@@ -492,6 +495,7 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         name="Immobilier Notaires",
         base_url="https://www.immobilier.notaires.fr",
         search_url="https://www.immobilier.notaires.fr/fr/ventes",
+        enabled=False,  # recherche en JS (toutes les pages liste renvoient 404)
         listing_patterns=[
             r"immobilier\.notaires\.fr/fr/annonce/\d+",
             r"immobilier\.notaires\.fr/[^/\"'\s]+/\d{5,}",

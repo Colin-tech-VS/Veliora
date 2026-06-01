@@ -201,7 +201,24 @@ def sanitize_lead(lead: LeadData) -> LeadData:
         lead.surface = None
     if lead.price is not None and not _price_ok(lead.price, lead.transaction_type):
         lead.price = None
+    if not _price_per_m2_plausible(lead):
+        # Prix/m² aberrant = quasi toujours une concaténation à l'extraction
+        # (ex. 12 362 250 € pour 232 m²). On abandonne le prix plutôt que
+        # d'enregistrer une donnée faussée ; l'annonce reste valide via la surface.
+        lead.price = None
     return lead
+
+
+def _price_per_m2_plausible(lead: LeadData) -> bool:
+    """Garde-fou anti-prix faussé : rejette un prix/m² manifestement impossible."""
+    if not lead.price or not lead.surface or lead.surface <= 0:
+        return True
+    per_m2 = lead.price / lead.surface
+    if (lead.transaction_type or "vente") == "location":
+        # Loyer : un loyer/m²/mois > 200 € est presque toujours une erreur.
+        return per_m2 <= 200
+    # Vente : même le luxe parisien plafonne ~25 000 €/m². Au-delà = bug.
+    return per_m2 <= 40_000
 
 
 _BAD_ADDRESS_RE = re.compile(

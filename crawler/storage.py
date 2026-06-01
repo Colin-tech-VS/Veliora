@@ -496,20 +496,21 @@ def sync_default_sources_for_agency(agency_id: str) -> int:
                 "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
                 (sid, agency_id),
             ).fetchone()
+            enabled = 1 if getattr(cfg, "enabled", True) else 0
             if row:
                 conn.execute(
                     """UPDATE sources SET name = ?, base_url = ?, search_url = ?,
-                       enabled = 1, is_custom = 0, updated_at = ?
+                       enabled = ?, is_custom = 0, updated_at = ?
                        WHERE id = ? AND agency_id = ?""",
-                    (cfg.name, cfg.base_url, cfg.search_url, now, sid, agency_id),
+                    (cfg.name, cfg.base_url, cfg.search_url, enabled, now, sid, agency_id),
                 )
             else:
                 conn.execute(
                     """INSERT INTO sources
                        (id, name, base_url, search_url, enabled, is_custom,
                         agency_id, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)""",
-                    (sid, cfg.name, cfg.base_url, cfg.search_url, agency_id, now, now),
+                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                    (sid, cfg.name, cfg.base_url, cfg.search_url, enabled, agency_id, now, now),
                 )
             touched += 1
         conn.commit()

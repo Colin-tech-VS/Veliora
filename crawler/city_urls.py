@@ -9,6 +9,7 @@ from urllib.parse import quote, urlencode, urlparse, parse_qs, urlunparse
 from crawler.fr_communes import (
     department_code_from_path_slug,
     path_slug_for_city,
+    resolve_commune,
     slugify,
 )
 from crawler.portals import resolve_base_portal_id
@@ -208,9 +209,9 @@ def city_search_url_candidates(
         return out
 
     if portal == "lefigaro" or "figaro" in (search_url or ""):
-        ps = path_slug.replace("-", "+")
-        _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{ps}.html")
-        _add(f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-appartement-{ps}.html")
+        # Les URLs ville (immobilier-vente-bien-{ville}.html) renvoient 410 (mortes).
+        # Seul le national fonctionne → on l'utilise + filtre ville en aval.
+        _add("https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-france.html")
         return out
 
     if portal == "superimmo" and path_slug:
@@ -234,12 +235,23 @@ def city_search_url_candidates(
         return out
 
     if portal == "ouestfranceimmo" and slug:
-        _add(f"https://www.ouestfrance-immo.com/achat/appartement/{slug}")
-        _add(f"https://www.ouestfrance-immo.com/achat/maison/{slug}")
+        # Schéma actuel : /immobilier/vente/{type}/{slug}-{dept}-{insee}/
+        row = resolve_commune(city, postcode)
+        if row:
+            cslug = f"{row['path_slug']}-{row['code']}"  # ex. nantes-44-44109
+            _add(f"https://www.ouestfrance-immo.com/immobilier/vente/appartement/{cslug}/", keep_slash=True)
+            _add(f"https://www.ouestfrance-immo.com/immobilier/vente/maison/{cslug}/", keep_slash=True)
+        _add(f"https://www.ouestfrance-immo.com/immobilier/vente/{slug}/", keep_slash=True)
         return out
 
     if portal == "lesiteimmo" and slug:
-        _add(f"https://www.lesiteimmo.com/recherche/vente/appartement/{slug}")
+        # Schéma actuel : /acheter/{type}/{slug}-{codepostal}
+        row = resolve_commune(city, postcode)
+        cp = (row or {}).get("postcode") or (postcode or "")
+        if cp:
+            _add(f"https://www.lesiteimmo.com/acheter/appartement/{slug}-{cp}")
+            _add(f"https://www.lesiteimmo.com/acheter/maison/{slug}-{cp}")
+        _add(f"https://www.lesiteimmo.com/recherche")
         return out
 
     if portal == "notaires" and q_city:
