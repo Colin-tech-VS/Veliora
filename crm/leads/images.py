@@ -89,8 +89,43 @@ def _to_webp(raw: bytes) -> bytes:
     return out.getvalue()
 
 
-def _download_bytes(url: str) -> bytes | None:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "image/*,*/*"})
+def _download_bytes(url: str, referer: str | None = None) -> bytes | None:
+    headers = {
+        "User-Agent": _USER_AGENT,
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    }
+    if referer:
+        headers["Referer"] = referer
+
+    try:
+        import requests
+
+        resp = requests.get(url, headers=headers, timeout=25, allow_redirects=True)
+        if resp.status_code == 200 and resp.content:
+            data = resp.content[: _MAX_DOWNLOAD + 1]
+            if len(data) <= _MAX_DOWNLOAD:
+                return data
+    except Exception as exc:
+        logger.debug("requests image download %s: %s", url[:80], exc)
+
+    try:
+        from curl_cffi import requests as cffi_requests
+
+        resp = cffi_requests.get(
+            url,
+            headers=headers,
+            timeout=25,
+            allow_redirects=True,
+            impersonate="chrome",
+        )
+        if resp.status_code == 200 and resp.content:
+            data = resp.content[: _MAX_DOWNLOAD + 1]
+            if len(data) <= _MAX_DOWNLOAD:
+                return data
+    except Exception:
+        pass
+
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = resp.read(_MAX_DOWNLOAD + 1)
@@ -144,32 +179,38 @@ def sync_lead_image_from_url(
     image_url: str,
     *,
     respect_custom: bool = True,
+    referer: str | None = None,
 ) -> bool:
-    """Télécharge l'image portail, enregistre en WebP. Retourne True si OK."""
+    """Télécharge l'image portail, convertit en WebP (_crawl + affichage si non personnalisée)."""
     if not image_url or not agency_id or not lead_id:
         return False
     ensure_lead_image_schema()
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT image_custom, listing_image_url FROM leads WHERE id = ? AND agency_id = ?",
+            "SELECT image_custom, listing_image_url, source_url FROM leads WHERE id = ? AND agency_id = ?",
             (lead_id, agency_id),
         ).fetchone()
     if not row:
         return False
-    if respect_custom and int(row["image_custom"] or 0):
-        with get_connection() as conn:
-            _touch_lead_image_meta(conn, lead_id, agency_id, listing_image_url=image_url)
-            conn.commit()
-        return False
 
-    raw = _download_bytes(image_url)
+    ref = referer or (row["source_url"] if "source_url" in row.keys() else None) or image_url
+    custom = int(row["image_custom"] or 0)
+
+    raw = _download_bytes(image_url, referer=ref)
     if not raw:
         return False
 
     crawl_path, active_path = _paths(agency_id, lead_id)
     if not _write_webp(crawl_path, raw):
         return False
+
+    if respect_custom and custom:
+        with get_connection() as conn:
+            _touch_lead_image_meta(conn, lead_id, agency_id, listing_image_url=image_url)
+            conn.commit()
+        return True
+
     if not _write_webp(active_path, raw):
         return False
 
@@ -258,17 +299,23 @@ def schedule_lead_image_sync(
     image_url: str,
     *,
     respect_custom: bool = True,
+    referer: str | None = None,
+    force: bool = False,
 ) -> None:
     key = (lead_id, agency_id)
     with _image_jobs_lock:
-        if key in _image_jobs_pending:
+        if not force and key in _image_jobs_pending:
             return
         _image_jobs_pending.add(key)
 
     def _run() -> None:
         try:
             sync_lead_image_from_url(
-                lead_id, agency_id, image_url, respect_custom=respect_custom
+                lead_id,
+                agency_id,
+                image_url,
+                respect_custom=respect_custom,
+                referer=referer,
             )
         finally:
             with _image_jobs_lock:

@@ -1258,7 +1258,7 @@ def save_lead(
                    score = ?, mandate_score = ?, mandate_score_reason = ?,
                    priority_tier = ?, score_explanation = ?, scores_computed_at = ?,
                    missing_fields = ?, listing_title = ?, facts_audit = ?,
-                   listing_image_url = COALESCE(?, listing_image_url),
+                   listing_image_url = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE listing_image_url END,
                    updated_at = ?{dvf_touch}
                    WHERE source_url = ? AND agency_id = ?""",
                 (
@@ -1290,6 +1290,8 @@ def save_lead(
                     listing_title,
                     facts_audit_json,
                     listing_image_url,
+                    listing_image_url,
+                    listing_image_url,
                     now,
                     lead.source_url,
                     agency_id,
@@ -1306,7 +1308,13 @@ def save_lead(
                 "price_changed": price_changed,
                 "surface_changed": surface_changed,
             }
-            _schedule_lead_image_after_save(lead, agency_id, int(existing_row["id"]), saved_out)
+            _schedule_lead_image_after_save(
+                lead,
+                agency_id,
+                int(existing_row["id"]),
+                saved_out,
+                deep_refresh=deep_refresh,
+            )
             return saved_out
 
         try:
@@ -1394,7 +1402,9 @@ def save_lead(
             "verification": verification.summary(),
             "updated": False,
         }
-        _schedule_lead_image_after_save(lead, agency_id, int(new_id), saved_out)
+        _schedule_lead_image_after_save(
+            lead, agency_id, int(new_id), saved_out, deep_refresh=deep_refresh
+        )
         return saved_out
 
 
@@ -1403,16 +1413,33 @@ def _schedule_lead_image_after_save(
     agency_id: str,
     lead_id: int,
     saved: dict,
+    *,
+    deep_refresh: bool = False,
 ) -> None:
     if not saved.get("verified") or not lead_id or not agency_id:
         return
     url = (lead.raw_extras or {}).get("listing_image_url")
     if not url:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT listing_image_url FROM leads WHERE id = ? AND agency_id = ?",
+                (lead_id, agency_id),
+            ).fetchone()
+        if row and row["listing_image_url"]:
+            url = str(row["listing_image_url"]).strip()
+    if not url:
         return
     try:
         from crm.leads.images import schedule_lead_image_sync
 
-        schedule_lead_image_sync(lead_id, agency_id, url)
+        schedule_lead_image_sync(
+            lead_id,
+            agency_id,
+            url,
+            respect_custom=True,
+            referer=lead.source_url or None,
+            force=deep_refresh,
+        )
     except Exception:
         logger.exception("schedule lead image %s", lead_id)
 

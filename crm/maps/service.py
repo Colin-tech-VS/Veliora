@@ -17,7 +17,7 @@ from velora_db.config import is_postgres
 
 logger = logging.getLogger(__name__)
 
-_GEOCODE_MAX_PER_REQUEST = 35
+_GEOCODE_MAX_PER_REQUEST = 60
 _ADDRESS_BAD = frozenset({"", "—", "-", "n/a", "non renseigné"})
 
 
@@ -117,6 +117,59 @@ def _cache_set(key: str, lat: float, lng: float, formatted: str = "") -> None:
         conn.commit()
 
 
+def _geocode_nominatim(query: str) -> tuple[float, float] | None:
+    """Géocodage OpenStreetMap (sans clé API)."""
+    params = urllib.parse.urlencode(
+        {
+            "q": query,
+            "format": "json",
+            "limit": 1,
+            "countrycodes": "fr",
+        }
+    )
+    url = f"https://nominatim.openstreetmap.org/search?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Veliora-CRM/1.0 (contact@veliora.fr)",
+            "Accept-Language": "fr",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=14) as resp:
+            rows = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("nominatim geocode failed for %s: %s", query[:80], exc)
+        return None
+    if not rows:
+        return None
+    lat = float(rows[0]["lat"])
+    lng = float(rows[0]["lon"])
+    return lat, lng
+
+
+def _geocode_google(query: str, api_key: str) -> tuple[float, float] | None:
+    params = urllib.parse.urlencode(
+        {"address": query, "key": api_key, "region": "fr", "language": "fr"}
+    )
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=12) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("google geocode failed for %s: %s", query[:80], exc)
+        return None
+
+    status = payload.get("status")
+    if status != "OK" or not payload.get("results"):
+        if status not in ("ZERO_RESULTS",):
+            logger.info("geocode status %s for %s", status, query[:80])
+        return None
+
+    loc = payload["results"][0]["geometry"]["location"]
+    return float(loc["lat"]), float(loc["lng"])
+
+
 def geocode_query(query: str) -> tuple[float, float] | None:
     q = (query or "").strip()
     if not q or q.lower() in _ADDRESS_BAD:
@@ -127,31 +180,16 @@ def geocode_query(query: str) -> tuple[float, float] | None:
         return cached
 
     api_key = google_maps_api_key()
-    if not api_key:
+    coords = None
+    if api_key:
+        coords = _geocode_google(q, api_key)
+    if not coords:
+        coords = _geocode_nominatim(q)
+    if not coords:
         return None
 
-    params = urllib.parse.urlencode(
-        {"address": q, "key": api_key, "region": "fr", "language": "fr"}
-    )
-    url = f"https://maps.googleapis.com/maps/api/geocode/json?{params}"
-    try:
-        with urllib.request.urlopen(url, timeout=12) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        logger.warning("geocode failed for %s: %s", q[:80], exc)
-        return None
-
-    status = payload.get("status")
-    if status != "OK" or not payload.get("results"):
-        if status not in ("ZERO_RESULTS",):
-            logger.info("geocode status %s for %s", status, q[:80])
-        return None
-
-    loc = payload["results"][0]["geometry"]["location"]
-    lat, lng = float(loc["lat"]), float(loc["lng"])
-    formatted = payload["results"][0].get("formatted_address") or q
-    _cache_set(key, lat, lng, formatted)
-    return lat, lng
+    _cache_set(key, coords[0], coords[1], q)
+    return coords
 
 
 def _lead_coords_from_row(row) -> tuple[float, float] | None:
@@ -276,6 +314,7 @@ def build_map_payload(agency_id: str) -> dict:
 
     return {
         "ok": True,
+        "maps_provider": "google" if api_key else "osm",
         "maps_api_key": api_key,
         "agency_name": agency_name,
         "agency": agency,
@@ -287,7 +326,8 @@ def build_map_payload(agency_id: str) -> dict:
             "geocoded_now": geocoded_this_run,
         },
         "hints": {
-            "no_api_key": not bool(api_key),
+            "no_api_key": False,
+            "using_osm": not bool(api_key),
             "no_agency_address": not (agency or {}).get("address_line"),
         },
     }

@@ -1,14 +1,17 @@
 /**
- * Carte Google Maps — géolocalisation, agence, annonces CRM.
+ * Carte prospects — Google Maps si clé API, sinon Leaflet + OpenStreetMap.
  */
 (function () {
   const state = {
+    provider: "osm",
     map: null,
+    leafletLayer: null,
     data: null,
     userMarker: null,
     agencyMarker: null,
     leadMarkers: [],
     infoWindow: null,
+    leafletPopups: [],
     userPos: null,
     aroundMe: false,
     aroundKm: 15,
@@ -49,18 +52,30 @@
         delete window[cb];
         resolve();
       };
-      const existing = document.getElementById("veliora-gmaps-script");
-      if (existing) {
-        existing.addEventListener("load", () => resolve());
-        existing.addEventListener("error", () => reject(new Error("Google Maps")));
-        return;
-      }
       const s = document.createElement("script");
       s.id = "veliora-gmaps-script";
       s.async = true;
       s.defer = true;
       s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=fr&region=FR&callback=${cb}`;
-      s.onerror = () => reject(new Error("Impossible de charger Google Maps"));
+      s.onerror = () => reject(new Error("Google Maps"));
+      document.head.appendChild(s);
+    });
+  }
+
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      if (!document.getElementById("leaflet-css")) {
+        const link = document.createElement("link");
+        link.id = "leaflet-css";
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+      const s = document.createElement("script");
+      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("Leaflet"));
       document.head.appendChild(s);
     });
   }
@@ -78,7 +93,7 @@
     if (pending) {
       if (stats.pending_geocode > 0) {
         pending.hidden = false;
-        pending.textContent = `${stats.pending_geocode} en cours de placement (rechargez dans un instant)`;
+        pending.textContent = `${stats.pending_geocode} en attente de placement — cliquez Actualiser`;
       } else {
         pending.hidden = true;
       }
@@ -96,124 +111,180 @@
     return labels[key] || key;
   }
 
-  function markerIcon(kind) {
-    const colors = { agency: "#1e3a5f", lead: "#c45c26", user: "#2563eb" };
-    const fill = colors[kind] || colors.lead;
-    return {
-      path: google.maps.SymbolPath.CIRCLE,
-      fillColor: fill,
-      fillOpacity: 1,
-      strokeColor: "#ffffff",
-      strokeWeight: 2,
-      scale: kind === "agency" ? 11 : kind === "user" ? 9 : 7,
-    };
+  function popupHtml(m) {
+    const { escapeHtml: esc, formatPrice } = deps();
+    const price =
+      typeof formatPrice === "function"
+        ? formatPrice(m)
+        : `${Number(m.price || 0).toLocaleString("fr-FR")} €`;
+    return `<strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · Score ${m.mandate_score || m.score || 0}<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button>`;
   }
 
-  function clearLeadMarkers() {
-    state.leadMarkers.forEach((m) => m.setMap(null));
-    state.leadMarkers = [];
+  function wirePopupButton(container) {
+    container?.querySelector(".map-infowindow-btn")?.addEventListener("click", (e) => {
+      const id = parseInt(e.currentTarget.dataset.leadId, 10);
+      if (id && deps().openDrawer) deps().openDrawer(id);
+    });
   }
 
   function filteredMarkers() {
     const markers = state.data?.markers || [];
     if (!state.aroundMe || !state.userPos) return markers;
     return markers.filter(
-      (m) => haversineKm(state.userPos.lat, state.userPos.lng, m.lat, m.lng) <= state.aroundKm
+      (m) => haversineKm(state.userPos.lat, state.userPos.lng, m.lat, m.lng) <= state.aroundKm,
     );
   }
 
-  function renderLeadMarkers() {
-    const { escapeHtml: esc, formatPrice, openDrawer } = deps();
-    if (!state.map || !window.google?.maps) return;
-    clearLeadMarkers();
-    const list = filteredMarkers();
-    list.forEach((m) => {
-      const marker = new google.maps.Marker({
-        map: state.map,
-        position: { lat: m.lat, lng: m.lng },
-        title: m.title,
-        icon: markerIcon("lead"),
-      });
-      marker.addListener("click", () => {
-        const html = `
-          <div class="map-infowindow">
-            <strong>${esc(m.title)}</strong>
-            <p class="map-infowindow-addr">${esc(m.address || "")}</p>
-            <p class="map-infowindow-meta">${esc(typeof formatPrice === "function" ? formatPrice(m) : `${Number(m.price || 0).toLocaleString("fr-FR")} €`)} · Score ${m.mandate_score || m.score || 0} · ${esc(pipelineLabel(m.pipeline))}</p>
-            <button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button>
-          </div>`;
-        state.infoWindow.setContent(html);
-        state.infoWindow.open({ anchor: marker, map: state.map });
-        setTimeout(() => {
-          document.querySelector(".map-infowindow-btn")?.addEventListener("click", () => {
-            state.infoWindow.close();
-            if (openDrawer) openDrawer(m.id);
-          });
-        }, 0);
-      });
-      state.leadMarkers.push(marker);
-    });
-    fitMapBounds();
+  function clearLeadMarkers() {
+    if (state.provider === "google") {
+      state.leadMarkers.forEach((m) => m.setMap(null));
+    } else if (state.map && window.L) {
+      state.leadMarkers.forEach((m) => state.map.removeLayer(m));
+      state.leafletPopups.forEach((p) => state.map.removeLayer(p));
+    }
+    state.leadMarkers = [];
+    state.leafletPopups = [];
   }
 
   function fitMapBounds() {
-    if (!state.map || !window.google?.maps) return;
-    const bounds = new google.maps.LatLngBounds();
-    let n = 0;
-    if (state.agencyMarker) {
-      const p = state.agencyMarker.getPosition();
-      if (p) {
-        bounds.extend(p);
+    const list = filteredMarkers();
+    const ag = state.data?.agency;
+
+    if (state.provider === "google" && state.map && window.google?.maps) {
+      const bounds = new google.maps.LatLngBounds();
+      let n = 0;
+      if (state.agencyMarker?.getPosition()) {
+        bounds.extend(state.agencyMarker.getPosition());
         n++;
       }
-    }
-    if (state.userMarker && state.userPos) {
-      bounds.extend(state.userPos);
-      n++;
-    }
-    filteredMarkers().forEach((m) => {
-      bounds.extend({ lat: m.lat, lng: m.lng });
-      n++;
-    });
-    if (n === 0) {
-      state.map.setCenter({ lat: 46.6, lng: 2.4 });
-      state.map.setZoom(6);
+      if (state.userPos) {
+        bounds.extend(state.userPos);
+        n++;
+      }
+      list.forEach((m) => {
+        bounds.extend({ lat: m.lat, lng: m.lng });
+        n++;
+      });
+      if (n === 0) {
+        state.map.setCenter({ lat: 46.6, lng: 2.4 });
+        state.map.setZoom(6);
+      } else if (n === 1) {
+        state.map.setCenter(bounds.getCenter());
+        state.map.setZoom(14);
+      } else {
+        state.map.fitBounds(bounds, { top: 80, right: 40, bottom: 40, left: 40 });
+      }
       return;
     }
-    if (n === 1) {
-      state.map.setCenter(bounds.getCenter());
-      state.map.setZoom(14);
-      return;
+
+    if (state.provider === "osm" && state.map && window.L) {
+      const pts = [];
+      if (ag?.lat && ag?.lng) pts.push([ag.lat, ag.lng]);
+      if (state.userPos) pts.push([state.userPos.lat, state.userPos.lng]);
+      list.forEach((m) => pts.push([m.lat, m.lng]));
+      if (!pts.length) {
+        state.map.setView([46.6, 2.4], 6);
+      } else if (pts.length === 1) {
+        state.map.setView(pts[0], 14);
+      } else {
+        state.map.fitBounds(L.latLngBounds(pts), { padding: [50, 50] });
+      }
     }
-    state.map.fitBounds(bounds, { top: 80, right: 40, bottom: 40, left: 40 });
+  }
+
+  function renderLeadMarkers() {
+    const list = filteredMarkers();
+    const { openDrawer } = deps();
+    clearLeadMarkers();
+
+    if (state.provider === "google" && state.map && window.google?.maps) {
+      list.forEach((m) => {
+        const marker = new google.maps.Marker({
+          map: state.map,
+          position: { lat: m.lat, lng: m.lng },
+          title: m.title,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: "#c45c26",
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 7,
+          },
+        });
+        marker.addListener("click", () => {
+          state.infoWindow.setContent(popupHtml(m));
+          state.infoWindow.open({ anchor: marker, map: state.map });
+          setTimeout(() => wirePopupButton(document.querySelector(".map-infowindow")), 0);
+        });
+        state.leadMarkers.push(marker);
+      });
+    } else if (state.provider === "osm" && state.map && window.L) {
+      list.forEach((m) => {
+        const marker = L.circleMarker([m.lat, m.lng], {
+          radius: 8,
+          color: "#fff",
+          weight: 2,
+          fillColor: "#c45c26",
+          fillOpacity: 1,
+        }).addTo(state.map);
+        marker.bindPopup(popupHtml(m));
+        marker.on("popupopen", (ev) => wirePopupButton(ev.popup.getElement()));
+        state.leadMarkers.push(marker);
+      });
+    }
+    fitMapBounds();
   }
 
   function placeAgencyMarker() {
     const ag = state.data?.agency;
     if (state.agencyMarker) {
-      state.agencyMarker.setMap(null);
+      if (state.provider === "google") state.agencyMarker.setMap(null);
+      else if (state.map?.removeLayer) state.map.removeLayer(state.agencyMarker);
       state.agencyMarker = null;
     }
     if (!ag?.lat || !ag?.lng || !state.map) return;
-    state.agencyMarker = new google.maps.Marker({
-      map: state.map,
-      position: { lat: ag.lat, lng: ag.lng },
-      title: ag.name || "Agence",
-      icon: markerIcon("agency"),
-      zIndex: 1000,
-    });
-    const { escapeHtml: esc } = deps();
-    state.agencyMarker.addListener("click", () => {
-      state.infoWindow.setContent(
-        `<div class="map-infowindow"><strong>${esc(ag.name || "Agence")}</strong><p>${esc(ag.address_line || "")}</p></div>`
+
+    if (state.provider === "google" && window.google?.maps) {
+      state.agencyMarker = new google.maps.Marker({
+        map: state.map,
+        position: { lat: ag.lat, lng: ag.lng },
+        title: ag.name || "Agence",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#1e3a5f",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 11,
+        },
+        zIndex: 1000,
+      });
+      const { escapeHtml: esc } = deps();
+      state.agencyMarker.addListener("click", () => {
+        state.infoWindow.setContent(
+          `<div class="map-infowindow"><strong>${esc(ag.name || "Agence")}</strong><p>${esc(ag.address_line || "")}</p></div>`,
+        );
+        state.infoWindow.open({ anchor: state.agencyMarker, map: state.map });
+      });
+    } else if (window.L) {
+      state.agencyMarker = L.circleMarker([ag.lat, ag.lng], {
+        radius: 11,
+        color: "#fff",
+        weight: 2,
+        fillColor: "#1e3a5f",
+        fillOpacity: 1,
+      }).addTo(state.map);
+      const { escapeHtml: esc } = deps();
+      state.agencyMarker.bindPopup(
+        `<strong>${esc(ag.name || "Agence")}</strong><br>${esc(ag.address_line || "")}`,
       );
-      state.infoWindow.open({ anchor: state.agencyMarker, map: state.map });
-    });
+    }
   }
 
-  function initMapInstance() {
+  function initGoogleMap() {
     const el = document.getElementById("map-canvas");
-    if (!el || state.map) return;
+    if (!el) return;
     state.map = new google.maps.Map(el, {
       center: { lat: 46.6, lng: 2.4 },
       zoom: 6,
@@ -223,43 +294,90 @@
       gestureHandling: "greedy",
     });
     state.infoWindow = new google.maps.InfoWindow();
+    state.mapsReady = true;
+  }
+
+  function initOsmMap() {
+    const el = document.getElementById("map-canvas");
+    if (!el || !window.L) return;
+    if (state.map?.remove) state.map.remove();
+    state.map = L.map(el, { zoomControl: true }).setView([46.6, 2.4], 6);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+      maxZoom: 19,
+    }).addTo(state.map);
+    state.mapsReady = true;
+  }
+
+  async function initMapInstance(data) {
+    const useGoogle = data.maps_provider === "google" && data.maps_api_key;
+    state.provider = useGoogle ? "google" : "osm";
+
+    if (useGoogle) {
+      await loadGoogleMaps(data.maps_api_key);
+      initGoogleMap();
+    } else {
+      await loadLeaflet();
+      initOsmMap();
+    }
     placeAgencyMarker();
     renderLeadMarkers();
-    state.mapsReady = true;
   }
 
   function locateUser() {
     const { showToast } = deps();
     if (!navigator.geolocation) {
-      showToast("Géolocalisation non disponible sur cet appareil", "warning");
+      showToast("Géolocalisation non disponible", "warning");
       return;
     }
-    showToast("Localisation en cours…", "info");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         if (!state.map) return;
-        if (state.userMarker) state.userMarker.setMap(null);
-        state.userMarker = new google.maps.Marker({
-          map: state.map,
-          position: state.userPos,
-          title: "Vous",
-          icon: markerIcon("user"),
-          zIndex: 999,
-        });
-        state.map.panTo(state.userPos);
-        if (state.map.getZoom() < 13) state.map.setZoom(13);
+
+        if (state.userMarker) {
+          if (state.provider === "google") state.userMarker.setMap(null);
+          else state.map.removeLayer(state.userMarker);
+        }
+
+        if (state.provider === "google" && window.google?.maps) {
+          state.userMarker = new google.maps.Marker({
+            map: state.map,
+            position: state.userPos,
+            title: "Vous",
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              fillColor: "#2563eb",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+              scale: 9,
+            },
+            zIndex: 999,
+          });
+          state.map.panTo(state.userPos);
+          if (state.map.getZoom() < 13) state.map.setZoom(13);
+        } else if (window.L) {
+          state.userMarker = L.circleMarker([state.userPos.lat, state.userPos.lng], {
+            radius: 9,
+            color: "#fff",
+            weight: 2,
+            fillColor: "#2563eb",
+            fillOpacity: 1,
+          }).addTo(state.map);
+          state.map.setView([state.userPos.lat, state.userPos.lng], 13);
+        }
         renderLeadMarkers();
-        showToast("Position affichée sur la carte", "success");
+        showToast("Position affichée", "success");
       },
       (err) => {
         const msg =
           err.code === 1
-            ? "Autorisez la géolocalisation dans les réglages du navigateur"
+            ? "Autorisez la géolocalisation dans le navigateur"
             : "Impossible d'obtenir votre position";
         showToast(msg, "warning");
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
     );
   }
 
@@ -271,16 +389,12 @@
       document.getElementById("btn-agency-legal-profile")?.click();
       return;
     }
-    state.map?.panTo({ lat: ag.lat, lng: ag.lng });
-    if (state.map && state.map.getZoom() < 14) state.map.setZoom(14);
-  }
-
-  async function fetchMapData() {
-    const { api: apiFn, showToast } = deps();
-    if (!apiFn) throw new Error("API indisponible");
-    const data = await apiFn("/map");
-    if (data.error) throw new Error(data.error);
-    return data;
+    if (state.provider === "google" && state.map) {
+      state.map.panTo({ lat: ag.lat, lng: ag.lng });
+      if (state.map.getZoom() < 14) state.map.setZoom(14);
+    } else if (state.map) {
+      state.map.setView([ag.lat, ag.lng], 14);
+    }
   }
 
   function showSetupPanel(data) {
@@ -289,24 +403,25 @@
     if (!panel) return;
     const hints = data?.hints || {};
     let msg = "";
-    if (hints.no_api_key) {
+    if (hints.using_osm) {
       msg =
-        "<p><strong>Clé Google Maps manquante</strong> — ajoutez <code>GOOGLE_MAPS_API_KEY</code> sur le serveur (Maps JavaScript API + Geocoding API).</p>";
-    } else if (hints.no_agency_address) {
-      msg =
-        "<p><strong>Adresse agence</strong> — complétez la fiche agence pour afficher votre bureau sur la carte.</p><button type=\"button\" class=\"btn btn-secondary btn-sm\" id=\"map-setup-agency\">Ouvrir la fiche agence</button>";
+        "<p class=\"form-hint\">Carte OpenStreetMap (aucune clé Google requise). Optionnel : <code>GOOGLE_MAPS_API_KEY</code> pour Google Maps.</p>";
+    }
+    if (hints.no_agency_address) {
+      msg +=
+        "<p><strong>Adresse agence</strong> — complétez la fiche agence pour afficher votre bureau.</p><button type=\"button\" class=\"btn btn-secondary btn-sm\" id=\"map-setup-agency\">Fiche agence</button>";
     }
     if (msg) {
       panel.innerHTML = msg;
       panel.hidden = false;
-      if (canvas) canvas.classList.add("has-setup-banner");
+      canvas?.classList.add("has-setup-banner");
       document.getElementById("map-setup-agency")?.addEventListener("click", () => {
         document.getElementById("btn-agency-legal-profile")?.click();
       });
     } else {
       panel.hidden = true;
       panel.innerHTML = "";
-      if (canvas) canvas.classList.remove("has-setup-banner");
+      canvas?.classList.remove("has-setup-banner");
     }
   }
 
@@ -315,36 +430,25 @@
     state.loading = true;
     setStatus("Chargement de la carte…");
     try {
-      const data = await fetchMapData();
+      const data = await deps().api("/map");
+      if (data.error) throw new Error(data.error);
       state.data = data;
       setLegend(data.stats);
       showSetupPanel(data);
 
-      if (!data.maps_api_key) {
-        setStatus("Configurez Google Maps pour afficher la carte interactive.");
-        state.loading = false;
-        return;
-      }
+      state.mapsReady = false;
+      state.map = null;
+      await initMapInstance(data);
 
-      await loadGoogleMaps(data.maps_api_key);
-      initMapInstance();
-      if (!state.mapsReady) initMapInstance();
-      placeAgencyMarker();
-      renderLeadMarkers();
-      showSetupPanel(data);
-
+      const mode =
+        data.maps_provider === "google" ? "Google Maps" : "OpenStreetMap";
       const ag = data.agency;
-      if (ag?.address_line) {
-        setStatus(
-          `Agence : ${ag.address_line} · ${data.stats?.on_map || 0} annonce(s) géolocalisée(s)`
-        );
-      } else {
-        setStatus(`${data.stats?.on_map || 0} annonce(s) sur la carte`);
-      }
+      setStatus(
+        `${mode} · ${data.stats?.on_map || 0} annonce(s)` +
+          (ag?.address_line ? ` · Agence : ${ag.address_line}` : ""),
+      );
 
-      if (!state.userPos && navigator.geolocation) {
-        locateUser();
-      }
+      if (!state.userPos && navigator.geolocation) locateUser();
     } catch (err) {
       deps().showToast(err.message || "Carte indisponible", "error");
       setStatus("Erreur de chargement");
@@ -360,18 +464,18 @@
     document.getElementById("map-filter-around")?.addEventListener("change", (e) => {
       state.aroundMe = e.target.checked;
       renderLeadMarkers();
-      const n = filteredMarkers().length;
-      if (state.aroundMe && state.userPos) {
-        setStatus(`${n} annonce(s) dans un rayon de ${state.aroundKm} km autour de vous`);
-      }
     });
   }
 
   wireControls();
 
   function resize() {
-    if (!state.map || !window.google?.maps) return;
-    google.maps.event.trigger(state.map, "resize");
+    if (!state.map) return;
+    if (state.provider === "google" && window.google?.maps) {
+      google.maps.event.trigger(state.map, "resize");
+    } else if (state.map?.invalidateSize) {
+      state.map.invalidateSize();
+    }
     fitMapBounds();
   }
 

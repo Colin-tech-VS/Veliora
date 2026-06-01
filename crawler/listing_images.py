@@ -43,11 +43,27 @@ def _normalize_image_url(raw: str | None, page_url: str) -> str | None:
     parsed = urlparse(abs_u)
     if parsed.scheme not in ("http", "https"):
         return None
-    if not _IMAGE_EXT_RE.search(parsed.path) and "image" not in (parsed.path or "").lower():
-        if "leboncoin" in parsed.netloc or "seloger" in parsed.netloc:
-            pass
-        elif not re.search(r"/(photo|image|media|asset|picture)", parsed.path, re.I):
-            return None
+    host = (parsed.netloc or "").lower()
+    path = (parsed.path or "").lower()
+    if not _IMAGE_EXT_RE.search(path):
+        known = (
+            "leboncoin",
+            "seloger",
+            "pap.fr",
+            "bienici",
+            "figaro",
+            "logic-immo",
+            "paruvendu",
+            "mms.fr",
+            "cloudinary",
+            "akamaized",
+            "cdn",
+            "images.",
+            "static.",
+        )
+        if not any(k in host or k in path for k in known):
+            if not re.search(r"/(photo|image|media|asset|picture|annonce|listing)", path, re.I):
+                return None
     if _SKIP_IMG_RE.search(abs_u):
         return None
     return abs_u
@@ -103,12 +119,28 @@ def extract_primary_listing_image(soup: BeautifulSoup, page_url: str) -> str | N
     """Retourne l'URL de la meilleure image annonce trouvée."""
     candidates: list[str] = []
 
-    for prop in ("og:image", "og:image:url", "twitter:image", "twitter:image:src"):
-        meta = soup.find("meta", attrs={"property": prop}) or soup.find(
-            "meta", attrs={"name": prop.replace("og:", "")}
+    for prop in (
+        "og:image",
+        "og:image:url",
+        "og:image:secure_url",
+        "twitter:image",
+        "twitter:image:src",
+    ):
+        meta = (
+            soup.find("meta", attrs={"property": prop})
+            or soup.find("meta", attrs={"property": re.compile(prop, re.I)})
+            or soup.find("meta", attrs={"name": prop})
+            or soup.find("meta", attrs={"name": re.compile(prop.replace(":", "_"), re.I)})
         )
         if meta and meta.get("content"):
             u = _normalize_image_url(meta["content"], page_url)
+            if u:
+                candidates.append(u)
+
+    for link in soup.find_all("link", rel=True):
+        rel = " ".join(link.get("rel") or []).lower()
+        if "image_src" in rel or rel == "thumbnail":
+            u = _normalize_image_url(link.get("href"), page_url)
             if u:
                 candidates.append(u)
 
