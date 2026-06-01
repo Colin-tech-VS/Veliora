@@ -522,15 +522,12 @@ def is_default_portal_source(source_id: str) -> bool:
     return resolve_base_portal_id(source_id) is not None
 
 
-# Affichage CRM : portails lents / DataDome (PAP reste en « recommandé »).
-ANTIBOT_UI_PORTALS = frozenset({"leboncoin", "seloger", "bienici", "logicimmo"})
-
-
 def is_antibot_source(src: dict) -> bool:
-    from crawler.portals import resolve_base_portal_id
+    """Portail protégé (anti-bot) — crawl réservé à l'offre payante."""
+    from crawler.portals import is_paid_crawl_portal, resolve_base_portal_id
 
     base = resolve_base_portal_id(src.get("id") or "")
-    return bool(base and base in ANTIBOT_UI_PORTALS)
+    return is_paid_crawl_portal(base)
 
 
 def _source_sort_key(src: dict) -> tuple:
@@ -542,8 +539,12 @@ def _source_sort_key(src: dict) -> tuple:
     return (0, src.get("name") or "")
 
 
-# Portails payants / anti-bot fort (exclus du « Crawler tout » gratuit).
-HARD_ANTIBOT_HOSTS = ("leboncoin", "seloger", "bienici", "logic-immo")
+# Portails payants — pas de préchauffage navigateur en crawl gratuit.
+HARD_ANTIBOT_HOSTS = tuple(
+    pid.replace("logicimmo", "logic-immo") for pid in (
+        "leboncoin", "pap", "seloger", "bienici", "logicimmo"
+    )
+)
 
 
 def _crawl_priority(src: dict) -> int:

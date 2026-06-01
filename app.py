@@ -136,6 +136,35 @@ def _aid() -> str:
     return agency_id
 
 
+def _paid_portal_crawl_response(*, source: dict | None = None, url: str | None = None):
+    """Bloque le crawl gratuit sur les portails anti-bot / Cloudflare."""
+    from crawler.portals import is_paid_crawl_url
+    from crawler.storage import is_antibot_source
+
+    blocked = False
+    name = ""
+    if source and is_antibot_source(source):
+        blocked = True
+        name = source.get("name") or "ce portail"
+    elif url and is_paid_crawl_url(url):
+        blocked = True
+        name = url.split("/")[2] if "/" in url else url
+    if not blocked:
+        return None
+    return (
+        jsonify(
+            {
+                "error": (
+                    f"{name} est protégé (anti-bot / Cloudflare). "
+                    "Crawl disponible avec l'offre payante Veliora (bientôt)."
+                ),
+                "code": "paid_portal_required",
+            }
+        ),
+        402,
+    )
+
+
 @app.route("/api/geo/communes", methods=["GET"])
 def api_geo_communes():
     """Autocomplete : toutes les communes françaises (référentiel geo.api.gouv.fr)."""
@@ -1021,8 +1050,12 @@ def api_crawler_scan():
 
 @app.route("/api/crawler/scan/<source_id>", methods=["POST"])
 def api_crawler_scan_source(source_id):
-    if not get_source(source_id, _aid()):
+    source = get_source(source_id, _aid())
+    if not source:
         return jsonify({"error": "Source introuvable pour votre agence"}), 404
+    paid = _paid_portal_crawl_response(source=source)
+    if paid:
+        return paid
     try:
         city = _resolve_crawl_city(_aid())
     except ValueError as exc:
@@ -1633,6 +1666,9 @@ def api_crawler_crawl_url():
     url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "URL requise"}), 400
+    paid = _paid_portal_crawl_response(url=url)
+    if paid:
+        return paid
     job = engine.crawl_url(url, agency_id=_aid())
     return jsonify(_job_response(job))
 
@@ -1644,6 +1680,9 @@ def api_crawler_import_listing():
     url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "URL requise"}), 400
+    paid = _paid_portal_crawl_response(url=url)
+    if paid:
+        return paid
     job = engine.import_listing_url(url, agency_id=_aid())
     return jsonify(_job_response(job))
 

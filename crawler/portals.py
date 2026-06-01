@@ -21,9 +21,19 @@ PORTAL_IDS = (
     "notaires",
 )
 
-# Portails payants / anti-bot fort — Playwright souvent requis.
+# Anti-bot / Cloudflare / DataDome — offre payante uniquement (pas de crawl Veliora gratuit).
+PAID_CRAWL_PORTAL_IDS = frozenset({
+    "leboncoin",
+    "pap",
+    "seloger",
+    "logicimmo",
+    "bienici",
+})
+
+# Hôtes qui nécessitent Playwright ou sont bloqués en HTTP simple.
 PROTECTED_HOSTS = (
     "leboncoin.fr",
+    "pap.fr",
     "seloger.com",
     "logic-immo.com",
     "bienici.com",
@@ -39,6 +49,16 @@ def resolve_base_portal_id(source_id: str | None) -> str | None:
         if sid == pid or sid.endswith(f"_{pid}"):
             return pid
     return None
+
+
+def is_paid_crawl_portal(portal_id: str | None) -> bool:
+    base = resolve_base_portal_id(portal_id or "")
+    return bool(base and base in PAID_CRAWL_PORTAL_IDS)
+
+
+def is_paid_crawl_url(url: str) -> bool:
+    pid = portal_from_url(url)
+    return bool(pid and is_paid_crawl_portal(pid))
 
 
 def host_from_url(url: str) -> str:

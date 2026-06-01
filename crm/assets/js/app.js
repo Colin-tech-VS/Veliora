@@ -144,6 +144,9 @@ async function parseApiResponse(res, path) {
     );
     throw new Error("SUBSCRIPTION_REDIRECT");
   }
+  if (res.status === 402 && body.code === "paid_portal_required") {
+    throw new Error(body.error || "Portail protégé — offre payante requise");
+  }
   if (!res.ok) {
     throw new Error(apiErrorMessage(res.status, path, body, res));
   }
@@ -2370,6 +2373,15 @@ async function submitAddSource(e) {
 }
 
 async function crawlSingleSource(sourceId, sourceName) {
+  const src = SOURCES.find((s) => s.id === sourceId);
+  if (src?.is_antibot) {
+    showToast(
+      `${sourceName} est protégé (anti-bot) — crawl disponible avec l'offre payante (bientôt).`,
+      "warning",
+      6000,
+    );
+    return;
+  }
   const city = getCrawlCity();
   const label = city ? `${sourceName} — ${city}` : sourceName;
   await runCrawlJob(`/crawler/scan/${sourceId}`, crawlBodyExtra(), label);
@@ -4674,7 +4686,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
           <div class="source-name-text">
             <span class="source-title">${escapeHtml(s.name)}</span>
             ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
-            ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Anti-bot</span>' : ""}
+            ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Offre payante</span>' : ""}
             ${s.is_default_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Recommandé</span>' : ""}
             ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur crawl</span>' : ""}
             ${saved ? '<span class="source-status-badge source-status-badge--ok">Lien enregistré</span>' : ""}
@@ -4719,10 +4731,14 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
         </div>
       </div>
       <div class="source-progress"><div class="bar"><div class="fill source-stat-progress" data-source="${s.id}" style="width:${stats.inDb > 0 ? 100 : 0}%"></div></div></div>
-      <button class="btn btn-secondary source-crawl-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" ${crawlState.active ? "disabled" : ""}>
+      ${
+        s.is_antibot && !s.is_custom
+          ? `<p class="source-paid-hint form-hint">Portail protégé (Cloudflare / anti-bot) — crawl avec l'offre payante Veliora (bientôt).</p>`
+          : `<button class="btn btn-secondary source-crawl-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" ${crawlState.active ? "disabled" : ""}>
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         Crawler
-      </button>
+      </button>`
+      }
     </div>`;
 }
 
