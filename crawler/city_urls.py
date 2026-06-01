@@ -150,9 +150,13 @@ def city_search_url_candidates(
     q_city = quote(city)
     out: list[str] = []
 
-    def _add(u: str | None) -> None:
+    def _add(u: str | None, keep_slash: bool = False) -> None:
         if u and u.startswith("http") and u not in out:
-            out.append(u.split("#")[0].rstrip("/") or u)
+            cleaned = u.split("#")[0]
+            if not keep_slash:
+                cleaned = cleaned.rstrip("/") or u
+            if cleaned not in out:
+                out.append(cleaned)
 
     if portal == "seloger":
         immo = path_slug
@@ -197,8 +201,9 @@ def city_search_url_candidates(
         return out or [search_url]
 
     if portal == "paruvendu":
+        # paruvendu EXIGE le slash final : /immobilier/vente/nantes/ (sinon 404).
         if slug:
-            _add(f"https://www.paruvendu.fr/immobilier/vente/{slug}")
+            _add(f"https://www.paruvendu.fr/immobilier/vente/{slug}/", keep_slash=True)
         _add(f"{(search_url or 'https://www.paruvendu.fr/immobilier/').rstrip('/')}?ville={q_city}")
         return out
 

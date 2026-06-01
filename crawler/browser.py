@@ -563,9 +563,12 @@ def _playwright_available() -> bool:
     return _playwright_ready
 
 
-def _fetch_requests(url: str, timeout: int = 25) -> FetchResult:
+def _fetch_requests(url: str, timeout: int | None = None) -> FetchResult:
     ua = random.choice(USER_AGENTS)
-    from crawler.config import pick_proxy
+    from crawler.config import CRAWL_HTTP_TIMEOUT_SEC, pick_proxy
+
+    if timeout is None:
+        timeout = CRAWL_HTTP_TIMEOUT_SEC
 
     proxy = pick_proxy()
     proxies = {"http": proxy, "https": proxy} if proxy else None
@@ -739,6 +742,13 @@ def fetch_page(
     3. requests en dernier recours
     4. Si blocage et CRAWL_PROXIES : rotation IP + nouvel essai
     """
+    # Chaque page (y compris chaque annonce) démarre avec un budget de rotation
+    # neuf : le blocage d'une annonce ne doit pas priver les suivantes de rotation.
+    if _block_retry == 0:
+        from crawler.proxy_manager import reset_block_rotation_counter
+
+        reset_block_rotation_counter()
+
     result = _fetch_page_once(
         url,
         scroll_lazy=scroll_lazy,

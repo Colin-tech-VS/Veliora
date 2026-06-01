@@ -451,7 +451,7 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="etreproprio",
         name="EtreProprio",
         base_url="https://www.etreproprio.com",
-        search_url="https://www.etreproprio.com/achat/appartement",
+        search_url="https://www.etreproprio.com/annonces/vente",
         listing_patterns=[
             r"etreproprio\.com/annonce/\d+",
             r"etreproprio\.com/[^/\"'\s]+/\d{5,}",
@@ -471,20 +471,20 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="ouestfranceimmo",
         name="Ouest-France Immo",
         base_url="https://www.ouestfrance-immo.com",
-        search_url="https://www.ouestfrance-immo.com/achat/appartement",
+        search_url="https://www.ouestfrance-immo.com/immobilier/vente/",
         listing_patterns=[
-            r"ouestfrance-immo\.fr/annonce/\d+",
-            r"ouestfrance-immo\.fr/[^/\"'\s]+-\d{5,}",
+            r"ouestfrance-immo\.com/immobilier/vente/[^\"'\s]+/[^\"'\s]+",
+            r"ouestfrance-immo\.com/[^/\"'\s]+-\d{5,}",
         ],
     ),
     AdapterConfig(
         id="lesiteimmo",
         name="LeSiteImmo",
         base_url="https://www.lesiteimmo.com",
-        search_url="https://www.lesiteimmo.com/recherche/vente/appartement",
+        search_url="https://www.lesiteimmo.com/recherche",
         listing_patterns=[
+            r"lesiteimmo\.com/acheter/[^\"'\s]+/[^\"'\s]+/\d{5,}",
             r"lesiteimmo\.com/annonce/\d+",
-            r"lesiteimmo\.com/[^/\"'\s]+/\d{5,}",
         ],
     ),
     AdapterConfig(

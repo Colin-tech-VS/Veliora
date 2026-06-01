@@ -629,6 +629,11 @@ class CrawlerEngine:
                     city_seeds
                     + [search_url, discover_url, adapter.config.base_url or ""]
                     + extra_portal
+                    # Repli national : si l'URL ville échoue (404/anti-bot), on explore
+                    # quand même la recherche nationale ; les annonces sont ensuite
+                    # filtrées par ville en aval (listing_url_likely_in_city /
+                    # _lead_in_target_city), donc pas d'évasion hors-zone.
+                    + [base_search]
                 )
             )
         else:

@@ -11,6 +11,7 @@ from typing import Any
 
 from crawler.config import (
     ANTIBOT_CHALLENGE_WAIT_MS,
+    CRAWL_HTTP_TIMEOUT_SEC,
     CURL_CFFI_IMPERSONATE,
     USE_CURL_CFFI,
 )
@@ -223,7 +224,7 @@ def curl_fetch(url: str, *, referer: str | None = None) -> tuple[str | None, str
         resp = session.get(
             url,
             headers=headers,
-            timeout=35,
+            timeout=CRAWL_HTTP_TIMEOUT_SEC,
             allow_redirects=True,
         )
         if resp.status_code == 403:

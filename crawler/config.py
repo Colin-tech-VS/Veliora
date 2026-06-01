@@ -198,6 +198,11 @@ PLAYWRIGHT_PROFILE_DIR = "data/playwright_profile"
 USE_CURL_CFFI = True
 CURL_CFFI_IMPERSONATE = "chrome"
 
+# Timeout HTTP par requête (curl_cffi / requests). 35s était trop généreux :
+# une page légitime répond en <10s ; un proxy lent/mort ne doit pas geler le crawl.
+# Réduit fortement le temps total, surtout avec des proxys gratuits (lents).
+CRAWL_HTTP_TIMEOUT_SEC = int(os.getenv("CRAWL_HTTP_TIMEOUT_SEC", "18"))
+
 # ─── Proxies (rotation d'IP — pour passer DataDome/Cloudflare comme un service pro) ───
 # Un crawl depuis une seule IP maison se fait bannir par les portails protégés.
 # Branche un ou plusieurs proxies (de préférence RÉSIDENTIELS rotatifs) ici :
