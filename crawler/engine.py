@@ -278,7 +278,17 @@ class CrawlerEngine:
             self._agency_id = None
             close_browser_session()
 
+    def _crawl_stopped(self, job_id: str | None) -> bool:
+        from crawler.storage import crawl_job_should_stop
+
+        if not job_id or not crawl_job_should_stop(job_id):
+            return False
+        close_browser_session()
+        return True
+
     def _finish_job(self, job_id: str, result: CrawlResult, label: str) -> None:
+        if self._crawl_stopped(job_id):
+            return
         dvf_line = ""
         if self._dvf_queue:
             if job_id:
@@ -375,6 +385,8 @@ class CrawlerEngine:
 
         total = CrawlResult()
         for i, src in enumerate(sources):
+            if self._crawl_stopped(job_id):
+                return
             pct = int(10 + (i / len(sources)) * 80)
             update_crawl_job(
                 job_id,
@@ -382,6 +394,8 @@ class CrawlerEngine:
                 message=f"Site {i + 1}/{len(sources)} — {src['name']}…",
             )
             r = self._crawl_source(src["id"], job_id, city=city)
+            if self._crawl_stopped(job_id):
+                return
             total.leads_found += r.leads_found
             total.leads_saved += r.leads_saved
             total.leads_updated += r.leads_updated
@@ -529,6 +543,8 @@ class CrawlerEngine:
         job_id: str | None = None,
         city: str | None = None,
     ) -> CrawlResult:
+        if self._crawl_stopped(job_id):
+            return CrawlResult()
         adapter = self.adapters.get(source_id)
         if not adapter:
             return CrawlResult(
@@ -642,6 +658,8 @@ class CrawlerEngine:
         discover_seeds: list[str] | None = None,
         city: str | None = None,
     ) -> CrawlResult:
+        if self._crawl_stopped(job_id):
+            return CrawlResult()
         url = self._normalize_url(url)
         if not adapter:
             adapter = resolve_adapter(url, self.adapters)
@@ -704,6 +722,8 @@ class CrawlerEngine:
                 self._agency_id,
             )
             for i, listing_url in enumerate(targets):
+                if self._crawl_stopped(job_id):
+                    break
                 if not result.can_process_more_listings():
                     break
                 if self._crawl_city and not listing_url_likely_in_city(

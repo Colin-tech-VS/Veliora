@@ -789,7 +789,7 @@
 
   <!-- Dock crawl (réduit) -->
   <div class="crawl-dock" id="crawl-dock" role="status" aria-live="polite">
-    <button type="button" class="crawl-dock-close" id="crawl-dock-close" title="Fermer — le crawl continue en arrière-plan">×</button>
+    <button type="button" class="crawl-dock-close" id="crawl-dock-close" title="Arrêter le crawl et fermer">×</button>
     <div class="crawl-dock-scene" aria-hidden="true">
       <span class="crawl-dock-icon crawl-dock-icon-house"></span>
       <span class="crawl-dock-icon crawl-dock-icon-key"></span>
@@ -841,7 +841,7 @@
           <div class="crawl-scene-key">🔑</div>
         </div>
         <div class="crawl-loader-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-close-btn" title="Fermer — le crawl continue en arrière-plan">✕ Fermer</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-close-btn" title="Arrêter le crawl et fermer">✕ Fermer</button>
           <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — crawl continue, notification à la fin">⤓ Arrière-plan</button>
           <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter le crawl">Arrêter</button>
         </div>
@@ -1122,7 +1122,7 @@
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
-  <script src="/crm/assets/js/app.js?v=55"></script>
+  <script src="/crm/assets/js/app.js?v=56"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/crm/sw.js?v=5").then((reg) => {

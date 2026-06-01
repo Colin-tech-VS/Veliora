@@ -966,13 +966,38 @@ async function handoffCrawlToBackground() {
   }
 }
 
-async function dismissCrawlUI() {
-  if (crawlState.active && crawlState.jobId) {
-    await handoffCrawlToBackground();
-    showToast("Crawl en arrière-plan — notification à la fin", "info", 4500);
+/** Arrête le crawl serveur, coupe le polling et ferme modal + dock. */
+async function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) {
+  const wasAnalyzeImport = Boolean(
+    crawlState.pollOptions?.goToAnalyze && crawlState.pollOptions?.importUrl,
+  );
+  const jobId = crawlState.jobId;
+
+  pausePageCrawlPoll();
+  if (window.CrawlWatch) await CrawlWatch.stop();
+
+  if (wasAnalyzeImport) {
+    hideCrawlLoader();
+    cancelAnalyzeImport({ silent: true });
+    showToast("Import annulé", "info");
     return;
   }
+
+  try {
+    if (jobId) {
+      await api(`/crawler/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+    }
+    await api("/crawler/jobs/cancel", { method: "POST" });
+  } catch {
+    /* ignore — on ferme quand même l'UI */
+  }
+
   hideCrawlLoader();
+  if (toastMessage) showToast(toastMessage, "success", 3500);
+}
+
+async function dismissCrawlUI() {
+  await stopCrawlJobAndCloseUi({ toastMessage: "Crawl fermé et arrêté" });
 }
 
 async function finishCrawlFromJob(job, label, options = {}) {
@@ -1027,7 +1052,6 @@ function setupCrawlBackground() {
   document.getElementById("crawl-cancel-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     cancelStaleCrawlUi();
-    showToast("Crawl annulé", "success");
   });
   document.getElementById("crawl-dock-close")?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -3569,21 +3593,7 @@ function startCrawlPolling(jobId, label, options = {}) {
 }
 
 async function cancelStaleCrawlUi() {
-  const wasAnalyzeImport = Boolean(
-    crawlState.pollOptions?.goToAnalyze && crawlState.pollOptions?.importUrl,
-  );
-  if (window.CrawlWatch) await CrawlWatch.stop();
-  hideCrawlLoader();
-  if (wasAnalyzeImport) {
-    cancelAnalyzeImport({ silent: true });
-    showToast("Import annulé", "info");
-    return;
-  }
-  try {
-    await api("/crawler/jobs/cancel", { method: "POST" });
-  } catch {
-    /* ignore */
-  }
+  await stopCrawlJobAndCloseUi({ toastMessage: "Crawl annulé" });
 }
 
 async function resumeActiveCrawlIfAny() {

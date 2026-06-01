@@ -704,6 +704,19 @@ def cancel_crawl_job(job_id: str) -> bool:
     return True
 
 
+def crawl_job_should_stop(job_id: str | None) -> bool:
+    """True si le job a été annulé ou n'est plus actif (pending/running)."""
+    if not job_id:
+        return False
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT status FROM crawl_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+    if not row:
+        return True
+    return row["status"] not in ("pending", "running")
+
+
 def cancel_all_active_crawl_jobs(agency_id: str | None = None) -> int:
     expire_stale_crawl_jobs()
     with get_connection() as conn:
