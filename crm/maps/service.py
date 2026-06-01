@@ -34,7 +34,17 @@ def _norm_key(address: str) -> str:
 
 
 def google_maps_api_key() -> str:
+    """Clé navigateur (Maps JavaScript) — restrictions référents HTTP."""
     return (os.getenv("GOOGLE_MAPS_API_KEY") or os.getenv("GOOGLE_MAPS_KEY") or "").strip()
+
+
+def google_geocoding_api_key() -> str:
+    """Clé serveur (Geocoding API) — restrictions IP Scalingo recommandées."""
+    return (
+        os.getenv("GOOGLE_GEOCODING_API_KEY")
+        or os.getenv("GOOGLE_MAPS_SERVER_KEY")
+        or google_maps_api_key()
+    ).strip()
 
 
 def maps_use_google_javascript() -> bool:
@@ -193,10 +203,10 @@ def geocode_query(query: str) -> tuple[float, float] | None:
     if cached:
         return cached
 
-    api_key = google_maps_api_key()
+    geo_key = google_geocoding_api_key()
     coords = None
-    if api_key:
-        coords = _geocode_google(q, api_key)
+    if geo_key:
+        coords = _geocode_google(q, geo_key)
     if not coords:
         coords = _geocode_nominatim(q)
     if not coords:
@@ -370,7 +380,7 @@ def schedule_map_geocode_batch(
     def _run() -> None:
         try:
             ensure_map_schema()
-            use_nominatim = not bool(google_maps_api_key())
+            use_nominatim = not bool(google_geocoding_api_key())
             for lead_id, line in items:
                 try:
                     with get_connection() as conn:
