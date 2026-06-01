@@ -1617,6 +1617,23 @@ body {
 
 .match-score { font-variant-numeric: tabular-nums; }
 
+.drawer-mandate-demand {
+  margin-top: 0.6rem;
+}
+
+.demand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--v-brass), var(--v-brass-light));
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(154, 115, 73, 0.35);
+}
+
 .est-pdf-btn {
   font-weight: 600;
 }
@@ -6884,9 +6901,8 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 
 .map-canvas-wrap {
-  flex: 1;
-  min-height: 420px;
-  height: min(65vh, 560px);
+  flex: 1 1 auto;
+  min-height: 480px;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);

@@ -6225,6 +6225,7 @@ function buildDrawerBodyHtml(lead) {
       </div>
       <p class="drawer-mandate-reason">${escapeHtml(lead.mandate_score_reason || "—")}</p>
       <p class="drawer-mandate-hint">Opportunité du marché · ${escapeHtml(lead.city || lead.sector || "secteur")}</p>
+      <div class="drawer-mandate-demand" id="drawer-mandate-demand" hidden></div>
     </div>
     ${renderFactsVerificationHtml(lead)}
     ${buildDrawerDvfHtml(lead)}
@@ -6427,6 +6428,22 @@ function renderLeadMatchesHtml(data) {
   return `${recoHtml}${counts}<div class="match-list">${rows}</div>`;
 }
 
+function updateMandateDemandBadge(lead, data) {
+  const el = document.getElementById("drawer-mandate-demand");
+  if (!el || !data?.ok || Number(state.selectedLead?.id) !== Number(lead.id)) return;
+  const c = data.counts || {};
+  const total = c.total || 0;
+  if (!total) {
+    el.hidden = true;
+    return;
+  }
+  const parts = [];
+  if (c.vente) parts.push(`${c.vente} acquéreur${c.vente > 1 ? "s" : ""}`);
+  if (c.location) parts.push(`${c.location} locataire${c.location > 1 ? "s" : ""}`);
+  el.innerHTML = `<span class="demand-badge">🎯 ${parts.join(" · ")} compatible${total > 1 ? "s" : ""} en base</span>`;
+  el.hidden = false;
+}
+
 async function loadDrawerMatches(lead) {
   const fill = (html) => {
     const box = document.getElementById("drawer-matches");
@@ -6436,13 +6453,16 @@ async function loadDrawerMatches(lead) {
     }
   };
   if (leadMatchCache.has(lead.id)) {
-    fill(renderLeadMatchesHtml(leadMatchCache.get(lead.id)));
+    const data = leadMatchCache.get(lead.id);
+    fill(renderLeadMatchesHtml(data));
+    updateMandateDemandBadge(lead, data);
     return;
   }
   try {
     const data = await api(`/leads/${lead.id}/matches`, { headers: getAuthHeaders() });
     leadMatchCache.set(lead.id, data);
     fill(renderLeadMatchesHtml(data));
+    updateMandateDemandBadge(lead, data);
   } catch (err) {
     fill(`<p class="drawer-matches-empty">${escapeHtml(err.message || "Erreur")}</p>`);
   }

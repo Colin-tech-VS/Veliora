@@ -446,6 +446,21 @@
       gestureHandling: "greedy",
     });
     state.infoWindow = new google.maps.InfoWindow();
+    // Google Maps stoppe la propagation des events DOM dans son conteneur : la
+    // délégation au niveau document ne reçoit PAS le clic du bouton InfoWindow.
+    // On câble donc directement le bouton à chaque ouverture (domready).
+    state.infoWindow.addListener("domready", () => {
+      const btn = document.querySelector(".gm-style-iw .map-infowindow-btn")
+        || document.querySelector(".map-infowindow-btn");
+      if (btn && !btn._wired) {
+        btn._wired = true;
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          const id = parseInt(btn.dataset.leadId, 10);
+          if (id && deps().openDrawer) deps().openDrawer(id);
+        });
+      }
+    });
     state.mapsReady = true;
   }
 
