@@ -75,10 +75,17 @@ CREATE TABLE IF NOT EXISTS leads (
     listing_image_url TEXT,
     image_custom    SMALLINT NOT NULL DEFAULT 0,
     image_updated_at TIMESTAMPTZ,
+    price_estimate  TEXT,
+    price_estimate_at TEXT,
     missing_fields  TEXT NOT NULL DEFAULT '[]',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migrations idempotentes (bases existantes) — exécutées au démarrage, hors charge,
+-- donc sans contention de verrou avec les UPDATE leads du crawl/géocodage.
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS price_estimate_at TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_agency_url ON leads(agency_id, source_url);
 CREATE INDEX IF NOT EXISTS idx_leads_source_id ON leads(source_id);

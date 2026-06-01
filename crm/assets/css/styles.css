@@ -1510,6 +1510,113 @@ body {
   flex-wrap: wrap;
 }
 
+/* ─── Matching acquéreurs / locataires ─── */
+.drawer-matches-loading,
+.drawer-matches-empty {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0.4rem 0 0;
+}
+
+.match-reco {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  margin-bottom: 0.7rem;
+}
+
+.match-reco--aligned {
+  background: rgba(74, 107, 101, 0.1);
+  border: 1px solid rgba(74, 107, 101, 0.25);
+}
+
+.match-reco--switch {
+  background: rgba(184, 92, 66, 0.08);
+  border: 1px solid rgba(184, 92, 66, 0.25);
+}
+
+.match-reco-badge {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--v-slate);
+  color: #fff;
+}
+
+.match-reco--switch .match-reco-badge { background: var(--v-clay); }
+
+.match-reco-text {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.match-counts {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+}
+
+.match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.match-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.7rem;
+  background: var(--bg-surface);
+  transition: border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.match-row:hover {
+  border-color: var(--v-brass-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.match-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.match-row-head strong { font-size: 0.9rem; color: var(--v-ink); }
+
+.match-row-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.match-row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.match-tag {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+.match-call { margin-top: 0.45rem; }
+
+.match-score { font-variant-numeric: tabular-nums; }
+
 .est-pdf-btn {
   font-weight: 600;
 }

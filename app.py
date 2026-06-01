@@ -786,6 +786,24 @@ def api_lead_price_estimate(lead_id):
     return jsonify(result)
 
 
+@app.route("/api/leads/<int:lead_id>/matches")
+def api_lead_matches(lead_id):
+    """Acquéreurs / locataires compatibles + transaction la plus pertinente."""
+    from crm.mandates.storage import list_property_clients
+    from crm.matching.service import build_lead_matches
+
+    agency_id = _aid()
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
+    try:
+        clients = list_property_clients(agency_id)
+        return jsonify(build_lead_matches(lead, clients))
+    except Exception as exc:
+        logging.exception("GET /api/leads/%s/matches", lead_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.route("/api/dvf/compare/<int:lead_id>", methods=["POST"])
 def api_dvf_compare_lead(lead_id):
     try:

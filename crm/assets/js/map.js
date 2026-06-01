@@ -658,14 +658,22 @@
       const ag = data.agency;
       const onMap = data.stats?.on_map ?? 0;
       const pending = data.stats?.pending_geocode ?? 0;
-      let status = `${mode} · ${onMap} annonce(s) sur la carte`;
+      const noLoc = data.stats?.no_location ?? 0;
+      const total = data.stats?.total_leads ?? onMap;
+      let status = `${mode} · ${onMap}/${total} annonce(s) sur la carte`;
       if (pending > 0) {
         status += ` · ${pending} en cours de géolocalisation (Actualiser dans ~30 s)`;
+      }
+      if (noLoc > 0) {
+        status += ` · ${noLoc} sans adresse`;
       }
       if (ag?.address_line) status += ` · Agence : ${ag.address_line}`;
       setStatus(status, false);
 
-      if (onMap === 0 && pending === 0) {
+      const noLocHint = data.hints?.no_location_hint;
+      if (noLoc > 0 && noLocHint) {
+        deps().showToast(noLocHint, "info", 9000);
+      } else if (onMap === 0 && pending === 0) {
         deps().showToast(
           "Aucune annonce géolocalisée — vérifiez les adresses des fiches ou lancez un crawl",
           "info",

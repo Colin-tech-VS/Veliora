@@ -19,8 +19,8 @@ from velora_db.config import is_postgres
 
 logger = logging.getLogger(__name__)
 
-_GEOCODE_MAX_PER_REQUEST = 8
-_GEOCODE_TIME_BUDGET_SEC = 7.0
+_GEOCODE_MAX_PER_REQUEST = 30
+_GEOCODE_TIME_BUDGET_SEC = 18.0
 _ADDRESS_BAD = frozenset({"", "—", "-", "n/a", "non renseigné"})
 
 
@@ -148,6 +148,35 @@ def _cache_set(key: str, lat: float, lng: float, formatted: str = "") -> None:
         conn.commit()
 
 
+def _geocode_ban(query: str) -> tuple[float, float] | None:
+    """Géocodage Base Adresse Nationale (api-adresse.data.gouv.fr).
+
+    Officiel, gratuit, sans clé et pensé pour le volume — fiable depuis une IP
+    datacenter (Scalingo), contrairement à Nominatim souvent bloqué/limité.
+    Couvre adresses ET communes (fallback ville/CP).
+    """
+    q = (query or "").replace(", France", "").strip()
+    if not q:
+        return None
+    params = urllib.parse.urlencode({"q": q, "limit": 1, "autocomplete": 0})
+    url = f"https://api-adresse.data.gouv.fr/search/?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Veliora-CRM/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("BAN geocode failed for %s: %s", q[:80], exc)
+        return None
+    feats = payload.get("features") or []
+    if not feats:
+        return None
+    coords = (feats[0].get("geometry") or {}).get("coordinates") or []
+    if len(coords) != 2:
+        return None
+    # GeoJSON : [lon, lat]
+    return float(coords[1]), float(coords[0])
+
+
 def _geocode_nominatim(query: str) -> tuple[float, float] | None:
     """Géocodage OpenStreetMap (sans clé API)."""
     params = urllib.parse.urlencode(
@@ -210,10 +239,14 @@ def geocode_query(query: str) -> tuple[float, float] | None:
     if cached:
         return cached
 
-    geo_key = google_geocoding_api_key()
-    coords = None
-    if geo_key:
-        coords = _geocode_google(q, geo_key)
+    # 1) BAN (officiel FR, gratuit, fiable depuis datacenter) en premier.
+    coords = _geocode_ban(q)
+    # 2) Google Geocoding si clé serveur configurée.
+    if not coords:
+        geo_key = google_geocoding_api_key()
+        if geo_key:
+            coords = _geocode_google(q, geo_key)
+    # 3) Nominatim en dernier repli.
     if not coords:
         coords = _geocode_nominatim(q)
     if not coords:
@@ -322,6 +355,7 @@ def build_map_payload(agency_id: str) -> dict:
 
     markers: list[dict] = []
     pending = 0
+    no_location = 0
     geocoded_this_run = 0
     needs_background_geocode: list[tuple[int, str]] = []
 
@@ -332,7 +366,8 @@ def build_map_payload(agency_id: str) -> dict:
         postcode = row["postcode"] if "postcode" in keys else None
         line = format_location_line(address, postcode, city)
         if not line:
-            pending += 1
+            # Ni adresse, ni ville, ni CP exploitables → impossible à placer.
+            no_location += 1
             continue
 
         coords = _lead_coords_from_row(row)
@@ -362,7 +397,14 @@ def build_map_payload(agency_id: str) -> dict:
         )
 
     if needs_background_geocode:
-        schedule_map_geocode_batch(agency_id, needs_background_geocode[:40])
+        schedule_map_geocode_batch(agency_id, needs_background_geocode[:120])
+
+    no_location_hint = None
+    if no_location:
+        no_location_hint = (
+            f"{no_location} annonce(s) sans adresse exploitable (ni rue, ni ville, ni CP) "
+            "— elles ne peuvent pas être placées. Recrawlez-les ou complétez la ville dans la fiche."
+        )
 
     return {
         "ok": True,
@@ -375,6 +417,7 @@ def build_map_payload(agency_id: str) -> dict:
             "total_leads": len(rows),
             "on_map": len(markers),
             "pending_geocode": pending,
+            "no_location": no_location,
             "geocoded_now": geocoded_this_run,
         },
         "hints": {
@@ -383,6 +426,7 @@ def build_map_payload(agency_id: str) -> dict:
             "google_key_set_osm_mode": bool(api_key) and not use_google_js,
             "no_agency_address": not (agency or {}).get("address_line"),
             "refresh_hint": pending > 0,
+            "no_location_hint": no_location_hint,
             "billing_hint": (
                 "Clé Google détectée : carte en OpenStreetMap (gratuit). "
                 "Pour Google Maps : activez la facturation GCP puis "
@@ -405,7 +449,6 @@ def schedule_map_geocode_batch(
     def _run() -> None:
         try:
             ensure_map_schema()
-            use_nominatim = not bool(google_geocoding_api_key())
             for lead_id, line in items:
                 try:
                     with get_connection() as conn:
@@ -418,8 +461,8 @@ def schedule_map_geocode_batch(
                     coords = geocode_query(line)
                     if coords:
                         _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
-                    if use_nominatim:
-                        time.sleep(1.05)
+                    # Throttle léger : BAN (FR) n'a pas la limite 1 req/s de Nominatim.
+                    time.sleep(0.12)
                 except Exception:
                     logger.exception("map geocode lead %s", lead_id)
         except Exception:
@@ -438,7 +481,6 @@ def geocode_map_leads_sync(
     ensure_map_schema()
     done = 0
     deadline = time.monotonic() + _GEOCODE_TIME_BUDGET_SEC
-    use_nominatim = not bool(google_geocoding_api_key())
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -449,7 +491,7 @@ def geocode_map_leads_sync(
             ORDER BY mandate_score DESC, score DESC
             LIMIT ?
             """,
-            (agency_id, max(1, min(max_items, 24))),
+            (agency_id, max(1, min(max_items, 60))),
         ).fetchall()
     for row in rows:
         if done >= max_items or time.monotonic() >= deadline:
@@ -463,8 +505,7 @@ def geocode_map_leads_sync(
         if coords:
             _save_lead_coords(int(row["id"]), agency_id, coords[0], coords[1])
             done += 1
-            if use_nominatim:
-                time.sleep(1.05)
+            time.sleep(0.12)
     return done
 
 

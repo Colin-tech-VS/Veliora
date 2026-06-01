@@ -6228,6 +6228,10 @@ function buildDrawerBodyHtml(lead) {
     </div>
     ${renderFactsVerificationHtml(lead)}
     ${buildDrawerDvfHtml(lead)}
+    <div class="drawer-section drawer-matches" id="drawer-matches" data-lead-id="${lead.id}">
+      <div class="drawer-section-title">Acquéreurs &amp; locataires compatibles</div>
+      <p class="drawer-matches-loading">Recherche de correspondances…</p>
+    </div>
     ${renderDrawerEstimatorCta(lead)}
     ${renderDrawerEditSection(lead)}
     <div class="drawer-section drawer-readonly-summary">
@@ -6377,6 +6381,71 @@ function openDrawer(id) {
     const body = document.getElementById("drawer-body");
     if (body) body.scrollTop = 0;
   });
+  loadDrawerMatches(lead);
+}
+
+const leadMatchCache = new Map();
+
+function renderLeadMatchesHtml(data) {
+  if (!data?.ok) return `<p class="drawer-matches-empty">Correspondances indisponibles.</p>`;
+  const c = data.counts || {};
+  const reco = data.recommended_transaction || "vente";
+  const recoLabel = reco === "location" ? "Location" : "Vente";
+  const alignedCls = data.aligned ? "match-reco--aligned" : "match-reco--switch";
+  const recoHtml = `
+    <div class="match-reco ${alignedCls}">
+      <span class="match-reco-badge">${escapeHtml(recoLabel)}</span>
+      <span class="match-reco-text">${escapeHtml(data.recommendation_reason || "")}</span>
+    </div>`;
+  const list = (data.top_matches || []).slice(0, 6);
+  if (!list.length) {
+    return `${recoHtml}<p class="drawer-matches-empty">Aucun acquéreur/locataire compatible dans votre base. Importez ou créez des profils acheteurs/locataires.</p>`;
+  }
+  const rows = list
+    .map((m) => {
+      const seg = m.segment === "locataire" ? "Locataire" : "Acquéreur";
+      const budget =
+        m.budget_min || m.budget_max
+          ? `${m.budget_min ? fmtEuro(m.budget_min) : "—"} – ${m.budget_max ? fmtEuro(m.budget_max) : "—"}`
+          : "Budget non précisé";
+      const reasons = (m.reasons || []).map((r) => `<span class="match-tag">${escapeHtml(r)}</span>`).join("");
+      const tel = (m.phone || "").replace(/\s/g, "");
+      const call = tel ? `<a class="btn btn-ghost btn-sm match-call" href="tel:${escapeAttr(tel)}">Appeler</a>` : "";
+      return `
+      <div class="match-row">
+        <div class="match-row-head">
+          <strong>${escapeHtml(m.name)}</strong>
+          <span class="match-score score-pill ${getScoreClass(m.score)}">${m.score}</span>
+        </div>
+        <div class="match-row-meta">${escapeHtml(seg)} · ${escapeHtml(budget)}</div>
+        <div class="match-row-tags">${reasons}</div>
+        ${call}
+      </div>`;
+    })
+    .join("");
+  const counts = `<p class="match-counts">${c.vente || 0} acquéreur(s) · ${c.location || 0} locataire(s) compatibles</p>`;
+  return `${recoHtml}${counts}<div class="match-list">${rows}</div>`;
+}
+
+async function loadDrawerMatches(lead) {
+  const fill = (html) => {
+    const box = document.getElementById("drawer-matches");
+    if (box && Number(box.dataset.leadId) === Number(lead.id)) {
+      const title = box.querySelector(".drawer-section-title")?.outerHTML || "";
+      box.innerHTML = title + html;
+    }
+  };
+  if (leadMatchCache.has(lead.id)) {
+    fill(renderLeadMatchesHtml(leadMatchCache.get(lead.id)));
+    return;
+  }
+  try {
+    const data = await api(`/leads/${lead.id}/matches`, { headers: getAuthHeaders() });
+    leadMatchCache.set(lead.id, data);
+    fill(renderLeadMatchesHtml(data));
+  } catch (err) {
+    fill(`<p class="drawer-matches-empty">${escapeHtml(err.message || "Erreur")}</p>`);
+  }
 }
 
 function closeDrawer() {
