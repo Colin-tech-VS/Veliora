@@ -218,6 +218,13 @@ CRAWL_PROXY_ROTATE_EACH_CRAWL = os.getenv("CRAWL_PROXY_ROTATE_EACH_CRAWL", "true
     "yes",
 )
 
+# Nouvelle IP dès qu'un portail renvoie anti-bot / Cloudflare (recommandé avec CRAWL_PROXIES).
+CRAWL_PROXY_ROTATE_ON_BLOCK = os.getenv("CRAWL_PROXY_ROTATE_ON_BLOCK", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Ne pas ouvrir Chrome pour « tester » les URLs ville avant le crawl.
 CRAWL_SKIP_CITY_PROBE = os.getenv("CRAWL_SKIP_CITY_PROBE", "true").strip().lower() in (
     "1",

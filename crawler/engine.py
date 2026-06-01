@@ -248,6 +248,9 @@ class CrawlerEngine:
 
             if CRAWL_PROXY_ROTATE_EACH_CRAWL:
                 begin_crawl_session(force_new=True)
+            from crawler.proxy_manager import reset_block_rotation_counter
+
+            reset_block_rotation_counter()
             self.refresh_adapters(agency_id)
             if job_type == "all_sources":
                 self._job_scan_all(job_id, city=city)
@@ -281,8 +284,9 @@ class CrawlerEngine:
                 self._dvf_queue.drain()
             self._dvf_queue = None
             self._agency_id = None
-            from crawler.proxy_manager import end_crawl_session
+            from crawler.proxy_manager import end_crawl_session, reset_block_rotation_counter
 
+            reset_block_rotation_counter()
             end_crawl_session()
             close_browser_session()
 
@@ -400,6 +404,9 @@ class CrawlerEngine:
 
             if CRAWL_PROXY_ROTATE_EACH_CRAWL:
                 begin_crawl_session(force_new=True)
+            from crawler.proxy_manager import reset_block_rotation_counter
+
+            reset_block_rotation_counter()
             pct = int(10 + (i / len(sources)) * 80)
             update_crawl_job(
                 job_id,

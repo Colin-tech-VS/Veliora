@@ -660,7 +660,7 @@ def _html_has_contact_hints(html: str) -> bool:
     )
 
 
-def fetch_page(
+def _fetch_page_once(
     url: str,
     *,
     scroll_lazy: bool = False,
@@ -669,13 +669,7 @@ def fetch_page(
     prefer_browser: bool = False,
     fast_mode: bool = False,
 ) -> FetchResult:
-    """
-    Stratégie anti-bot :
-    1. curl_cffi (empreinte TLS Chrome + cookies session)
-    2. Playwright furtif (scroll, cookies, challenges)
-    3. Playwright visible si bloqué
-    4. requests en dernier recours
-    """
+    """Un passage fetch (sans rotation proxy)."""
     if not prefer_browser and curl_cffi_available():
         html, detail = curl_fetch(url, referer=referer)
         if html:
@@ -716,3 +710,60 @@ def fetch_page(
             )
 
     return _fetch_requests(url)
+
+
+def _is_block_result(result: FetchResult) -> bool:
+    if result.error_code == CrawlError.SITE_BLOCKED:
+        return True
+    detail = (result.error_detail or "").lower()
+    return any(
+        x in detail
+        for x in ("403", "bloqu", "challenge", "cloudflare", "captcha", "restreint")
+    )
+
+
+def fetch_page(
+    url: str,
+    *,
+    scroll_lazy: bool = False,
+    click_contacts: bool = False,
+    referer: str | None = None,
+    prefer_browser: bool = False,
+    fast_mode: bool = False,
+    _block_retry: int = 0,
+) -> FetchResult:
+    """
+    Stratégie anti-bot :
+    1. curl_cffi (empreinte TLS Chrome + cookies session)
+    2. Playwright furtif (scroll, cookies, challenges)
+    3. requests en dernier recours
+    4. Si blocage et CRAWL_PROXIES : rotation IP + nouvel essai
+    """
+    result = _fetch_page_once(
+        url,
+        scroll_lazy=scroll_lazy,
+        click_contacts=click_contacts,
+        referer=referer,
+        prefer_browser=prefer_browser,
+        fast_mode=fast_mode,
+    )
+    if result.ok:
+        return result
+    if not _is_block_result(result):
+        return result
+
+    from crawler.proxy_manager import max_rotations_on_block, rotate_proxy_on_block
+
+    if _block_retry >= max_rotations_on_block():
+        return result
+    if rotate_proxy_on_block(result.error_detail or "blocked"):
+        return fetch_page(
+            url,
+            scroll_lazy=scroll_lazy,
+            click_contacts=click_contacts,
+            referer=referer,
+            prefer_browser=prefer_browser,
+            fast_mode=fast_mode,
+            _block_retry=_block_retry + 1,
+        )
+    return result
