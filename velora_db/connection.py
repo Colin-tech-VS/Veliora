@@ -144,6 +144,23 @@ def db_status() -> dict:
     }
 
 
+def row_scalar(row) -> int:
+    """Première colonne d'un fetchone() — SQLite (index 0) ou PostgreSQL (dict)."""
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        if not row:
+            return 0
+        for key in ("count", "c", "cnt", "n"):
+            if key in row and row[key] is not None:
+                return int(row[key])
+        return int(next(iter(row.values())) or 0)
+    try:
+        return int(row[0] or 0)
+    except (KeyError, TypeError, IndexError):
+        return int(list(row)[0] or 0) if row else 0
+
+
 def checkpoint_database() -> None:
     if is_postgres():
         return

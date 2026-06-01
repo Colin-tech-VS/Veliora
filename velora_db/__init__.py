@@ -6,6 +6,7 @@ from velora_db.connection import (
     checkpoint_database,
     db_status,
     get_connection,
+    row_scalar,
 )
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "db_status",
     "checkpoint_database",
     "backup_database",
+    "row_scalar",
     "is_postgres",
     "backend_name",
     "database_url_configured",

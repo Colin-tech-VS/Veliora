@@ -12,7 +12,7 @@ from pathlib import Path
 
 import os
 
-from velora_db import backup_database, checkpoint_database, db_status, get_connection
+from velora_db import backup_database, checkpoint_database, db_status, get_connection, row_scalar
 from velora_db.config import is_postgres, sqlite_path
 
 from crawler.adapters import DEFAULT_SOURCES
@@ -2246,29 +2246,39 @@ def get_activities(agency_id: str, limit: int = 20) -> list[dict]:
 
 def get_stats(agency_id: str) -> dict:
     with get_connection() as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE agency_id = ?", (agency_id,)
-        ).fetchone()[0]
-        sans_agence = conn.execute(
-            """SELECT COUNT(*) FROM leads
+        total = row_scalar(
+            conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE agency_id = ?", (agency_id,)
+            ).fetchone()
+        )
+        sans_agence = row_scalar(
+            conn.execute(
+                """SELECT COUNT(*) FROM leads
                WHERE agency_id = ?
                AND COALESCE(listing_type, type, 'particulier') != 'agence'""",
-            (agency_id,),
-        ).fetchone()[0]
-        nouveaux = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'nouveau'",
-            (agency_id,),
-        ).fetchone()[0]
-        mandats = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'mandat'",
-            (agency_id,),
-        ).fetchone()[0]
-        particuliers = conn.execute(
-            """SELECT COUNT(*) FROM leads
+                (agency_id,),
+            ).fetchone()
+        )
+        nouveaux = row_scalar(
+            conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'nouveau'",
+                (agency_id,),
+            ).fetchone()
+        )
+        mandats = row_scalar(
+            conn.execute(
+                "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'mandat'",
+                (agency_id,),
+            ).fetchone()
+        )
+        particuliers = row_scalar(
+            conn.execute(
+                """SELECT COUNT(*) FROM leads
                WHERE agency_id = ?
                AND COALESCE(listing_type, type, 'particulier') = 'particulier'""",
-            (agency_id,),
-        ).fetchone()[0]
+                (agency_id,),
+            ).fetchone()
+        )
         return {
             "total": total,
             "sans_agence": sans_agence,
