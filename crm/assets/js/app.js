@@ -32,6 +32,7 @@ const state = {
   leadsView: "table",
   searchQuery: "",
   selectedLead: null,
+  drawerEditExpanded: false,
   crawlerRunning: false,
   loading: false,
   pendingCrawlUrl: null,
@@ -613,6 +614,7 @@ function applyBootstrapPayload(data) {
     state.settings = normalizeSettingsPayload({ settings: data.settings });
     applyAgencyCityToCrawl();
   }
+  scheduleDrawerCacheWarm();
   return true;
 }
 
@@ -667,6 +669,7 @@ async function loadDataCore() {
   if (settingsResult.status === "rejected") {
     applyAgencyCityToCrawl();
   }
+  scheduleDrawerCacheWarm();
 }
 
 async function fetchRadarSummary() {
@@ -1385,6 +1388,7 @@ async function init() {
   setupFilters();
   setupViewToggle();
   setupDrawer();
+  setupDrawerPrefetch();
   setupEstimateur();
   setupLeadRefresh();
   setupLeadsActions();
@@ -2374,7 +2378,71 @@ function drawerFingerprint(lead) {
     lead.dvf_compared_at || "",
     lead.has_image ? 1 : 0,
     state.drawerShowAllFields ? 1 : 0,
+    state.drawerEditExpanded ? 1 : 0,
   ].join("|");
+}
+
+function prefetchDrawerHtml(lead) {
+  if (!lead) return;
+  const key = drawerFingerprint(lead);
+  if (drawerHtmlCache.has(key)) return;
+  drawerHtmlCacheSet(key, buildDrawerBodyHtml(lead));
+}
+
+function scheduleDrawerCacheWarm() {
+  if (!LEADS?.length) return;
+  const run = () => warmDrawerCache(36);
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 4000 });
+  } else {
+    setTimeout(run, 800);
+  }
+}
+
+function warmDrawerCache(limit = 32) {
+  const top = [...LEADS]
+    .sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0))
+    .slice(0, limit);
+  let i = 0;
+  const step = () => {
+    while (i < top.length && i < 6) {
+      prefetchDrawerHtml(top[i++]);
+    }
+    if (i < top.length) {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(step, { timeout: 2000 });
+      } else {
+        setTimeout(step, 16);
+      }
+    }
+  };
+  step();
+}
+
+let drawerPrefetchTimer = null;
+let drawerPrefetchLeadId = null;
+
+function scheduleDrawerPrefetch(leadId) {
+  if (!leadId || drawerPrefetchLeadId === leadId) return;
+  drawerPrefetchLeadId = leadId;
+  clearTimeout(drawerPrefetchTimer);
+  drawerPrefetchTimer = setTimeout(() => {
+    const lead = LEADS.find((l) => l.id === leadId);
+    prefetchDrawerHtml(lead);
+  }, 50);
+}
+
+function setupDrawerPrefetch() {
+  const onOver = (e) => {
+    const el = e.target.closest(
+      "tr[data-id], .lead-card[data-id], .pipeline-card[data-id], .radar-priority-row[data-id], .crm-hero-featured-inner[data-id], #dashboard-top-leads tr[data-id]",
+    );
+    if (!el?.dataset?.id) return;
+    scheduleDrawerPrefetch(parseInt(el.dataset.id, 10));
+  };
+  document.getElementById("view-leads")?.addEventListener("mouseover", onOver);
+  document.getElementById("view-pipeline")?.addEventListener("mouseover", onOver);
+  document.getElementById("view-dashboard")?.addEventListener("mouseover", onOver);
 }
 
 function drawerHtmlCacheSet(key, html) {
@@ -2472,6 +2540,13 @@ function setupDrawer() {
     if (e.target.closest("#drawer-image-sync")) {
       e.preventDefault();
       syncDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-expand-edit")) {
+      e.preventDefault();
+      state.drawerEditExpanded = true;
+      invalidateDrawerCache(lead.id);
+      refreshDrawerBodyContent(lead);
       return;
     }
     if (e.target.closest("#drawer-toggle-all-fields")) {
@@ -2990,10 +3065,22 @@ function renderDrawerEditFieldInput(def, lead) {
 
 function renderDrawerEditSection(lead) {
   const defs = DRAWER_EDIT_FIELD_DEFS.filter((d) => !d.when || d.when(lead));
+  const missingCount = defs.filter((d) => isDrawerFieldEmpty(lead, d.key)).length;
+
+  if (!state.drawerEditExpanded) {
+    const label =
+      missingCount > 0
+        ? `Compléter la fiche (${missingCount} champ${missingCount > 1 ? "s" : ""} manquant${missingCount > 1 ? "s" : ""})`
+        : "Modifier les champs de la fiche";
+    return `
+    <div class="drawer-section drawer-edit-section drawer-edit-section--collapsed">
+      <button type="button" class="btn btn-secondary btn-sm btn-block" id="drawer-expand-edit">${escapeHtml(label)}</button>
+    </div>`;
+  }
+
   const visible = state.drawerShowAllFields
     ? defs
     : defs.filter((d) => isDrawerFieldEmpty(lead, d.key));
-  const missingCount = defs.filter((d) => isDrawerFieldEmpty(lead, d.key)).length;
 
   let fieldsHtml = "";
   if (!visible.length) {
@@ -3053,6 +3140,7 @@ async function saveDrawerLeadFields(leadId) {
       state.selectedLead = result.lead;
       const section = document.querySelector(".drawer-edit-section");
       if (section) {
+        state.drawerEditExpanded = true;
         invalidateDrawerCache(leadId);
         refreshDrawerBodyContent(result.lead);
       }
@@ -4935,10 +5023,6 @@ function renderDashboardTopLeads() {
       <td><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}</span></td>
       <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
     </tr>`).join("");
-
-  container.querySelectorAll("tr").forEach((row) => {
-    row.addEventListener("click", () => openDrawer(parseInt(row.dataset.id)));
-  });
 }
 
 function getLeadDeleteButtonHtml(lead) {
@@ -5878,7 +5962,7 @@ function buildDrawerDvfHtml(lead) {
 function buildDrawerLeadImageHtml(lead) {
   const url = leadImageUrl(lead);
   const imgBlock = url
-    ? `<img class="drawer-lead-image-img" id="drawer-lead-img" src="${escapeHtml(url)}" alt="Photo du bien" decoding="async">`
+    ? `<img class="drawer-lead-image-img" id="drawer-lead-img" src="${escapeHtml(url)}" alt="Photo du bien" decoding="async" fetchpriority="high">`
     : `<div class="drawer-lead-image-placeholder" id="drawer-lead-img-placeholder">Aucune photo — recrawlez l’annonce ou importez une image</div>`;
   const revertDisabled = !lead.image_custom && !lead.has_image ? " disabled" : "";
   return `
@@ -6091,7 +6175,10 @@ function openDrawer(id) {
   if (!lead) return;
 
   const sameLead = state.selectedLead?.id === id;
-  if (!sameLead) state.drawerShowAllFields = false;
+  if (!sameLead) {
+    state.drawerShowAllFields = false;
+    state.drawerEditExpanded = false;
+  }
   state.selectedLead = lead;
 
   const overlay = document.getElementById("drawer-overlay");
@@ -6099,19 +6186,20 @@ function openDrawer(id) {
   overlay.classList.add("open");
   drawerEl.classList.add("open");
 
-  updateDrawerChrome(lead);
-
   const cacheKey = drawerFingerprint(lead);
   const cached = drawerHtmlCache.get(cacheKey);
-  const body = document.getElementById("drawer-body");
   if (cached) {
     setDrawerBodyHtml(lead, cached);
-    return;
+  } else {
+    refreshDrawerBodyContent(lead);
+    prefetchDrawerHtml(lead);
   }
 
-  body.innerHTML = `<div class="drawer-loading drawer-loading--pulse">Ouverture…</div>`;
+  updateDrawerPipelineButtons(lead);
   requestAnimationFrame(() => {
-    refreshDrawerBodyContent(lead);
+    updateDrawerChrome(lead);
+    const body = document.getElementById("drawer-body");
+    if (body) body.scrollTop = 0;
   });
 }
 

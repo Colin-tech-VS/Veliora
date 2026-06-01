@@ -3753,7 +3753,8 @@ tr.lead-row-flash td {
   z-index: var(--z-drawer-overlay);
   opacity: 0;
   visibility: hidden;
-  transition: opacity var(--duration-fast) var(--ease-out), visibility var(--duration-fast);
+  transition: opacity 0.12s ease-out, visibility 0.12s;
+  pointer-events: none;
 }
 
 @media (min-width: 769px) {
@@ -3765,6 +3766,7 @@ tr.lead-row-flash td {
 .drawer-overlay.open {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
 }
 
 .drawer {
@@ -3779,16 +3781,28 @@ tr.lead-row-flash td {
   box-shadow: var(--shadow-lg);
   z-index: var(--z-drawer);
   transform: translateX(100%);
-  transition: transform 0.28s var(--ease-out);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  will-change: transform;
   contain: layout style;
 }
 
 .drawer.open {
   transform: translateX(0);
+}
+
+.drawer-edit-section--collapsed {
+  padding: 0.25rem 0;
+}
+
+.drawer-edit-section--collapsed .btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+#lead-drawer .drawer-body {
+  contain: content;
 }
 
 .drawer-header {
