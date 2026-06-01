@@ -217,14 +217,7 @@
       typeof formatPrice === "function"
         ? formatPrice(m)
         : `${Number(m.price || 0).toLocaleString("fr-FR")} €`;
-    return `<strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · Score ${m.mandate_score || m.score || 0}<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button>`;
-  }
-
-  function wirePopupButton(container) {
-    container?.querySelector(".map-infowindow-btn")?.addEventListener("click", (e) => {
-      const id = parseInt(e.currentTarget.dataset.leadId, 10);
-      if (id && deps().openDrawer) deps().openDrawer(id);
-    });
+    return `<div class="map-infowindow"><strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · Score ${m.mandate_score || m.score || 0}<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button></div>`;
   }
 
   function filteredMarkers() {
@@ -314,7 +307,6 @@
         marker.addListener("click", () => {
           state.infoWindow.setContent(popupHtml(m));
           state.infoWindow.open({ anchor: marker, map: state.map });
-          setTimeout(() => wirePopupButton(document.querySelector(".map-infowindow")), 0);
         });
         state.leadMarkers.push(marker);
       });
@@ -328,7 +320,6 @@
           fillOpacity: 1,
         }).addTo(state.map);
         marker.bindPopup(popupHtml(m));
-        marker.on("popupopen", (ev) => wirePopupButton(ev.popup.getElement()));
         state.leadMarkers.push(marker);
       });
     }
@@ -713,6 +704,17 @@
   }
 
   wireControls();
+
+  // Filet de sécurité : la popup Google (InfoWindow) est rendue dans un DOM
+  // détaché et le câblage par popup peut rater (timing / conteneur). Une
+  // délégation globale garantit que « Ouvrir la fiche » fonctionne toujours.
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest?.(".map-infowindow-btn");
+    if (!btn) return;
+    e.preventDefault();
+    const id = parseInt(btn.dataset.leadId, 10);
+    if (id && deps().openDrawer) deps().openDrawer(id);
+  });
 
   function resize() {
     if (!state.map) return;
