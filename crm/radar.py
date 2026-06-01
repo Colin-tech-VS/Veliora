@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -529,8 +530,9 @@ def build_briefing(
 
 
 def call_script_for_lead(lead: dict) -> str:
-    """Script d'appel contextuel (texte)."""
-    return build_call_script(lead)["full_text"]
+    """Script d'appel contextuel (texte brut, sans markdown)."""
+    script = build_call_script(lead)
+    return script.get("full_text_plain") or _plain_script_text(script.get("full_text") or "")
 
 
 def detect_lead_scenario(lead: dict) -> str:
@@ -709,9 +711,9 @@ SCRIPT_TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "dvf_sous_marche": {
-        "hook": "votre prix au m² semble en dessous des ventes récentes enregistrées dans le quartier (données DVF)",
-        "value": "une estimation professionnelle permet de ne pas laisser de marge sur la table tout en restant compétitif",
-        "closing": "Puis-je vous proposer un rendez-vous cette semaine pour affiner ce positionnement ?",
+        "hook": "votre prix au m² semble en retrait par rapport aux ventes récentes du quartier",
+        "value": "une estimation professionnelle permet de calibrer le bon prix sans laisser d'argent sur la table",
+        "closing": "Seriez-vous disponible cette semaine pour un rendez-vous d'estimation, sans engagement ?",
         "objections": [
             ("Mon prix est déjà bas", "C'est justement ce qui attire les acheteurs — vérifions ensemble que vous ne vendez pas en dessous du marché réel."),
             ("Je veux vendre vite", "On peut viser la rapidité sans brader — le bon prix attire les bonnes offres en moins de délais."),
@@ -760,37 +762,233 @@ SCRIPT_TEMPLATES: dict[str, dict[str, Any]] = {
 }
 
 
+_STREET_IN_ADDRESS_RE = re.compile(
+    r"\b\d{1,4}\s+(?:rue|avenue|av\.?|bd|boulevard|chemin|impasse|route|allée|place|cours|quai)\b",
+    re.IGNORECASE,
+)
+
+
+def _bold(text: str) -> str:
+    t = (text or "").strip()
+    return f"**{t}**" if t else ""
+
+
+def _plain_script_text(text: str) -> str:
+    return re.sub(r"\*\*([^*]+)\*\*", r"\1", text or "")
+
+
+def _fmt_int_fr(n: int | float) -> str:
+    return f"{int(n):,}".replace(",", " ")
+
+
+def _guess_property_type_word(lead: dict) -> str:
+    for src in (
+        lead.get("listing_title"),
+        lead.get("property_title"),
+        lead.get("property"),
+        lead.get("address"),
+    ):
+        s = str(src or "")
+        m = re.search(
+            r"\b(appartement|maison|studio|villa|loft|duplex|terrain|local|bureau|immeuble|parking)\b",
+            s,
+            re.I,
+        )
+        if m:
+            return m.group(1).lower()
+    try:
+        surf = lead.get("surface")
+        if surf is not None:
+            sf = float(surf)
+            if sf < 45:
+                return "studio"
+            if sf > 120:
+                return "maison"
+    except (TypeError, ValueError):
+        pass
+    return "bien"
+
+
+def _is_city_only_address(addr: str, city: str, postcode: str) -> bool:
+    a = (addr or "").strip()
+    if not a or a in ("—", "-"):
+        return True
+    if _STREET_IN_ADDRESS_RE.search(a):
+        return False
+    c = (city or "").strip()
+    pc = (postcode or "").strip()
+    if c and re.match(rf"^{re.escape(c)}\b", a, re.I):
+        return True
+    if pc and pc in a:
+        return True
+    if re.match(r"^[A-Za-zÀ-ÿ\s\-']+\s*\(\d{5}\)\s*$", a):
+        return True
+    return False
+
+
+def property_reference_for_script(lead: dict) -> str:
+    """Libellé naturel du bien pour l'accroche (pas l'adresse brute type « Lorient (56100) »)."""
+    from crawler.hub_detection import is_hub_listing_address, is_listing_title_name
+
+    city = (lead.get("city") or lead.get("dvf_commune") or "").strip()
+    postcode = (lead.get("postcode") or "").strip()
+    ptype = _guess_property_type_word(lead)
+
+    for key in ("property_title", "listing_title"):
+        title = (lead.get(key) or "").strip()
+        if (
+            not title
+            or title in ("—", "-")
+            or is_hub_listing_address(title)
+            or is_listing_title_name(title)
+        ):
+            continue
+        if " · " in title:
+            type_word, loc = title.split(" · ", 1)
+            return f"votre {type_word.strip().lower()} à {loc.strip()}"
+        if not _is_city_only_address(title, city, postcode):
+            return f"votre annonce « {title[:80]} »"
+
+    addr = (lead.get("address") or "").strip()
+    if addr and not is_hub_listing_address(addr) and not _is_city_only_address(addr, city, postcode):
+        return f"votre {ptype} situé {addr[:100]}"
+
+    loc = city or "votre secteur"
+    if city and postcode:
+        loc = f"{city} ({postcode})"
+    return f"votre {ptype} à {loc}"
+
+
+def _natural_signal_phrase(lead: dict, scenario: str) -> str:
+    """Observation en langage parlé — jamais la raison technique du score (tags · tags)."""
+    tags = set(lead.get("alert_tags") or [])
+    phrases: list[str] = []
+
+    if "sans_agence" in tags:
+        phrases.append("vous vendez en direct, sans passer par une agence")
+    if "baisse_prix" in tags:
+        phrases.append("vous avez récemment ajusté votre prix")
+    elif "ancienne" in tags:
+        days = lead.get("days_on_market")
+        if days:
+            phrases.append(f"votre annonce est en ligne depuis environ {days} jours")
+        else:
+            phrases.append("votre annonce est en ligne depuis un moment")
+    elif "nouveau" in tags and "sans_agence" in tags:
+        phrases.append("vous venez de publier votre annonce en particulier")
+    elif "dvf_sous_marche" in tags and not lead.get("dvf_median_m2"):
+        phrases.append("votre prix semble en retrait par rapport aux ventes récentes du secteur")
+
+    if phrases:
+        if len(phrases) == 1:
+            return phrases[0]
+        return f"{phrases[0]} et {phrases[1]}"
+
+    tpl = SCRIPT_TEMPLATES.get(scenario, SCRIPT_TEMPLATES["default"])
+    return tpl["hook"]
+
+
+def _dvf_observation_sentence(lead: dict) -> str | None:
+    """Phrase DVF correcte (écart annonce vs médiane, pas l'inverse)."""
+    median = lead.get("dvf_median_m2")
+    if not median:
+        return None
+
+    verdict = lead.get("dvf_verdict") or ""
+    try:
+        delta_f = float(lead.get("dvf_delta_pct")) if lead.get("dvf_delta_pct") is not None else None
+    except (TypeError, ValueError):
+        delta_f = None
+
+    med_s = _fmt_int_fr(median)
+    listing_m2 = None
+    price, surface = lead.get("price"), lead.get("surface")
+    try:
+        if price and surface and float(surface) > 0:
+            listing_m2 = round(float(price) / float(surface))
+    except (TypeError, ValueError):
+        listing_m2 = None
+
+    if verdict in ("sous_marche", "leger_sous_marche") and delta_f is not None and delta_f < 0:
+        pct = abs(round(delta_f))
+        if listing_m2:
+            return (
+                f"D'après les ventes récentes du quartier ({_bold('données DVF')}), "
+                f"la médiane locale est d'environ {_bold(f'{med_s} €/m²')}, "
+                f"tandis que votre annonce est affichée à environ {_bold(f'{_fmt_int_fr(listing_m2)} €/m²')} "
+                f"— soit environ {_bold(f'{pct} %')} en dessous de ce repère marché."
+            )
+        return (
+            f"D'après les ventes récentes du quartier ({_bold('données DVF')}), "
+            f"le marché tourne autour de {_bold(f'{med_s} €/m²')} ; "
+            f"votre prix affiché semble environ {_bold(f'{pct} %')} en dessous de cette médiane."
+        )
+
+    if verdict in ("surmarche", "leger_surmarche") and delta_f is not None and delta_f > 0:
+        pct = round(delta_f)
+        return (
+            f"Les ventes récentes ({_bold('DVF')}) situent la médiane à environ {_bold(f'{med_s} €/m²')} ; "
+            f"votre annonce est environ {_bold(f'{pct} %')} au-dessus de ce niveau."
+        )
+
+    if verdict == "aligne":
+        return (
+            f"Les ventes récentes du quartier ({_bold('DVF')}) tournent autour de "
+            f"{_bold(f'{med_s} €/m²')}, proche de votre prix affiché."
+        )
+
+    return None
+
+
+def _build_observation(lead: dict, scenario: str, tpl: dict[str, Any]) -> str:
+    city = (lead.get("city") or lead.get("dvf_commune") or "").strip()
+    place = f"à {city}" if city else "sur votre secteur"
+    signal = _natural_signal_phrase(lead, scenario)
+
+    parts: list[str] = []
+    if signal and signal != tpl.get("hook"):
+        parts.append(f"En préparant mes appels {place}, j'ai repéré votre annonce : {signal}.")
+    else:
+        hook = (tpl.get("hook") or "").strip()
+        if hook:
+            parts.append(f"En préparant mes appels {place}, j'ai noté que {hook}.")
+
+    dvf_line = _dvf_observation_sentence(lead)
+    if dvf_line:
+        parts.append(dvf_line)
+    elif scenario == "dvf_sous_marche" and tpl.get("hook"):
+        parts.append(tpl["hook"][0].upper() + tpl["hook"][1:] + ".")
+
+    return " ".join(p for p in parts if p).strip()
+
+
 def build_call_script(lead: dict) -> dict[str, Any]:
-    """Script structuré + texte complet pour un prospect."""
+    """Script structuré + texte complet pour un prospect (markdown **gras**)."""
     scenario = detect_lead_scenario(lead)
     tpl = SCRIPT_TEMPLATES.get(scenario, SCRIPT_TEMPLATES["default"])
     caller = lead.get("_caller") or "votre conseiller"
     agency = lead.get("_agency") or "l'agence"
-    addr = lead.get("address") or "votre bien"
-    reason = lead.get("mandate_score_reason") or tpl["hook"]
     city = lead.get("city") or lead.get("dvf_commune") or ""
+    prop_ref = property_reference_for_script(lead)
 
     opening = (
-        f"Bonjour, je suis {caller} de {agency}. "
-        f"Je me permets de vous appeler concernant {addr}."
+        f"Bonjour, je suis {_bold(caller)} de {_bold(agency)}. "
+        f"Je me permets de vous appeler au sujet de {_bold(prop_ref)}."
     )
-    observation = f"J'ai remarqué que {reason.lower()} — {tpl['hook']}."
-    if lead.get("dvf_verdict") in ("sous_marche", "leger_sous_marche") and lead.get("dvf_median_m2"):
-        delta = lead.get("dvf_delta_pct") or 0
-        observation += (
-            f" D'après les ventes récentes (DVF), le marché local tourne autour de "
-            f"{int(lead['dvf_median_m2']):,} €/m² — soit environ {abs(int(delta))} % "
-            f"{'en dessous' if delta < 0 else 'au-dessus'} de votre annonce.".replace(",", " ")
-        )
-    value = f"Chez nous, {tpl['value']}."
+    observation = _build_observation(lead, scenario, tpl)
+    val = (tpl.get("value") or "").strip()
+    value = f"Concrètement : **{val[0].upper()}{val[1:]}**." if val else ""
     closing = tpl["closing"]
 
-    full_text = "\n\n".join([opening, observation, value, closing])
+    sections = [opening, observation, value, closing]
+    full_text = "\n\n".join(sections)
+    full_text_plain = "\n\n".join(_plain_script_text(s) for s in sections)
     advice = _advice_for_lead(lead, scenario)
 
     return {
         "scenario": scenario,
         "scenario_label": SCENARIO_LABELS.get(scenario, SCENARIO_LABELS["default"]),
+        "property_reference": prop_ref,
         "opening": opening,
         "observation": observation,
         "value": value,
@@ -798,6 +996,7 @@ def build_call_script(lead: dict) -> dict[str, Any]:
         "objections": [{"q": q, "a": a} for q, a in tpl.get("objections", [])],
         "advice": advice,
         "full_text": full_text,
+        "full_text_plain": full_text_plain,
         "city": city,
     }
 

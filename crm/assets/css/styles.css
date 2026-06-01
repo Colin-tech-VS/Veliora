@@ -3593,6 +3593,12 @@ body:has(.crawl-dock.open) .script-panel.open {
   margin-bottom: 0.65rem;
 }
 
+.script-panel-body strong,
+.playbook-script-step strong {
+  font-weight: 700;
+  color: var(--text, #0f172a);
+}
+
 .script-panel-footer {
   display: flex;
   flex-wrap: wrap;

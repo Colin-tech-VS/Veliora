@@ -808,11 +808,19 @@ function setupMobileNav() {
 
 function scriptCopyText(script) {
   if (!script) return "";
-  if (typeof script === "string") return script;
-  if (script.full_text) return script.full_text;
+  if (typeof script === "string") return script.replace(/\*\*([^*]+)\*\*/g, "$1");
+  if (script.full_text_plain) return script.full_text_plain;
+  if (script.full_text) return script.full_text.replace(/\*\*([^*]+)\*\*/g, "$1");
   return [script.opening, script.observation, script.value, script.closing]
     .filter(Boolean)
+    .map((s) => String(s).replace(/\*\*([^*]+)\*\*/g, "$1"))
     .join("\n\n");
+}
+
+/** Affiche le script avec **gras** → <strong> */
+function formatScriptRichText(text) {
+  if (!text) return "";
+  return escapeHtml(String(text)).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 }
 
 function buildScriptPanelHtml(script) {
@@ -821,7 +829,7 @@ function buildScriptPanelHtml(script) {
     return script
       .split("\n")
       .filter((l) => l.trim())
-      .map((l) => `<p class="script-panel-p">${escapeHtml(l)}</p>`)
+      .map((l) => `<p class="script-panel-p">${formatScriptRichText(l)}</p>`)
       .join("");
   }
   const steps = [
@@ -833,7 +841,7 @@ function buildScriptPanelHtml(script) {
   let html = steps
     .map(
       ([n, t]) =>
-        `<div class="playbook-script-step"><span>${n}</span><p>${escapeHtml(t)}</p></div>`,
+        `<div class="playbook-script-step"><span>${n}</span><p>${formatScriptRichText(t)}</p></div>`,
     )
     .join("");
   if (script.advice?.length) {
@@ -4231,10 +4239,10 @@ function renderPlaybookOpportunities() {
         <div class="playbook-opp-tags">${tags}</div>
         ${advice ? `<ul class="playbook-advice">${advice}</ul>` : ""}
         <div class="playbook-script">
-          <div class="playbook-script-step"><span>1</span><p>${escapeHtml(script.opening || "")}</p></div>
-          <div class="playbook-script-step"><span>2</span><p>${escapeHtml(script.observation || "")}</p></div>
-          <div class="playbook-script-step"><span>3</span><p>${escapeHtml(script.value || "")}</p></div>
-          <div class="playbook-script-step"><span>4</span><p>${escapeHtml(script.closing || "")}</p></div>
+          <div class="playbook-script-step"><span>1</span><p>${formatScriptRichText(script.opening || "")}</p></div>
+          <div class="playbook-script-step"><span>2</span><p>${formatScriptRichText(script.observation || "")}</p></div>
+          <div class="playbook-script-step"><span>3</span><p>${formatScriptRichText(script.value || "")}</p></div>
+          <div class="playbook-script-step"><span>4</span><p>${formatScriptRichText(script.closing || "")}</p></div>
         </div>
         ${(script.objections || []).length ? `
           <details class="playbook-opp-objections">
