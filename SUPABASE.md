@@ -83,7 +83,44 @@ Vous pouvez **retirer** le volume disque SQLite (`VELIORA_DB_PATH`) : tout est s
 
 - Ne commitez **jamais** `.env` ni le mot de passe DB
 - Supabase : **Settings** → **Database** → rotate password si fuite
-- Row Level Security (RLS) : non activé par défaut — l’app Flask filtre par `agency_id` (comme en SQLite)
+
+### Tables « Unrestricted » → activer la RLS
+
+Dans le dashboard, les tables sans **Row Level Security** sont marquées
+**« Unrestricted »**. Tant que la RLS est désactivée, toute personne disposant
+de l'URL du projet + la clé `anon` peut lire/écrire **toutes** les données via
+l'API REST auto-générée (PostgREST). L'app Veliora, elle, se connecte en direct
+au Postgres avec le rôle privilégié du pooler (qui **contourne** la RLS) — donc
+activer la RLS **ne casse pas l'app** et ferme l'accès anonyme.
+
+**Correctif (1 min)** : Dashboard → **SQL Editor** → coller
+[`scripts/supabase_enable_rls.sql`](scripts/supabase_enable_rls.sql) → **Run**.
+Les tables ne sont alors plus « Unrestricted », et l'app continue de fonctionner.
+
+## Usage / quota dépassé (« exceeding usage »)
+
+Le plan Free Supabase plafonne surtout : **taille de base 500 Mo**, **egress
+~5 Go/mois**, et la base est mise en pause après inactivité prolongée.
+
+Où regarder : **Dashboard → Reports / Usage** (voir quelle métrique dépasse :
+*Database size*, *Egress*, *Compute*).
+
+Causes probables côté Veliora et leviers :
+
+| Cause | Levier |
+|-------|--------|
+| Table `crawl_logs` qui gonfle (1 ligne par URL crawlée) | Purge automatique désormais en place (garde 5000 lignes, `CRAWL_LOG_KEEP`). Pour repartir propre : `DELETE FROM crawl_logs;` dans SQL Editor. |
+| `lead_price_history`, `lead_outcomes`, `geocode_cache` volumineux | `geocode_cache` est réutilisable (à garder) ; purger l'historique ancien si besoin. |
+| Egress : polling du crawl + listes rechargées | Le polling n'est actif que pendant un crawl ; éviter de laisser un crawl tourner en boucle. |
+| Pool de connexions saturé | Déjà corrigé (commits récents) — utiliser le pooler **Transaction** port `6543`. |
+
+> Les **images d'annonces ne sont PAS dans Supabase** (stockées en fichiers
+> `data/lead_images/*.webp`) — elles ne comptent pas dans le quota DB. Note :
+> sur Scalingo le disque est éphémère, ces images sont reperdues à chaque
+> redéploiement (sujet distinct du quota Supabase).
+
+> Astuce taille : `SELECT pg_size_pretty(pg_total_relation_size('crawl_logs'));`
+> pour voir le poids d'une table dans le SQL Editor.
 
 ## Dépannage
 

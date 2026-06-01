@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import date, datetime, timezone
@@ -1538,6 +1539,28 @@ def add_activity(type_: str, text: str, agency_id: str | None = None) -> None:
         conn.commit()
 
 
+_crawl_log_lock = threading.Lock()
+_crawl_log_since_prune = 0
+# Plafond de rétention : crawl_logs grossissait sans limite (1 ligne par URL
+# crawlée) → poids Postgres inutile (Supabase facture la taille de base).
+_CRAWL_LOG_KEEP = int(os.getenv("CRAWL_LOG_KEEP", "5000"))
+_CRAWL_LOG_PRUNE_EVERY = 250
+
+
+def prune_crawl_logs(keep: int = _CRAWL_LOG_KEEP) -> None:
+    """Ne conserve que les `keep` lignes les plus récentes de crawl_logs."""
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "DELETE FROM crawl_logs "
+                "WHERE id <= (SELECT MAX(id) FROM crawl_logs) - ?",
+                (keep,),
+            )
+            conn.commit()
+    except Exception:
+        logger.debug("prune_crawl_logs ignoré", exc_info=True)
+
+
 def add_crawl_log(
     source_id: str | None,
     url: str,
@@ -1552,6 +1575,17 @@ def add_crawl_log(
             (job_id, source_id, url, status, message, _now()),
         )
         conn.commit()
+
+    # Purge throttlée (1 fois toutes les N insertions) pour borner la taille.
+    global _crawl_log_since_prune
+    due = False
+    with _crawl_log_lock:
+        _crawl_log_since_prune += 1
+        if _crawl_log_since_prune >= _CRAWL_LOG_PRUNE_EVERY:
+            _crawl_log_since_prune = 0
+            due = True
+    if due:
+        prune_crawl_logs()
 
 
 def get_crawl_logs_for_job(job_id: str, limit: int = 80) -> list[dict]:
