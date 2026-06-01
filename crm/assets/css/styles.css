@@ -6130,10 +6130,13 @@ body:has(.crawl-dock.open) .script-dock.open {
 .map-canvas-wrap {
   flex: 1;
   min-height: 420px;
+  height: min(65vh, 560px);
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
+  position: relative;
+  background: #e8e4dc;
 }
 
 .map-canvas-wrap.has-setup-banner {

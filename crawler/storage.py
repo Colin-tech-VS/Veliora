@@ -1442,6 +1442,18 @@ def _schedule_lead_image_after_save(
         )
     except Exception:
         logger.exception("schedule lead image %s", lead_id)
+    try:
+        from crm.maps.service import schedule_lead_geocode
+
+        schedule_lead_geocode(
+            lead_id,
+            agency_id,
+            lead.address,
+            getattr(lead, "postcode", None),
+            getattr(lead, "city", None),
+        )
+    except Exception:
+        logger.exception("schedule lead geocode %s", lead_id)
 
 
 def add_activity(type_: str, text: str, agency_id: str | None = None) -> None:

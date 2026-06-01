@@ -69,15 +69,52 @@
         const link = document.createElement("link");
         link.id = "leaflet-css";
         link.rel = "stylesheet";
-        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        link.href = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css";
         document.head.appendChild(link);
       }
+      const existing = document.getElementById("leaflet-js");
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        existing.addEventListener("error", () => reject(new Error("Impossible de charger la carte (Leaflet bloqué)")), {
+          once: true,
+        });
+        return;
+      }
       const s = document.createElement("script");
-      s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      s.id = "leaflet-js";
+      s.src = "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js";
       s.onload = () => resolve();
-      s.onerror = () => reject(new Error("Leaflet"));
+      s.onerror = () => reject(new Error("Impossible de charger la carte (réseau ou pare-feu)"));
       document.head.appendChild(s);
     });
+  }
+
+  function resetMapContainer() {
+    if (state.map?.remove) {
+      try {
+        state.map.remove();
+      } catch {
+        /* ignore */
+      }
+      state.map = null;
+    }
+    state.agencyMarker = null;
+    state.userMarker = null;
+    clearLeadMarkers();
+    const el = document.getElementById("map-canvas");
+    if (el && el._leaflet_id) {
+      delete el._leaflet_id;
+      el.innerHTML = "";
+    }
+  }
+
+  function mapErrorMessage(err) {
+    if (!err) return "Carte indisponible";
+    const msg = err.message || String(err);
+    if (!msg || msg === "0") {
+      return "Carte indisponible — vérifiez votre connexion ou réessayez Actualiser";
+    }
+    return msg;
   }
 
   function setStatus(html) {
@@ -93,7 +130,7 @@
     if (pending) {
       if (stats.pending_geocode > 0) {
         pending.hidden = false;
-        pending.textContent = `${stats.pending_geocode} en attente de placement — cliquez Actualiser`;
+        pending.textContent = `${stats.pending_geocode} adresse(s) en cours de placement — cliquez Actualiser dans quelques secondes`;
       } else {
         pending.hidden = true;
       }
@@ -299,8 +336,9 @@
 
   function initOsmMap() {
     const el = document.getElementById("map-canvas");
-    if (!el || !window.L) return;
-    if (state.map?.remove) state.map.remove();
+    if (!el || !window.L) {
+      throw new Error("Carte OpenStreetMap non initialisée");
+    }
     state.map = L.map(el, { zoomControl: true }).setView([46.6, 2.4], 6);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap",
@@ -310,18 +348,54 @@
   }
 
   async function initMapInstance(data) {
-    const useGoogle = data.maps_provider === "google" && data.maps_api_key;
-    state.provider = useGoogle ? "google" : "osm";
+    resetMapContainer();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    if (useGoogle) {
-      await loadGoogleMaps(data.maps_api_key);
-      initGoogleMap();
-    } else {
-      await loadLeaflet();
-      initOsmMap();
+    const wantGoogle = data.maps_provider === "google" && data.maps_api_key;
+    let lastErr = null;
+
+    if (wantGoogle) {
+      try {
+        await loadGoogleMaps(data.maps_api_key);
+        state.provider = "google";
+        initGoogleMap();
+      } catch (err) {
+        lastErr = err;
+        resetMapContainer();
+      }
     }
+
+    if (!state.map) {
+      try {
+        await loadLeaflet();
+        state.provider = "osm";
+        initOsmMap();
+      } catch (err) {
+        throw lastErr || err;
+      }
+    }
+
+    if (!state.map) {
+      throw new Error("Impossible d’afficher la carte");
+    }
+
     placeAgencyMarker();
     renderLeadMarkers();
+
+    setTimeout(() => {
+      if (state.provider === "google" && window.google?.maps) {
+        google.maps.event.trigger(state.map, "resize");
+      } else if (state.map?.invalidateSize) {
+        state.map.invalidateSize(true);
+      }
+      fitMapBounds();
+    }, 150);
+  }
+
+  async function fetchMapData() {
+    const { api: apiFn } = deps();
+    if (!apiFn) throw new Error("API indisponible");
+    return apiFn("/map", { timeoutMs: 45000 });
   }
 
   function locateUser() {
@@ -430,28 +504,42 @@
     state.loading = true;
     setStatus("Chargement de la carte…");
     try {
-      const data = await deps().api("/map");
+      const data = await fetchMapData();
+      if (data.ok === false) throw new Error(data.error || "Carte indisponible");
       if (data.error) throw new Error(data.error);
       state.data = data;
       setLegend(data.stats);
       showSetupPanel(data);
 
       state.mapsReady = false;
-      state.map = null;
       await initMapInstance(data);
 
-      const mode =
-        data.maps_provider === "google" ? "Google Maps" : "OpenStreetMap";
+      const mode = state.provider === "google" ? "Google Maps" : "OpenStreetMap";
       const ag = data.agency;
-      setStatus(
-        `${mode} · ${data.stats?.on_map || 0} annonce(s)` +
-          (ag?.address_line ? ` · Agence : ${ag.address_line}` : ""),
-      );
+      const onMap = data.stats?.on_map ?? 0;
+      const pending = data.stats?.pending_geocode ?? 0;
+      let status = `${mode} · ${onMap} annonce(s) sur la carte`;
+      if (pending > 0) {
+        status += ` · ${pending} en cours de géolocalisation (Actualiser)`;
+      }
+      if (ag?.address_line) status += ` · Agence : ${ag.address_line}`;
+      setStatus(status);
 
-      if (!state.userPos && navigator.geolocation) locateUser();
+      if (onMap === 0 && pending === 0) {
+        deps().showToast(
+          "Aucune annonce géolocalisée pour l’instant — lancez un crawl ou Actualiser",
+          "info",
+          6000,
+        );
+      }
+
+      if (!state.userPos && navigator.geolocation) {
+        setTimeout(() => locateUser(), 300);
+      }
     } catch (err) {
-      deps().showToast(err.message || "Carte indisponible", "error");
-      setStatus("Erreur de chargement");
+      const msg = mapErrorMessage(err);
+      deps().showToast(msg, "error");
+      setStatus("Erreur de chargement — cliquez Actualiser");
     } finally {
       state.loading = false;
     }
@@ -474,9 +562,9 @@
     if (state.provider === "google" && window.google?.maps) {
       google.maps.event.trigger(state.map, "resize");
     } else if (state.map?.invalidateSize) {
-      state.map.invalidateSize();
+      state.map.invalidateSize(true);
     }
-    fitMapBounds();
+    setTimeout(() => fitMapBounds(), 80);
   }
 
   window.VelioraMap = { enter, locateUser, refresh: enter, resize };

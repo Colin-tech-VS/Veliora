@@ -231,18 +231,24 @@ async function api(path, options = {}) {
   const url = `${API}${path}`;
   const isPost = (options.method || "GET").toUpperCase() !== "GET";
   const maxAttempts = isPost ? 3 : 2;
+  const timeoutMs = options.timeoutMs ?? API_FETCH_TIMEOUT_MS;
+  const { timeoutMs: _drop, ...fetchOptions } = options;
   let lastError;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const res = await fetchWithTimeout(url, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-          ...(options.headers || {}),
+      const res = await fetchWithTimeout(
+        url,
+        {
+          ...fetchOptions,
+          headers: {
+            "Content-Type": "application/json",
+            ...getAuthHeaders(),
+            ...(fetchOptions.headers || {}),
+          },
         },
-      });
+        timeoutMs,
+      );
       return parseApiResponse(res, path);
     } catch (err) {
       lastError = err;
@@ -1549,10 +1555,14 @@ async function switchView(view) {
     }
   }
   if (view === "map" && window.VelioraMap?.enter) {
-    void window.VelioraMap.enter();
-    setTimeout(() => {
-      if (state.currentView === "map") window.VelioraMap?.resize?.();
-    }, 250);
+    try {
+      await window.VelioraMap.enter();
+      requestAnimationFrame(() => {
+        if (state.currentView === "map") window.VelioraMap?.resize?.();
+      });
+    } catch (err) {
+      showToast(err?.message || "Carte indisponible", "error");
+    }
   }
   if (view === "playbook") {
     const prev = PLAYBOOK;

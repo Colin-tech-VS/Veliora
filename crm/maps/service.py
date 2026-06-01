@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,7 +19,8 @@ from velora_db.config import is_postgres
 
 logger = logging.getLogger(__name__)
 
-_GEOCODE_MAX_PER_REQUEST = 60
+_GEOCODE_MAX_PER_REQUEST = 8
+_GEOCODE_TIME_BUDGET_SEC = 7.0
 _ADDRESS_BAD = frozenset({"", "—", "-", "n/a", "non renseigné"})
 
 
@@ -270,6 +273,8 @@ def build_map_payload(agency_id: str) -> dict:
     markers: list[dict] = []
     pending = 0
     geocoded_this_run = 0
+    geocode_deadline = time.monotonic() + _GEOCODE_TIME_BUDGET_SEC
+    use_nominatim = not bool(api_key)
 
     for row in rows:
         keys = row.keys()
@@ -282,11 +287,17 @@ def build_map_payload(agency_id: str) -> dict:
             continue
 
         coords = _lead_coords_from_row(row)
-        if not coords and geocoded_this_run < _GEOCODE_MAX_PER_REQUEST and api_key:
+        if (
+            not coords
+            and geocoded_this_run < _GEOCODE_MAX_PER_REQUEST
+            and time.monotonic() < geocode_deadline
+        ):
             coords = geocode_query(line)
             if coords:
                 _save_lead_coords(int(row["id"]), agency_id, coords[0], coords[1])
                 geocoded_this_run += 1
+                if use_nominatim:
+                    time.sleep(1.05)
 
         if not coords:
             pending += 1
@@ -329,5 +340,39 @@ def build_map_payload(agency_id: str) -> dict:
             "no_api_key": False,
             "using_osm": not bool(api_key),
             "no_agency_address": not (agency or {}).get("address_line"),
+            "refresh_hint": pending > 0,
         },
     }
+
+
+def schedule_lead_geocode(
+    lead_id: int,
+    agency_id: str,
+    address: str | None,
+    postcode: str | None = None,
+    city: str | None = None,
+) -> None:
+    """Géocode en arrière-plan après crawl (pour la carte)."""
+    line = format_location_line(address, postcode, city)
+    if not line or not lead_id or not agency_id:
+        return
+
+    def _run() -> None:
+        try:
+            ensure_map_schema()
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT latitude, longitude FROM leads WHERE id = ? AND agency_id = ?",
+                    (lead_id, agency_id),
+                ).fetchone()
+            if row and row["latitude"] is not None and row["longitude"] is not None:
+                return
+            coords = geocode_query(line)
+            if coords:
+                _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
+        except Exception:
+            logger.exception("schedule_lead_geocode %s", lead_id)
+
+    threading.Thread(
+        target=_run, daemon=True, name=f"lead-geo-{lead_id}"
+    ).start()
