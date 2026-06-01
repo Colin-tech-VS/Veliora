@@ -56,6 +56,15 @@ def all_communes() -> list[dict]:
     return _indexes()[0]
 
 
+def city_for_postcode(postcode: str | None) -> str | None:
+    """Nom de commune le plus probable pour un code postal (ex. 56100 → Lorient)."""
+    if not postcode:
+        return None
+    _, _, _, by_postcode = _indexes()
+    best = _pick_best(by_postcode.get(postcode.strip(), []), postcode)
+    return best["name"] if best else None
+
+
 def _pick_best(candidates: list[dict], postcode: str | None = None) -> dict | None:
     if not candidates:
         return None

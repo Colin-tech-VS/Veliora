@@ -42,6 +42,22 @@ _LISTING_DETAIL_IN_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Phrases / CTA / champs d'annonce captés à tort comme nom de vendeur.
+_NAME_GARBAGE_RE = re.compile(
+    r"taxe|fonci[èe]r|contactez|appelez|d[ée]couvrez|conseiller|rangements|"
+    r"lumineu|r[ée]nov|\bproche\b|id[ée]al|exclusivit|comprend|\bsitu[ée]e?\b|"
+    r"\bvendu\b|coup\s+de\s+c|\bref\b|r[ée]f[ée]rence|\bprix\b|n[°o]\s*\d",
+    re.IGNORECASE,
+)
+
+# Adresse qui est en réalité un titre / descriptif d'annonce (pas une vraie adresse).
+_LISTING_TITLE_ADDR_RE = re.compile(
+    r"^\s*(vente|achat|location|[àa]\s+vendre|appartement|maison|studio|terrain|"
+    r"immeuble|local|parking|garage|bureau|villa|duplex|loft|programme|neuf)\b|"
+    r"\b\d+\s*(m²|m2|pi[èe]ce)|€|\bt\s?[1-9]\b",
+    re.IGNORECASE,
+)
+
 
 @dataclass
 class VerificationResult:
@@ -113,6 +129,14 @@ def _name_ok(first: str | None, last: str | None) -> bool:
     if is_site_navigation_name(combined):
         return False
     if _LISTING_DETAIL_IN_NAME_RE.search(combined):
+        return False
+    # Un vrai nom commence par une majuscule (pas un fragment « ez … », « breux … »),
+    # tient en ≤ 4 mots, et ne contient pas de CTA / champ d'annonce.
+    if combined[:1].islower():
+        return False
+    if len(combined.split()) > 4:
+        return False
+    if _NAME_GARBAGE_RE.search(combined):
         return False
     return True
 
@@ -247,6 +271,10 @@ def _address_ok(address: str | None) -> bool:
         return False
     a = address.strip()
     if _BAD_ADDRESS_RE.search(a):
+        return False
+    if _LISTING_TITLE_ADDR_RE.search(a):
+        # Titre / descriptif d'annonce capté comme adresse (ex. « Vente appartement
+        # 3 pièces 65 m² ») → pas une vraie adresse.
         return False
     return len(a) >= 8 and re.search(r"\d|[A-Za-zÀ-ÿ]{3,}", a)
 

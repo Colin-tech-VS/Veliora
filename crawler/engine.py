@@ -1337,6 +1337,43 @@ class CrawlerEngine:
             scroll_lazy=scroll_lazy,
         )
 
+    def _clean_unreliable_fields(self, lead) -> None:
+        """Zéro donnée faussée : on n'enregistre jamais un nom/adresse douteux.
+
+        - Nom = fragment de phrase / CTA / champ d'annonce → vidé.
+        - Adresse = titre/descriptif d'annonce → remplacée par la localité réelle
+          (ville + code postal, extraits du titre/URL) ou vidée si inconnue.
+        """
+        from crawler.validation import _address_ok, _name_ok
+
+        try:
+            from crm.dvf import apply_lead_location_fields
+
+            apply_lead_location_fields(lead)  # remplit city/postcode depuis titre/adresse
+        except Exception:
+            pass
+
+        if not _name_ok(lead.first_name, lead.last_name):
+            lead.first_name = None
+            lead.last_name = None
+
+        # Nom de ville manquant mais code postal connu → résoudre (56100 → Lorient).
+        if not getattr(lead, "city", None) and getattr(lead, "postcode", None):
+            try:
+                from crawler.fr_communes import city_for_postcode
+
+                lead.city = city_for_postcode(lead.postcode) or lead.city
+            except Exception:
+                pass
+
+        if lead.address and not _address_ok(lead.address):
+            city = getattr(lead, "city", None)
+            postcode = getattr(lead, "postcode", None)
+            if city:
+                lead.address = f"{city} ({postcode})" if postcode else city
+            else:
+                lead.address = None
+
     def _process_listing(
         self,
         url: str,
@@ -1503,6 +1540,7 @@ class CrawlerEngine:
         from crawler.validation import repair_mixed_listing
 
         lead = repair_mixed_listing(lead, fetched.html, url)
+        self._clean_unreliable_fields(lead)
 
         # Crawl strictement local : on rejette toute annonce hors de la ville cible.
         if not skip_city_check and not self._lead_in_target_city(lead):
