@@ -302,6 +302,11 @@
   }
 
   /* Pipeline — défilement horizontal */
+  .pipeline-board-hint {
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
+  }
+
   .pipeline-board {
     display: flex !important;
     flex-direction: row;

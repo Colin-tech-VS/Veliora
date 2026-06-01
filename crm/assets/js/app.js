@@ -72,7 +72,7 @@ const viewTitles = {
   playbook: { title: "Scripts d'appel", subtitle: "Opportunités du marché et discours à tenir" },
   leads: { title: "Opportunités", subtitle: "Classées par Score Mandat™ (vendeurs détectés)" },
   crawler: { title: "Sources", subtitle: "Alimenter le radar (Mode 1)" },
-  pipeline: { title: "Pipeline", subtitle: "Suivi commercial de vos mandats" },
+  pipeline: { title: "Pipeline", subtitle: "Glissez-déposez vos dossiers — du premier contact au mandat" },
   mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
   clients: {
     title: "Acheteurs / Locataires",
@@ -2339,6 +2339,51 @@ function setupDrawer() {
       closeAddSourceModal();
     }
   });
+
+  const drawer = document.getElementById("lead-drawer");
+  drawer?.addEventListener("click", (e) => {
+    const lead = state.selectedLead;
+    if (!lead) return;
+
+    const pipeBtn = e.target.closest("#drawer-pipeline-btns [data-pipeline]");
+    if (pipeBtn) {
+      e.preventDefault();
+      patchLeadPipeline(lead.id, pipeBtn.dataset.pipeline).catch((err) =>
+        showToast(err.message, "error"),
+      );
+      return;
+    }
+
+    if (e.target.closest("#drawer-dvf-compare-btn")) {
+      e.preventDefault();
+      compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-call-script-btn")) {
+      e.preventDefault();
+      loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-mandate-vente")) {
+      e.preventDefault();
+      openMandateFromLead(lead, "vente");
+      return;
+    }
+    if (e.target.closest("#drawer-mandate-location")) {
+      e.preventDefault();
+      openMandateFromLead(lead, "location");
+      return;
+    }
+    if (e.target.closest("#drawer-journey-mandat")) {
+      e.preventDefault();
+      openMandateFromLead(lead, lead.transaction_type === "location" ? "location" : "vente");
+      return;
+    }
+    if (e.target.closest("#drawer-journey-livret")) {
+      e.preventDefault();
+      openMandateLivretFromLead(lead);
+    }
+  });
 }
 
 function getSourcesGridRoots() {
@@ -4568,13 +4613,19 @@ async function patchLeadPipeline(leadId, pipeline) {
     body: JSON.stringify({ pipeline }),
   });
   const idx = LEADS.findIndex((l) => l.id === leadId);
+  const prev = idx >= 0 ? LEADS[idx] : null;
   if (idx >= 0 && result.lead) LEADS[idx] = result.lead;
-  await loadRadarAndPlaybook();
-  renderAll();
+
+  renderPipeline();
+  updateBadges();
+  if (state.currentView === "leads") renderLeads();
+
   if (state.selectedLead?.id === leadId && result.lead) {
     state.selectedLead = result.lead;
-    openDrawer(leadId);
+    updateDrawerChrome(result.lead);
+    refreshDrawerBodyContent(result.lead);
   }
+  return result;
 }
 
 function setupRadar() {
@@ -4825,25 +4876,105 @@ function renderLeads() {
   }
 }
 
+const PIPELINE_STAGES = [
+  { key: "nouveau", label: "À contacter", color: "#0ea5e9" },
+  { key: "contacte", label: "Contacté", color: "#8b5cf6" },
+  { key: "rdv", label: "RDV", color: "#f59e0b" },
+  { key: "mandat", label: "Mandat", color: "#10b981" },
+  { key: "perdu", label: "Perdu", color: "#94a3b8" },
+];
+
+let pipelineDragLeadId = null;
+let pipelineSuppressClick = false;
+
+function leadPipelineKey(lead) {
+  const p = (lead?.pipeline || lead?.status || "nouveau").toLowerCase();
+  if (p === "a_contacter") return "nouveau";
+  if (p === "perdu") return "perdu";
+  return PIPELINE_STAGES.some((s) => s.key === p) ? p : "nouveau";
+}
+
 function pipelineMatchesColumn(lead, key) {
-  const p = lead.pipeline || "nouveau";
-  if (key === "nouveau") return p === "nouveau" || p === "a_contacter";
-  return p === key;
+  return leadPipelineKey(lead) === key;
+}
+
+function setupPipelineBoard() {
+  const board = document.getElementById("pipeline-board");
+  if (!board || board.dataset.dndInit === "1") return;
+  board.dataset.dndInit = "1";
+
+  board.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(".pipeline-card");
+    if (!card) return;
+    pipelineDragLeadId = parseInt(card.dataset.id, 10);
+    card.classList.add("is-dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(pipelineDragLeadId));
+    }
+  });
+
+  board.addEventListener("dragend", () => {
+    board.querySelectorAll(".pipeline-card.is-dragging").forEach((c) => c.classList.remove("is-dragging"));
+    board.querySelectorAll(".pipeline-column.is-drop-target").forEach((c) =>
+      c.classList.remove("is-drop-target"),
+    );
+    pipelineDragLeadId = null;
+  });
+
+  board.addEventListener("dragover", (e) => {
+    const zone = e.target.closest(".pipeline-cards");
+    if (!zone) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    zone.closest(".pipeline-column")?.classList.add("is-drop-target");
+  });
+
+  board.addEventListener("dragleave", (e) => {
+    const col = e.target.closest(".pipeline-column");
+    if (col && !col.contains(e.relatedTarget)) col.classList.remove("is-drop-target");
+  });
+
+  board.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const col = e.target.closest(".pipeline-column");
+    if (!col || !pipelineDragLeadId) return;
+    const stage = col.dataset.stage;
+    col.classList.remove("is-drop-target");
+    const lead = LEADS.find((l) => l.id === pipelineDragLeadId);
+    if (!lead || leadPipelineKey(lead) === stage) return;
+    pipelineSuppressClick = true;
+    try {
+      await patchLeadPipeline(pipelineDragLeadId, stage);
+      const label = PIPELINE_STAGES.find((s) => s.key === stage)?.label || stage;
+      showToast(`Déplacé : ${label}`, "success");
+    } catch (err) {
+      renderPipeline();
+      showToast(err.message, "error");
+    }
+    setTimeout(() => {
+      pipelineSuppressClick = false;
+    }, 80);
+  });
+
+  board.addEventListener("click", (e) => {
+    if (pipelineSuppressClick) return;
+    const card = e.target.closest(".pipeline-card");
+    if (!card) return;
+    openDrawer(parseInt(card.dataset.id, 10));
+  });
 }
 
 function renderPipeline() {
-  const columns = {
-    nouveau: { label: "À contacter", color: "#0ea5e9" },
-    contacte: { label: "Contacté", color: "#8b5cf6" },
-    rdv: { label: "RDV", color: "#f59e0b" },
-    mandat: { label: "Mandat", color: "#10b981" },
-  };
+  const board = document.getElementById("pipeline-board");
+  if (!board) return;
 
-  document.getElementById("pipeline-board").innerHTML = Object.entries(columns).map(([key, col]) => {
-    const cards = LEADS.filter((l) => pipelineMatchesColumn(l, key))
-      .sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
+  board.innerHTML = PIPELINE_STAGES.map((col) => {
+    const cards = LEADS.filter((l) => pipelineMatchesColumn(l, col.key)).sort(
+      (a, b) => (b.mandate_score || 0) - (a.mandate_score || 0),
+    );
     return `
-      <div class="pipeline-column">
+      <div class="pipeline-column" data-stage="${col.key}">
         <div class="pipeline-column-header">
           <div class="pipeline-column-title">
             <span class="dot" style="background:${col.color}"></span>
@@ -4852,19 +4983,26 @@ function renderPipeline() {
           <span class="pipeline-count">${cards.length}</span>
         </div>
         <div class="pipeline-cards">
-          ${cards.length ? cards.map((l) => `
-            <div class="pipeline-card" data-id="${l.id}">
-              <div class="title">${l.owner}</div>
-              <div class="meta">${l.address}</div>
+          ${
+            cards.length
+              ? cards
+                  .map(
+                    (l) => `
+            <div class="pipeline-card" data-id="${l.id}" draggable="true">
+              <div class="drag-handle">⋮⋮ GLISSER</div>
+              <div class="title">${escapeHtml(l.property_title || l.owner)}</div>
+              <div class="meta">${escapeHtml(l.address || "—")}</div>
               <div class="footer">${renderMandatePill(l)} ${getTypeBadge(l)}<span class="price-tag">${formatPrice(l)}</span></div>
-            </div>`).join("") : `<div class="empty-state" style="padding:1rem"><p style="font-size:0.8rem">Vide</p></div>`}
+            </div>`,
+                  )
+                  .join("")
+              : `<div class="empty-state" style="padding:1rem"><p style="font-size:0.8rem">Déposez une carte ici</p></div>`
+          }
         </div>
       </div>`;
   }).join("");
 
-  document.querySelectorAll(".pipeline-card").forEach((card) => {
-    card.addEventListener("click", () => openDrawer(parseInt(card.dataset.id)));
-  });
+  setupPipelineBoard();
 }
 
 function escapeAttr(str) {
@@ -5131,116 +5269,44 @@ function renderFactsVerificationHtml(lead) {
   </div>`;
 }
 
-function openDrawer(id) {
-  const lead = LEADS.find((l) => l.id === id);
-  if (!lead) return;
+function renderLeadJourneyHtml(lead) {
+  const current = leadPipelineKey(lead);
+  const currentIdx = PIPELINE_STAGES.findIndex((s) => s.key === current);
+  const isLost = current === "perdu";
+  const stepsHtml = PIPELINE_STAGES.filter((s) => s.key !== "perdu")
+    .map((s, i) => {
+      let cls = "lead-journey-step";
+      if (isLost) cls += "";
+      else if (i < currentIdx) cls += " is-done";
+      else if (s.key === current) cls += " is-current";
+      return `<span class="${cls}">${s.label}</span>`;
+    })
+    .join("");
+  const lostHtml = isLost
+    ? `<span class="lead-journey-step is-lost">Perdu</span>`
+    : "";
+  const notes = (lead.notes || "").trim();
+  const notesPreview = notes
+    ? escapeHtml(notes.length > 220 ? `${notes.slice(0, 220)}…` : notes)
+    : "<em>Aucune note — complétez dans le formulaire ci-dessous.</em>";
+  const txLabel = lead.transaction_type === "location" ? "location" : "vente";
 
-  state.drawerShowAllFields = false;
-  state.selectedLead = lead;
-  document.getElementById("drawer-title").textContent = lead.property_title || lead.listing_title || lead.address;
-  const listingUrl = (lead.source_url || "").trim();
-  const viewListingBtn = document.getElementById("drawer-view-listing-btn");
-  if (viewListingBtn) {
-    if (listingUrl) {
-      viewListingBtn.href = listingUrl;
-      viewListingBtn.style.display = "";
-      viewListingBtn.removeAttribute("aria-disabled");
-    } else {
-      viewListingBtn.href = "#";
-      viewListingBtn.style.display = "none";
-      viewListingBtn.setAttribute("aria-disabled", "true");
-    }
-  }
+  return `
+    <div class="lead-journey" id="drawer-journey-block">
+      <div class="lead-journey-title">Parcours de A à Z</div>
+      <div class="lead-journey-steps">${stepsHtml}${lostHtml}</div>
+      <div class="lead-journey-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="drawer-journey-call">Appeler</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-script">Script</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-mandat">Créer mandat</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-livret">Livret PDF</button>
+      </div>
+      <div class="lead-journey-notes"><strong>Suivi :</strong> ${notesPreview}</div>
+      <p class="form-hint" style="margin:0.5rem 0 0;font-size:0.75rem">Mandat ${txLabel} → dossier client, photos, notes → bouton Imprimer / PDF dans l’éditeur de mandat.</p>
+    </div>`;
+}
 
-  const pipelineStages = [
-    { key: "nouveau", label: "À contacter" },
-    { key: "contacte", label: "Contacté" },
-    { key: "rdv", label: "RDV" },
-    { key: "mandat", label: "Mandat" },
-    { key: "perdu", label: "Perdu" },
-  ];
-  const pipelineBtns = document.getElementById("drawer-pipeline-btns");
-  if (pipelineBtns) {
-    pipelineBtns.innerHTML = pipelineStages
-      .map(
-        (s) => `<button type="button" class="btn btn-sm ${lead.pipeline === s.key || (!lead.pipeline && s.key === "nouveau") ? "btn-primary" : "btn-secondary"}" data-pipeline="${s.key}">${s.label}</button>`,
-      )
-      .join("");
-    pipelineBtns.querySelectorAll("[data-pipeline]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        try {
-          await patchLeadPipeline(lead.id, btn.dataset.pipeline);
-          showToast(`Pipeline : ${btn.textContent}`, "success");
-        } catch (err) {
-          showToast(err.message, "error");
-        }
-      });
-    });
-  }
-
-  const phoneBtn = document.getElementById("drawer-phone-btn");
-  if (phoneBtn) {
-    const tel = (lead.phone || "").replace(/\s/g, "");
-    if (tel && tel !== "—") {
-      phoneBtn.href = `tel:${tel}`;
-      phoneBtn.style.display = "";
-    } else {
-      phoneBtn.href = "#";
-      phoneBtn.style.display = "none";
-    }
-  }
-
-  const refreshFooterBtn = document.getElementById("drawer-refresh-lead-btn");
-  if (refreshFooterBtn) {
-    refreshFooterBtn.dataset.id = String(lead.id);
-    refreshFooterBtn.classList.add("lead-refresh-btn");
-    refreshFooterBtn.disabled = !(lead.source_url || "").trim();
-    refreshFooterBtn.type = "button";
-  }
-
-  const dvfBtn = document.getElementById("drawer-dvf-compare-btn");
-  if (dvfBtn) {
-    const dvfClone = dvfBtn.cloneNode(true);
-    dvfBtn.replaceWith(dvfClone);
-    dvfClone.addEventListener("click", () => {
-      compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
-    });
-  }
-
-  document.getElementById("drawer-call-script-btn")?.replaceWith(
-    document.getElementById("drawer-call-script-btn").cloneNode(true),
-  );
-  document.getElementById("drawer-call-script-btn")?.addEventListener("click", () => {
-    loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
-  });
-
-  const mandateTypeForLead =
-    lead.transaction_type === "location" ? "location" : "vente";
-  const wireMandateDrawerBtn = (id, type) => {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    const clone = btn.cloneNode(true);
-    clone.classList.remove("btn-ghost-dim");
-    if (type !== mandateTypeForLead) clone.classList.add("btn-ghost-dim");
-    btn.replaceWith(clone);
-    clone.addEventListener("click", () => {
-      if (window.VelioraMandates?.createMandateFromLead) {
-        window.VelioraMandates.createMandateFromLead(lead.id, type);
-      } else {
-        showToast("Module mandats indisponible — relancez le serveur (demarrer.bat)", "error");
-      }
-    });
-  };
-  wireMandateDrawerBtn("drawer-mandate-vente", "vente");
-  wireMandateDrawerBtn("drawer-mandate-location", "location");
-
-  const daysTxt =
-    lead.days_on_market != null
-      ? `${lead.days_on_market} j en ligne`
-      : formatPublishedDate(lead)
-        ? formatPublishedLine(lead)
-        : "Publication inconnue";
-
+function buildDrawerDvfHtml(lead) {
   let dvfHtml = `<div class="drawer-dvf-block">
     <strong>Comparatif DVF</strong> — ventes réelles (DGFiP / <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Etalab</a>)<br>
     Cliquez sur « Comparatif DVF » pour analyser ce bien.`;
@@ -5263,10 +5329,19 @@ function openDrawer(id) {
       Écart : <strong>${sign}${lead.dvf_delta_pct}%</strong>
       · <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Explorer sur DVF</a>`;
   }
-  dvfHtml += `</div>`;
+  return `${dvfHtml}</div>`;
+}
 
+function buildDrawerBodyHtml(lead) {
+  const daysTxt =
+    lead.days_on_market != null
+      ? `${lead.days_on_market} j en ligne`
+      : formatPublishedDate(lead)
+        ? formatPublishedLine(lead)
+        : "Publication inconnue";
   const ms = lead.mandate_score || 0;
-  document.getElementById("drawer-body").innerHTML = `
+  return `
+    ${renderLeadJourneyHtml(lead)}
     <div class="drawer-mandate-hero">
       <span class="drawer-mandate-kicker">Score Mandat™</span>
       <div class="drawer-mandate-score-row">
@@ -5277,7 +5352,7 @@ function openDrawer(id) {
       <p class="drawer-mandate-hint">Opportunité du marché · ${escapeHtml(lead.city || lead.sector || "secteur")}</p>
     </div>
     ${renderFactsVerificationHtml(lead)}
-    ${dvfHtml}
+    ${buildDrawerDvfHtml(lead)}
     ${renderDrawerEditSection(lead)}
     <div class="drawer-section drawer-readonly-summary">
       <div class="drawer-section-title">Résumé</div>
@@ -5288,13 +5363,121 @@ function openDrawer(id) {
       <div class="detail-row"><span class="label">En ligne</span><span class="value">${daysTxt}</span></div>
       <div class="detail-row"><span class="label">Portail</span><span class="value">${escapeHtml(lead.source)}</span></div>
       <div class="detail-row" data-drawer-field="score"><span class="label">Complétude données</span><span class="value drawer-live-value"><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}/100</span></span></div>
-      <div class="detail-row"><span class="label">Pipeline</span><span class="value">${getStatusBadge(lead.pipeline || lead.status)}</span></div>
+      <div class="detail-row" data-drawer-field="pipeline"><span class="label">Pipeline</span><span class="value drawer-live-value">${getStatusBadge(lead.pipeline || lead.status)}</span></div>
     </div>`;
+}
 
+function updateDrawerPipelineButtons(lead) {
+  const pipelineBtns = document.getElementById("drawer-pipeline-btns");
+  if (!pipelineBtns) return;
+  const current = leadPipelineKey(lead);
+  pipelineBtns.innerHTML = PIPELINE_STAGES.map((s) => {
+    const active = current === s.key || (!lead.pipeline && s.key === "nouveau");
+    return `<button type="button" class="btn btn-sm ${active ? "btn-primary" : "btn-secondary"}" data-pipeline="${s.key}">${s.label}</button>`;
+  }).join("");
+}
+
+function updateDrawerChrome(lead) {
+  document.getElementById("drawer-title").textContent =
+    lead.property_title || lead.listing_title || lead.address || "Prospect";
+
+  const listingUrl = (lead.source_url || "").trim();
+  const viewListingBtn = document.getElementById("drawer-view-listing-btn");
+  if (viewListingBtn) {
+    if (listingUrl) {
+      viewListingBtn.href = listingUrl;
+      viewListingBtn.style.display = "";
+    } else {
+      viewListingBtn.href = "#";
+      viewListingBtn.style.display = "none";
+    }
+  }
+
+  updateDrawerPipelineButtons(lead);
+
+  const phoneBtn = document.getElementById("drawer-phone-btn");
+  if (phoneBtn) {
+    const tel = (lead.phone || "").replace(/\s/g, "");
+    if (tel && tel !== "—") {
+      phoneBtn.href = `tel:${tel}`;
+      phoneBtn.style.display = "";
+    } else {
+      phoneBtn.href = "#";
+      phoneBtn.style.display = "none";
+    }
+  }
+
+  const refreshFooterBtn = document.getElementById("drawer-refresh-lead-btn");
+  if (refreshFooterBtn) {
+    refreshFooterBtn.dataset.id = String(lead.id);
+    refreshFooterBtn.disabled = !(lead.source_url || "").trim();
+  }
+
+  const mandateType = lead.transaction_type === "location" ? "location" : "vente";
+  document.getElementById("drawer-mandate-vente")?.classList.toggle("btn-ghost-dim", mandateType !== "vente");
+  document.getElementById("drawer-mandate-location")?.classList.toggle("btn-ghost-dim", mandateType !== "location");
+}
+
+function refreshDrawerBodyContent(lead) {
+  const body = document.getElementById("drawer-body");
+  if (!body) return;
+  body.innerHTML = buildDrawerBodyHtml(lead);
   bindDrawerEditHandlers(lead);
+  wireDrawerJourneyButtons(lead);
+}
+
+function wireDrawerJourneyButtons(lead) {
+  document.getElementById("drawer-journey-call")?.addEventListener("click", () => {
+    const tel = (lead.phone || "").replace(/\s/g, "");
+    if (tel && tel !== "—") {
+      window.location.href = `tel:${tel}`;
+    } else {
+      showToast("Pas de numéro de téléphone sur cette fiche", "warning");
+    }
+  });
+  document.getElementById("drawer-journey-script")?.addEventListener("click", () => {
+    loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
+  });
+}
+
+function openMandateFromLead(lead, type) {
+  if (window.VelioraMandates?.createMandateFromLead) {
+    window.VelioraMandates.createMandateFromLead(lead.id, type);
+  } else {
+    showToast("Module mandats indisponible — relancez le serveur", "error");
+  }
+}
+
+async function openMandateLivretFromLead(lead) {
+  const type = lead.transaction_type === "location" ? "location" : "vente";
+  openMandateFromLead(lead, type);
+  showToast(
+    "Mandat ouvert — complétez le dossier puis « Imprimer / PDF » pour le livret projet",
+    "info",
+    8000,
+  );
+}
+
+function openDrawer(id) {
+  const lead = LEADS.find((l) => l.id === id);
+  if (!lead) return;
+
+  state.drawerShowAllFields = false;
+  state.selectedLead = lead;
 
   document.getElementById("drawer-overlay").classList.add("open");
   document.getElementById("lead-drawer").classList.add("open");
+
+  updateDrawerChrome(lead);
+
+  const body = document.getElementById("drawer-body");
+  body.innerHTML = `<div class="drawer-loading">Chargement…</div>`;
+
+  requestAnimationFrame(() => {
+    body.innerHTML = buildDrawerBodyHtml(lead);
+    bindDrawerEditHandlers(lead);
+    wireDrawerJourneyButtons(lead);
+  });
 }
 
 function closeDrawer() {
