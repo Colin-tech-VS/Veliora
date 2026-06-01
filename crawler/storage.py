@@ -524,11 +524,11 @@ def is_default_portal_source(source_id: str) -> bool:
 
 
 def is_antibot_source(src: dict) -> bool:
-    """Portail protégé (anti-bot) — crawl réservé à l'offre payante."""
-    from crawler.portals import is_paid_crawl_portal, resolve_base_portal_id
+    """Portail protégé (anti-bot) — crawl pas encore activé (« Bientôt disponible »)."""
+    from crawler.portals import is_coming_soon_portal, resolve_base_portal_id
 
     base = resolve_base_portal_id(src.get("id") or "")
-    return is_paid_crawl_portal(base)
+    return is_coming_soon_portal(base)
 
 
 def _source_sort_key(src: dict) -> tuple:
@@ -569,7 +569,7 @@ def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
     """Portails recommandés activés — pour « Crawler tout ».
 
     Les portails protégés (anti-bot) et les sites personnalisés sont exclus :
-    crawl unitaire par source, offre payante ultérieure pour les protégés.
+    les protégés sont classés « Bientôt disponible » (crawl pas encore activé).
     """
     seed_default_sources_for_agency(agency_id)
     sources = [s for s in get_sources(agency_id) if is_recommended_crawl_source(s)]

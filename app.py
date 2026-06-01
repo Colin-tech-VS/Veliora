@@ -137,8 +137,8 @@ def _aid() -> str:
 
 
 def _paid_portal_crawl_response(*, source: dict | None = None, url: str | None = None):
-    """Bloque le crawl gratuit sur les portails anti-bot / Cloudflare."""
-    from crawler.portals import is_paid_crawl_url
+    """Bloque le crawl des portails anti-bot non encore activés (« Bientôt disponible »)."""
+    from crawler.portals import is_coming_soon_url
     from crawler.storage import is_antibot_source
 
     blocked = False
@@ -146,7 +146,7 @@ def _paid_portal_crawl_response(*, source: dict | None = None, url: str | None =
     if source and is_antibot_source(source):
         blocked = True
         name = source.get("name") or "ce portail"
-    elif url and is_paid_crawl_url(url):
+    elif url and is_coming_soon_url(url):
         blocked = True
         name = url.split("/")[2] if "/" in url else url
     if not blocked:
@@ -156,9 +156,9 @@ def _paid_portal_crawl_response(*, source: dict | None = None, url: str | None =
             {
                 "error": (
                     f"{name} est protégé (anti-bot / Cloudflare). "
-                    "Crawl disponible avec l'offre payante Veliora (bientôt)."
+                    "Crawl bientôt disponible — portail pas encore activé."
                 ),
-                "code": "paid_portal_required",
+                "code": "portal_coming_soon",
             }
         ),
         402,

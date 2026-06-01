@@ -21,8 +21,10 @@ PORTAL_IDS = (
     "notaires",
 )
 
-# Anti-bot / Cloudflare / DataDome — offre payante uniquement (pas de crawl Veliora gratuit).
-PAID_CRAWL_PORTAL_IDS = frozenset({
+# Anti-bot / Cloudflare / DataDome — PAS encore crawlés (classés « Bientôt disponible »).
+# Ce n'est pas une offre payante : le crawl de ces portails n'est juste pas activé
+# pour le moment (ils exigent des proxys résidentiels). On les garde hors crawl.
+COMING_SOON_PORTAL_IDS = frozenset({
     "leboncoin",
     "pap",
     "seloger",
@@ -51,14 +53,21 @@ def resolve_base_portal_id(source_id: str | None) -> str | None:
     return None
 
 
-def is_paid_crawl_portal(portal_id: str | None) -> bool:
+def is_coming_soon_portal(portal_id: str | None) -> bool:
+    """Portail anti-bot non encore crawlé (classé « Bientôt disponible »)."""
     base = resolve_base_portal_id(portal_id or "")
-    return bool(base and base in PAID_CRAWL_PORTAL_IDS)
+    return bool(base and base in COMING_SOON_PORTAL_IDS)
 
 
-def is_paid_crawl_url(url: str) -> bool:
+def is_coming_soon_url(url: str) -> bool:
     pid = portal_from_url(url)
-    return bool(pid and is_paid_crawl_portal(pid))
+    return bool(pid and is_coming_soon_portal(pid))
+
+
+# Rétrocompat : anciens noms (offre payante) → nouvelle sémantique « bientôt ».
+PAID_CRAWL_PORTAL_IDS = COMING_SOON_PORTAL_IDS
+is_paid_crawl_portal = is_coming_soon_portal
+is_paid_crawl_url = is_coming_soon_url
 
 
 def host_from_url(url: str) -> str:
