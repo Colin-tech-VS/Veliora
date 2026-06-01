@@ -208,6 +208,23 @@ def build_lead_matches(lead: dict, clients: list[dict], *, top_n: int = 8) -> di
     }
 
 
+def demand_counts(lead: dict, clients: list[dict]) -> dict:
+    """Compteurs de demande pour le scoring : compatibles par transaction + 'strong'."""
+    out = {"vente": 0, "location": 0, "total": 0, "strong": 0}
+    for client in clients or []:
+        if (client.get("status") or "actif") not in ("actif", "", None):
+            continue
+        scored = score_client_for_lead(lead, client)
+        if not scored or scored["score"] < 45:
+            continue
+        out["total"] += 1
+        tx = scored["expected_transaction"]
+        out[tx] = out.get(tx, 0) + 1
+        if scored["score"] >= 65:
+            out["strong"] += 1
+    return out
+
+
 def build_agency_match_index(leads: list[dict], clients: list[dict]) -> dict[int, dict]:
     """Résumé léger par lead pour les badges de liste (counts + reco), sans détail."""
     index: dict[int, dict] = {}

@@ -136,6 +136,14 @@ def _aid() -> str:
     return agency_id
 
 
+def _sources_payload():
+    from crawler.storage import invalidate_sources_cache
+
+    aid = _aid()
+    invalidate_sources_cache(aid)
+    return get_sources(aid, sync=True, live_counts=True)
+
+
 def _paid_portal_crawl_response(*, source: dict | None = None, url: str | None = None):
     """Bloque le crawl des portails anti-bot non encore activés (« Bientôt disponible »)."""
     from crawler.portals import is_coming_soon_url
@@ -483,12 +491,15 @@ def api_bootstrap():
     """Chargement initial CRM — une requête, un passage base pour les leads."""
     agency_id = _aid()
     try:
-        leads = get_leads(agency_id)
+        from crawler.storage import claim_orphan_leads
+
+        claim_orphan_leads(agency_id)
+        leads = get_leads(agency_id, claim_orphans=False)
     except Exception as exc:
         logging.exception("GET /api/bootstrap leads")
         return jsonify({"error": f"Prospects indisponibles : {exc}"}), 500
     stats = get_stats(agency_id)
-    sources = get_sources(agency_id)
+    sources = get_sources(agency_id, sync=True, live_counts=True)
     engine_status = engine.status()
     return jsonify({
         "leads": leads,
@@ -1059,11 +1070,11 @@ def api_sources():
                     _aid(), name=name, base_url=base_url, search_url=search_url
                 )
             engine.refresh_adapters(_aid())
-            return jsonify({"ok": True, "source": source, "sources": get_sources(_aid())}), 201
+            return jsonify({"ok": True, "source": source, "sources": _sources_payload()}), 201
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
 
-    return jsonify(get_sources(_aid()))
+    return jsonify(_sources_payload())
 
 
 @app.route("/api/sources/preview-urls", methods=["GET"])
@@ -1098,7 +1109,7 @@ def _api_delete_source_impl(source_id: str):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     engine.refresh_adapters(_aid())
-    return jsonify({"ok": True, "sources": get_sources(_aid())})
+    return jsonify({"ok": True, "sources": _sources_payload()})
 
 
 @app.route("/api/sources/remove", methods=["POST"])
@@ -1132,7 +1143,7 @@ def api_source_detail(source_id):
         return jsonify({"error": "Source introuvable"}), 404
 
     engine.refresh_adapters(_aid())
-    return jsonify({"ok": True, "source": source, "sources": get_sources(_aid())})
+    return jsonify({"ok": True, "source": source, "sources": _sources_payload()})
 
 
 @app.route("/api/sources/<source_id>/delete", methods=["POST"])
@@ -1149,7 +1160,7 @@ def _api_update_source_url_impl(source_id: str, url: str, name: str | None = Non
     if source is None:
         return jsonify({"error": "Source introuvable"}), 404
     engine.refresh_adapters(_aid())
-    return jsonify({"ok": True, "source": source, "sources": get_sources(_aid())})
+    return jsonify({"ok": True, "source": source, "sources": _sources_payload()})
 
 
 @app.route("/api/sources/<source_id>/url", methods=["POST", "PUT"])
@@ -1174,14 +1185,15 @@ def _job_response(job: dict) -> dict:
 @app.route("/api/crawler/status")
 def api_crawler_status():
     agency_id = _aid()
-    sources = get_sources(agency_id)
     status = engine.status()
+    stats = get_stats(agency_id)
+    sources = get_sources(agency_id, sync=False, live_counts=False)
     return jsonify({
         **status,
         "found_today": sum(s.get("leads_updated_today", s.get("today", 0)) for s in sources),
         "active_sources": sum(1 for s in sources if s["enabled"]),
-        "total_leads": get_stats(agency_id)["total"],
-        "prospects_in_db": sum(s.get("leads_count", s.get("found", 0)) for s in sources),
+        "total_leads": stats["total"],
+        "prospects_in_db": stats["total"],
     })
 
 
@@ -1318,17 +1330,30 @@ def api_onboarding():
     agency_id = _aid()
     if request.method == "GET":
         settings = get_agency_settings(agency_id)
-        sources = get_sources(agency_id)
-        leads = get_leads(agency_id)
+        from crawler.storage import get_connection, row_scalar
+
+        with get_connection() as conn:
+            sources_count = row_scalar(
+                conn.execute(
+                    "SELECT COUNT(*) FROM sources WHERE agency_id = ?",
+                    (agency_id,),
+                ).fetchone()
+            )
+            leads_count = row_scalar(
+                conn.execute(
+                    "SELECT COUNT(*) FROM leads WHERE agency_id = ?",
+                    (agency_id,),
+                ).fetchone()
+            )
         return jsonify(
             {
                 "ok": True,
                 "settings": settings,
                 "progress": {
-                    "has_source": len(sources) > 0,
-                    "has_leads": len(leads) > 0,
-                    "sources_count": len(sources),
-                    "leads_count": len(leads),
+                    "has_source": sources_count > 0,
+                    "has_leads": leads_count > 0,
+                    "sources_count": sources_count,
+                    "leads_count": leads_count,
                 },
             }
         )
@@ -1839,6 +1864,7 @@ def api_property_clients():
     data = request.get_json(silent=True) or {}
     try:
         client = create_property_client(agency_id, data)
+        _rescore_after_client_change(agency_id)
         return jsonify({"ok": True, "client": client}), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

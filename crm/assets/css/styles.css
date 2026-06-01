@@ -2056,8 +2056,15 @@ body {
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
   background: rgba(16, 185, 129, 0.12);
-  animation: leads-live-pulse 1.8s ease-in-out infinite;
   white-space: nowrap;
+}
+.leads-live-flash .leads-live-badge {
+  animation: leads-live-pulse 1.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .leads-live-flash .leads-live-badge {
+    animation: none;
+  }
 }
 @keyframes leads-live-pulse {
   0%, 100% { opacity: 1; }
@@ -2092,7 +2099,9 @@ body {
 
 .leads-table tbody tr {
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition: background-color var(--duration-fast) var(--ease-out);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
 }
 
 .leads-table tbody tr:hover {
@@ -4184,7 +4193,6 @@ tr.lead-row-flash td {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  contain: layout style;
 }
 
 .drawer.open {
@@ -4200,10 +4208,6 @@ tr.lead-row-flash td {
   justify-content: center;
 }
 
-#lead-drawer .drawer-body {
-  contain: content;
-}
-
 .drawer-header {
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
@@ -4215,10 +4219,11 @@ tr.lead-row-flash td {
 .drawer-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1.5rem;
   -webkit-overflow-scrolling: touch;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 600px;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
 }
 
 .drawer-loading--pulse {

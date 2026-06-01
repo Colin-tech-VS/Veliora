@@ -161,7 +161,7 @@ class CrawlerEngine:
         return False
 
     def _load_adapters(self, agency_id: str) -> dict[str, BaseAdapter]:
-        return build_adapters(get_sources(agency_id))
+        return build_adapters(get_sources(agency_id, sync=True, live_counts=False))
 
     def refresh_adapters(self, agency_id: str | None = None) -> None:
         aid = agency_id or self._agency_id

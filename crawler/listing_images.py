@@ -8,7 +8,18 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
-_IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp|gif)(\?|$)", re.I)
+_IMAGE_EXT_RE = re.compile(r"\.(jpe?g|png|webp|gif|avif)(\?|$)", re.I)
+_BG_IMAGE_RE = re.compile(
+    r"background(?:-image)?\s*:\s*[^;]*url\(\s*['\"]?([^)'\"]+)['\"]?\s*\)",
+    re.I,
+)
+_EMBEDDED_IMG_URL_RE = re.compile(
+    r"https?://[^\s\"'<>\\]+?(?:"
+    r"\.(?:jpe?g|png|webp|gif|avif)(?:\?[^\s\"'<>]*)?"
+    r"|[?&](?:format|fm|type|ext)=(?:jpe?g|png|webp|gif|avif|jpg)"
+    r"|/(?:photo|image|media|asset|picture|annonce|listing|gallery|thumb)[^\s\"'<>]*)",
+    re.I,
+)
 _SKIP_IMG_RE = re.compile(
     r"logo|icon|avatar|sprite|pixel|tracking|badge|favicon|placeholder|"
     r"1x1|blank|spacer|banner-ad",
@@ -17,14 +28,22 @@ _SKIP_IMG_RE = re.compile(
 
 _GALLERY_SELECTORS = (
     "[data-testid*='gallery'] img",
+    "[data-testid*='photo'] img",
+    "[data-qa-id*='photo'] img",
     "[class*='Gallery'] img",
     "[class*='gallery'] img",
     "[class*='carousel'] img",
     "[class*='slider'] img",
+    "[class*='Photo'] img",
+    "[class*='diaporama'] img",
+    "[class*='slideshow'] img",
     ".swiper-slide img",
+    "img[data-src], source[data-src]",
+    "img[data-lazy], [data-lazy-src]",
     "picture source",
     "picture img",
     "main img",
+    "article img",
 )
 
 
@@ -45,25 +64,37 @@ def _normalize_image_url(raw: str | None, page_url: str) -> str | None:
         return None
     host = (parsed.netloc or "").lower()
     path = (parsed.path or "").lower()
+    qs = (parsed.query or "").lower()
     if not _IMAGE_EXT_RE.search(path):
-        known = (
-            "leboncoin",
-            "seloger",
-            "pap.fr",
-            "bienici",
-            "figaro",
-            "logic-immo",
-            "paruvendu",
-            "mms.fr",
-            "cloudinary",
-            "akamaized",
-            "cdn",
-            "images.",
-            "static.",
-        )
-        if not any(k in host or k in path for k in known):
-            if not re.search(r"/(photo|image|media|asset|picture|annonce|listing)", path, re.I):
-                return None
+        if re.search(r"(?:^|[?&])(?:format|fm|type|ext)=(?:jpe?g|png|webp|gif|avif)", qs):
+            pass
+        elif re.search(r"(?:^|[?&])w=\d+", qs) and re.search(r"(?:^|[?&])h=\d+", qs):
+            pass
+        else:
+            known = (
+                "leboncoin",
+                "seloger",
+                "pap.fr",
+                "bienici",
+                "figaro",
+                "logic-immo",
+                "paruvendu",
+                "mms.fr",
+                "cloudinary",
+                "akamaized",
+                "imgix",
+                "cdn",
+                "images.",
+                "static.",
+                "media.",
+            )
+            if not any(k in host or k in path for k in known):
+                if not re.search(
+                    r"/(photo|image|media|asset|picture|annonce|listing|gallery|thumb)",
+                    path,
+                    re.I,
+                ):
+                    return None
     if _SKIP_IMG_RE.search(abs_u):
         return None
     return abs_u
@@ -155,16 +186,46 @@ def extract_primary_listing_image(soup: BeautifulSoup, page_url: str) -> str | N
                 candidates.append(u)
 
     for sel in _GALLERY_SELECTORS:
-        for el in soup.select(sel)[:12]:
+        for el in soup.select(sel)[:16]:
             srcset = el.get("srcset") or el.get("data-srcset")
             if srcset:
                 u = _pick_largest_from_srcset(srcset, page_url)
                 if u:
                     candidates.append(u)
-            for attr in ("data-src", "data-lazy-src", "data-original", "src"):
+            for attr in (
+                "data-src",
+                "data-lazy-src",
+                "data-original",
+                "data-zoom-image",
+                "data-full",
+                "data-image",
+                "data-url",
+                "src",
+            ):
                 u = _normalize_image_url(el.get(attr), page_url)
                 if u:
                     candidates.append(u)
+            style = el.get("style") or ""
+            for m in _BG_IMAGE_RE.finditer(style):
+                u = _normalize_image_url(m.group(1), page_url)
+                if u:
+                    candidates.append(u)
+
+    for el in soup.select("[style*='background']")[:20]:
+        style = el.get("style") or ""
+        for m in _BG_IMAGE_RE.finditer(style):
+            u = _normalize_image_url(m.group(1), page_url)
+            if u:
+                candidates.append(u)
+
+    for script in soup.find_all("script"):
+        text = script.string or script.get_text() or ""
+        if len(text) < 40 or "http" not in text:
+            continue
+        for m in _EMBEDDED_IMG_URL_RE.finditer(text[:500_000]):
+            u = _normalize_image_url(m.group(0), page_url)
+            if u:
+                candidates.append(u)
 
     seen: set[str] = set()
     for u in candidates:

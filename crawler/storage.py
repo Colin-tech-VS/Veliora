@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -21,6 +22,29 @@ from crawler.extractors import LeadData
 DB_PATH = sqlite_path()
 
 logger = logging.getLogger(__name__)
+
+# Colonnes liste CRM (sans facts_audit — gros JSON inutile en tableau).
+_LEADS_LIST_SQL = """
+    id, first_name, last_name, phone, email, address, city, postcode, sector,
+    surface, price, transaction_type, price_period, published_at, source, source_id,
+    source_url, status, pipeline, listing_type, type, agency, agency_id, score,
+    mandate_score, mandate_score_reason, previous_price, notes, next_follow_up,
+    dvf_median_m2, dvf_delta_pct, dvf_verdict, dvf_verdict_label, dvf_commune,
+    dvf_sample_count, dvf_compared_at, dvf_sector, dvf_reference_period,
+    listing_title, price_change_count, last_price_change_at, priority_tier,
+    score_explanation, scores_computed_at, latitude, longitude, listing_image_url,
+    image_custom, image_updated_at, missing_fields, created_at, updated_at
+""".strip()
+
+_SOURCES_CACHE_TTL_SEC = 50.0
+_sources_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def invalidate_sources_cache(agency_id: str | None = None) -> None:
+    if agency_id:
+        _sources_cache.pop(agency_id, None)
+    else:
+        _sources_cache.clear()
 
 
 def get_db_path() -> Path:
@@ -1278,7 +1302,7 @@ def save_lead(
                    score = ?, mandate_score = ?, mandate_score_reason = ?,
                    priority_tier = ?, score_explanation = ?, scores_computed_at = ?,
                    missing_fields = ?, listing_title = ?, facts_audit = ?,
-                   listing_image_url = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE listing_image_url END,
+                   listing_image_url = COALESCE(NULLIF(?, ''), listing_image_url),
                    updated_at = ?{dvf_touch}
                    WHERE source_url = ? AND agency_id = ?""",
                 (
@@ -1309,9 +1333,7 @@ def save_lead(
                     missing_json,
                     listing_title,
                     facts_audit_json,
-                    listing_image_url,
-                    listing_image_url,
-                    listing_image_url,
+                    listing_image_url or "",
                     now,
                     lead.source_url,
                     agency_id,
@@ -1335,6 +1357,7 @@ def save_lead(
                 saved_out,
                 deep_refresh=deep_refresh,
             )
+            invalidate_sources_cache(agency_id)
             return saved_out
 
         try:
@@ -1425,6 +1448,7 @@ def save_lead(
         _schedule_lead_image_after_save(
             lead, agency_id, int(new_id), saved_out, deep_refresh=deep_refresh
         )
+        invalidate_sources_cache(agency_id)
         return saved_out
 
 
@@ -1600,11 +1624,17 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
     return fixed
 
 
-def get_leads(agency_id: str, *, enrich: bool = True) -> list[dict]:
-    claim_orphan_leads(agency_id)
+def get_leads(
+    agency_id: str,
+    *,
+    enrich: bool = True,
+    claim_orphans: bool = False,
+) -> list[dict]:
+    if claim_orphans:
+        claim_orphan_leads(agency_id)
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM leads WHERE agency_id = ? ORDER BY created_at DESC",
+            f"SELECT {_LEADS_LIST_SQL} FROM leads WHERE agency_id = ? ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()
         leads = [_row_to_lead(r, enrich_scores=False) for r in rows]
@@ -1878,6 +1908,8 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             base["score_explanation"] = json.loads(row["score_explanation"])
         except json.JSONDecodeError:
             base["score_explanation"] = None
+    if base.get("mandate_score") is not None and base.get("score_explanation") is not None:
+        base["_scores_enriched"] = True
     if enrich_scores:
         return enrich_lead_row(base)
     return base
@@ -1966,16 +1998,69 @@ def sync_lead_source_ids(agency_id: str) -> int:
     return fixed
 
 
-def get_sources(agency_id: str) -> list[dict]:
-    sync_default_sources_for_agency(agency_id)
-    sync_lead_source_ids(agency_id)
+def _batch_lead_counts_by_source_id(conn, agency_id: str) -> dict[str, dict[str, int]]:
+    today = _now()[:10]
+    rows = conn.execute(
+        """SELECT source_id,
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN substr(created_at, 1, 10) = ? THEN 1 ELSE 0 END) AS created_today,
+                  SUM(CASE WHEN substr(COALESCE(updated_at, created_at), 1, 10) = ? THEN 1 ELSE 0 END) AS touched_today
+           FROM leads
+           WHERE agency_id = ?
+             AND source_id IS NOT NULL AND source_id != ''
+           GROUP BY source_id""",
+        (today, today, agency_id),
+    ).fetchall()
+    out: dict[str, dict[str, int]] = {}
+    for r in rows:
+        sid = r["source_id"]
+        if not sid:
+            continue
+        out[str(sid)] = {
+            "total": int(r["total"] or 0),
+            "created_today": int(r["created_today"] or 0),
+            "touched_today": int(r["touched_today"] or 0),
+        }
+    return out
+
+
+def get_sources(
+    agency_id: str,
+    *,
+    sync: bool = False,
+    live_counts: bool | None = None,
+) -> list[dict]:
+    if live_counts is None:
+        live_counts = sync
+    if not sync:
+        cached = _sources_cache.get(agency_id)
+        if cached and (time.monotonic() - cached[0]) < _SOURCES_CACHE_TTL_SEC:
+            return list(cached[1])
+    if sync:
+        sync_default_sources_for_agency(agency_id)
+        sync_lead_source_ids(agency_id)
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM sources WHERE agency_id = ? ORDER BY name",
             (agency_id,),
         ).fetchall()
-        out = [_row_to_source(r, conn, agency_id) for r in rows]
-    return sorted(out, key=_source_sort_key)
+        batch: dict[str, dict[str, int]] = {}
+        if live_counts:
+            batch = _batch_lead_counts_by_source_id(conn, agency_id)
+        out = [
+            _row_to_source(
+                r,
+                conn,
+                agency_id,
+                live_counts=live_counts,
+                counts_by_source_id=batch,
+            )
+            for r in rows
+        ]
+    result = sorted(out, key=_source_sort_key)
+    if not sync:
+        _sources_cache[agency_id] = (time.monotonic(), result)
+    return result
 
 
 def get_source(source_id: str, agency_id: str) -> dict | None:
@@ -1988,7 +2073,14 @@ def get_source(source_id: str, agency_id: str) -> dict | None:
         return _row_to_source(row, conn, agency_id) if row else None
 
 
-def _row_to_source(r: sqlite3.Row, conn: sqlite3.Connection | None = None, agency_id: str | None = None):
+def _row_to_source(
+    r: sqlite3.Row,
+    conn: sqlite3.Connection | None = None,
+    agency_id: str | None = None,
+    *,
+    live_counts: bool = True,
+    counts_by_source_id: dict[str, dict[str, int]] | None = None,
+):
     from crawler.url_utils import logo_fallback_for_domain, logo_url_for_domain, registrable_domain
     from urllib.parse import urlparse
 
@@ -2006,13 +2098,20 @@ def _row_to_source(r: sqlite3.Row, conn: sqlite3.Connection | None = None, agenc
     leads_count = int(r["found_total"] or 0)
     leads_updated_today = int(r["found_today"] or 0)
     leads_created_today = 0
-    if conn is not None and agency_id:
-        counts = _count_leads_for_source(
-            conn, agency_id, r["id"], r["name"], domain, r["base_url"]
-        )
-        leads_count = counts["total"]
-        leads_updated_today = counts["touched_today"]
-        leads_created_today = counts["created_today"]
+    if live_counts and agency_id:
+        sid = str(r["id"])
+        batch = (counts_by_source_id or {}).get(sid)
+        if batch is not None:
+            leads_count = batch["total"]
+            leads_updated_today = batch["touched_today"]
+            leads_created_today = batch["created_today"]
+        elif conn is not None:
+            counts = _count_leads_for_source(
+                conn, agency_id, r["id"], r["name"], domain, r["base_url"]
+            )
+            leads_count = counts["total"]
+            leads_updated_today = counts["touched_today"]
+            leads_created_today = counts["created_today"]
 
     return {
         "id": r["id"],
@@ -2283,46 +2382,25 @@ def get_activities(agency_id: str, limit: int = 20) -> list[dict]:
 
 def get_stats(agency_id: str) -> dict:
     with get_connection() as conn:
-        total = row_scalar(
-            conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE agency_id = ?", (agency_id,)
-            ).fetchone()
-        )
-        sans_agence = row_scalar(
-            conn.execute(
-                """SELECT COUNT(*) FROM leads
-               WHERE agency_id = ?
-               AND COALESCE(listing_type, type, 'particulier') != 'agence'""",
-                (agency_id,),
-            ).fetchone()
-        )
-        nouveaux = row_scalar(
-            conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'nouveau'",
-                (agency_id,),
-            ).fetchone()
-        )
-        mandats = row_scalar(
-            conn.execute(
-                "SELECT COUNT(*) FROM leads WHERE agency_id = ? AND status = 'mandat'",
-                (agency_id,),
-            ).fetchone()
-        )
-        particuliers = row_scalar(
-            conn.execute(
-                """SELECT COUNT(*) FROM leads
-               WHERE agency_id = ?
-               AND COALESCE(listing_type, type, 'particulier') = 'particulier'""",
-                (agency_id,),
-            ).fetchone()
-        )
-        return {
-            "total": total,
-            "sans_agence": sans_agence,
-            "nouveaux": nouveaux,
-            "mandats": mandats,
-            "particuliers": particuliers,
-        }
+        row = conn.execute(
+            """SELECT
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN COALESCE(listing_type, type, 'particulier') != 'agence' THEN 1 ELSE 0 END) AS sans_agence,
+                   SUM(CASE WHEN status = 'nouveau' THEN 1 ELSE 0 END) AS nouveaux,
+                   SUM(CASE WHEN status = 'mandat' THEN 1 ELSE 0 END) AS mandats,
+                   SUM(CASE WHEN COALESCE(listing_type, type, 'particulier') = 'particulier' THEN 1 ELSE 0 END) AS particuliers
+               FROM leads WHERE agency_id = ?""",
+            (agency_id,),
+        ).fetchone()
+    if not row:
+        return {"total": 0, "sans_agence": 0, "nouveaux": 0, "mandats": 0, "particuliers": 0}
+    return {
+        "total": int(row["total"] or 0),
+        "sans_agence": int(row["sans_agence"] or 0),
+        "nouveaux": int(row["nouveaux"] or 0),
+        "mandats": int(row["mandats"] or 0),
+        "particuliers": int(row["particuliers"] or 0),
+    }
 
 
 def get_source_stats(agency_id: str) -> list[dict]:

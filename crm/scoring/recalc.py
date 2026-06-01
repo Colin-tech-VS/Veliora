@@ -12,24 +12,38 @@ from crm.scoring.weights import merge_weights
 
 
 class ScoringBatchContext:
-    """Poids agence + historiques prix préchargés (évite N requêtes SQL)."""
+    """Poids agence + historiques prix + clients préchargés (évite N requêtes SQL)."""
 
-    __slots__ = ("weights", "history_by_lead")
+    __slots__ = ("weights", "history_by_lead", "clients", "agency_id")
 
     def __init__(
         self,
         weights: dict[str, float],
         history_by_lead: dict[int, list[dict]],
+        clients: list[dict] | None = None,
+        agency_id: str | None = None,
     ) -> None:
         self.weights = weights
         self.history_by_lead = history_by_lead
+        self.clients = clients or []
+        self.agency_id = agency_id
+
+
+def _load_agency_clients(agency_id: str) -> list[dict]:
+    try:
+        from crm.mandates.storage import list_property_clients
+
+        return list_property_clients(str(agency_id))
+    except Exception:
+        return []
 
 
 def load_scoring_batch_context(agency_id: str, lead_ids: list[int]) -> ScoringBatchContext:
     weights = merge_weights(None)
     history: dict[int, list[dict]] = {}
+    clients: list[dict] = []
     if not agency_id or not lead_ids:
-        return ScoringBatchContext(weights, history)
+        return ScoringBatchContext(weights, history, clients, agency_id)
     try:
         from crawler.storage import get_connection
         from crm.scoring.price_history import fetch_price_history_map
@@ -38,9 +52,21 @@ def load_scoring_batch_context(agency_id: str, lead_ids: list[int]) -> ScoringBa
         with get_connection() as conn:
             weights = load_agency_weights(conn, str(agency_id))
             history = fetch_price_history_map(conn, str(agency_id), lead_ids)
+        clients = _load_agency_clients(agency_id)
     except Exception:
         pass
-    return ScoringBatchContext(weights, history)
+    return ScoringBatchContext(weights, history, clients, agency_id)
+
+
+def _inject_demand(lead: dict, clients: list[dict]) -> None:
+    if not clients:
+        return
+    try:
+        from crm.matching.service import demand_counts
+
+        lead["demand_matches"] = demand_counts(lead, clients)
+    except Exception:
+        pass
 
 
 def _apply_scoring_context(lead: dict, ctx: ScoringBatchContext | None) -> dict:
@@ -59,6 +85,7 @@ def _apply_scoring_context(lead: dict, ctx: ScoringBatchContext | None) -> dict:
         if last_pct is not None:
             lead["last_price_drop_pct"] = last_pct
     lead["_agency_weights"] = ctx.weights
+    _inject_demand(lead, ctx.clients)
     return lead
 
 
@@ -88,6 +115,7 @@ def _load_scoring_context(lead: dict) -> dict:
             if last_pct is not None:
                 lead["last_price_drop_pct"] = last_pct
             lead["_agency_weights"] = load_agency_weights(conn, str(agency_id))
+        _inject_demand(lead, _load_agency_clients(agency_id))
     except Exception:
         lead.setdefault("_agency_weights", merge_weights(None))
     return lead
@@ -194,6 +222,8 @@ def hydrate_leads_for_list(leads: list[dict], agency_id: str) -> list[dict]:
         lid = raw.get("id")
         if lid is not None and int(lid) in enriched_by_id:
             out.append(enriched_by_id[int(lid)])
+        elif raw.get("_scores_enriched"):
+            out.append(raw)
         else:
             try:
                 out.append(hydrate_lead_from_stored(raw))

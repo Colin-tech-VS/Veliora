@@ -402,8 +402,10 @@
   }
 
   .drawer-body {
-    max-height: 50dvh;
+    max-height: min(58dvh, calc(100dvh - 12rem));
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .drawer-actions,

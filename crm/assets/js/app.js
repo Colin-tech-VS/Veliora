@@ -27,6 +27,7 @@ const DVF_APP_URL = "https://app.dvf.etalab.gouv.fr/";
 const state = {
   user: null,
   settings: null,
+  appStats: null,
   currentView: "dashboard",
   leadsFilter: "all",
   leadsView: "table",
@@ -39,6 +40,10 @@ const state = {
   sourceCityPreview: {},
   sourceCityPreviewCity: "",
 };
+
+const POLL_IDLE_MS = 18000;
+const POLL_CRAWL_MS = 12000;
+let backgroundPollTimer = null;
 
 /** Crawl en arrière-plan — navigation libre pendant le job */
 const crawlState = {
@@ -605,6 +610,7 @@ function applyBootstrapPayload(data) {
   LEADS = data.leads;
   SOURCES = data.sources;
   const stats = data.stats || {};
+  state.appStats = stats;
   ACTIVITIES = data.activities || [];
   SOURCE_STATS = data.source_stats || [];
   if (data.crawler && typeof data.crawler === "object") {
@@ -652,6 +658,7 @@ async function loadDataCore() {
   SOURCES = sourcesResult.value;
 
   if (statsResult.status === "fulfilled") {
+    state.appStats = statsResult.value.stats || null;
     ACTIVITIES = statsResult.value.activities || [];
     SOURCE_STATS = statsResult.value.source_stats || [];
   } else {
@@ -2391,7 +2398,7 @@ function prefetchDrawerHtml(lead) {
 
 function scheduleDrawerCacheWarm() {
   if (!LEADS?.length) return;
-  const run = () => warmDrawerCache(36);
+  const run = () => warmDrawerCache(10);
   if (typeof requestIdleCallback === "function") {
     requestIdleCallback(run, { timeout: 4000 });
   } else {
@@ -2889,12 +2896,11 @@ function setLeadsLiveIndicator(on) {
 
 function scheduleLeadsRefreshDuringCrawl(job) {
   if (crawlState.leadsRefreshTimer) return;
-  // 3 s : /leads + /sources sont lourds (lecture complète + dedup). Les rafraîchir
-  // moins souvent pendant le crawl allège le worker unique et limite les coupures.
+  // 8 s : évite de saturer le worker avec /leads en boucle pendant le crawl.
   crawlState.leadsRefreshTimer = setTimeout(async () => {
     crawlState.leadsRefreshTimer = null;
     await refreshLeadsDuringCrawl(job);
-  }, 3000);
+  }, 8000);
 }
 
 async function refreshLeadsDuringCrawl(job) {
@@ -2902,12 +2908,11 @@ async function refreshLeadsDuringCrawl(job) {
     crawlState.lastJob = job || crawlState.lastJob;
     const prevCount = LEADS.length;
     const prevFp = leadsDataFingerprint(LEADS);
-    const [leads, sources] = await Promise.all([api("/leads"), api("/sources")]);
+    const leads = await api("/leads");
     const fp = leadsDataFingerprint(leads);
     const changed = fp !== prevFp || leads.length !== prevCount;
 
     LEADS = leads;
-    SOURCES = sources;
     crawlState.lastLeadCount = leads.length;
     updateSourceCardsLive(crawlState.lastJob);
     updateCrawlerSummary();
@@ -2916,10 +2921,12 @@ async function refreshLeadsDuringCrawl(job) {
 
     const added = Math.max(0, leads.length - prevCount);
 
-    void loadRadarAndPlaybook().then(() => {
-      renderRadarBriefing();
-      if (state.currentView === "playbook") renderPlaybook();
-    });
+    if (state.currentView === "dashboard" || state.currentView === "playbook") {
+      void loadRadarAndPlaybook().then(() => {
+        renderRadarBriefing();
+        if (state.currentView === "playbook") renderPlaybook();
+      });
+    }
     await refreshStats();
     updateSidebarCount();
     updateBadges();
@@ -3772,7 +3779,7 @@ function startLiveFramePolling() {
       liveFrameMisses += 1;
     }
     if (liveFrameMisses >= 5) hideLiveFrame();
-    if (crawlState.active) liveFrameTimer = setTimeout(tick, 1200);
+    if (crawlState.active) liveFrameTimer = setTimeout(tick, 2200);
   };
   liveFrameTimer = setTimeout(tick, 700);
 }
@@ -4158,6 +4165,7 @@ function syncCrawlerUI() {
 async function refreshStats() {
   try {
     const statsData = await api("/stats");
+    state.appStats = statsData.stats || state.appStats;
     ACTIVITIES = statsData.activities || [];
     SOURCE_STATS = statsData.source_stats || [];
   } catch (err) {
@@ -4292,17 +4300,32 @@ function renderStats() {
   const elLeads = document.getElementById("stat-leads");
   if (!elLeads) return;
 
-  const sansAgence = LEADS.filter((l) => l.type !== "agence").length;
-  const mandats = LEADS.filter((l) => l.status === "mandat" || l.pipeline === "mandat").length;
-  const nouveaux = LEADS.filter((l) => l.status === "nouveau").length;
+  const s = state.appStats;
+  const total = s?.total ?? LEADS.length;
+  const sansAgence = s?.sans_agence ?? LEADS.filter((l) => l.type !== "agence").length;
+  const mandats =
+    s?.mandats ?? LEADS.filter((l) => l.status === "mandat" || l.pipeline === "mandat").length;
+  const nouveaux = s?.nouveaux ?? LEADS.filter((l) => l.status === "nouveau").length;
 
-  elLeads.textContent = LEADS.length;
+  elLeads.textContent = total;
   const elSa = document.getElementById("stat-sans-agence");
   if (elSa) elSa.textContent = sansAgence;
   const elM = document.getElementById("stat-mandats");
   if (elM) elM.textContent = mandats;
   const elN = document.getElementById("stat-nouveaux");
   if (elN) elN.textContent = nouveaux;
+}
+
+function renderViewLight(view = state.currentView) {
+  updateBadges();
+  updateSidebarCount();
+  if (view === "leads") renderLeads();
+  else if (view === "pipeline") renderPipeline();
+  else if (view === "dashboard") {
+    renderDashboardTopLeads();
+    renderRadarBriefing();
+    renderStats();
+  } else if (view === "playbook") renderPlaybook();
 }
 
 function mandateCallRecommendation(score) {
@@ -6530,34 +6553,58 @@ function leadsDataFingerprint(leads) {
     .join(";");
 }
 
-function startPolling() {
-  setInterval(async () => {
-    try {
-      const status = await api("/crawler/status");
-      state.crawlerRunning = status.running;
-      syncCrawlerUI();
+function scheduleBackgroundPoll(delayMs) {
+  if (backgroundPollTimer) clearTimeout(backgroundPollTimer);
+  const ms =
+    delayMs ??
+    (crawlState.active || state.crawlerRunning ? POLL_CRAWL_MS : POLL_IDLE_MS);
+  backgroundPollTimer = setTimeout(runBackgroundPoll, ms);
+}
 
-      if (crawlState.active) {
-        scheduleLeadsRefreshDuringCrawl(null);
-        return;
-      }
+async function runBackgroundPoll() {
+  backgroundPollTimer = null;
+  if (document.visibilityState === "hidden") {
+    scheduleBackgroundPoll(POLL_IDLE_MS);
+    return;
+  }
+  try {
+    const status = await api("/crawler/status");
+    state.crawlerRunning = status.running;
+    syncCrawlerUI();
 
-      const [leads] = await Promise.all([api("/leads")]);
-      const fp = leadsDataFingerprint(leads);
-      const prevFp = leadsDataFingerprint(LEADS);
-      const changed = fp !== prevFp;
-      LEADS = leads;
-      if (changed) {
-        await loadRadarAndPlaybook().catch(() => {});
-        await refreshStats();
-        renderAll();
-      } else {
-        updateSidebarCount();
-      }
-    } catch {
-      /* silent */
+    if (crawlState.active) {
+      scheduleLeadsRefreshDuringCrawl(null);
+      scheduleBackgroundPoll(POLL_CRAWL_MS);
+      return;
     }
-  }, 5000);
+
+    const leads = await api("/leads");
+    const fp = leadsDataFingerprint(leads);
+    const prevFp = leadsDataFingerprint(LEADS);
+    const changed = fp !== prevFp;
+    LEADS = leads;
+    if (changed) {
+      if (state.currentView === "dashboard" || state.currentView === "playbook") {
+        await loadRadarAndPlaybook().catch(() => {});
+      }
+      await refreshStats();
+      renderViewLight(state.currentView);
+    } else {
+      updateSidebarCount();
+    }
+  } catch {
+    /* silent */
+  }
+  scheduleBackgroundPoll();
+}
+
+function startPolling() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      scheduleBackgroundPoll(1200);
+    }
+  });
+  scheduleBackgroundPoll(4000);
 }
 
 async function submitInvite(e) {

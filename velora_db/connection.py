@@ -15,6 +15,10 @@ from velora_db.sql_adapt import adapt_sql
 
 logger = logging.getLogger(__name__)
 
+_pg_pool = None
+_pg_pool_failed = False
+
+
 class DbCursor:
     """Curseur unifié (fetchone / fetchall / lastrowid / rowcount)."""
 
@@ -97,6 +101,36 @@ def _sqlite_connection() -> DbConnection:
     return DbConnection(conn, postgres=False)
 
 
+def _get_postgres_pool():
+    """Pool partagé Supabase — évite une poignée TCP par requête API."""
+    global _pg_pool, _pg_pool_failed
+    if _pg_pool_failed:
+        return None
+    if _pg_pool is not None:
+        return _pg_pool
+    try:
+        from psycopg.rows import dict_row
+        from psycopg_pool import ConnectionPool
+
+        url = database_url()
+        if not url:
+            _pg_pool_failed = True
+            return None
+        _pg_pool = ConnectionPool(
+            url,
+            min_size=1,
+            max_size=12,
+            kwargs={"row_factory": dict_row},
+            open=True,
+        )
+        logger.info("Pool PostgreSQL Veliora actif (max 12)")
+        return _pg_pool
+    except Exception as exc:
+        logger.warning("Pool PostgreSQL indisponible, connexion directe : %s", exc)
+        _pg_pool_failed = True
+        return None
+
+
 def _postgres_connection() -> DbConnection:
     import psycopg
     from psycopg.rows import dict_row
@@ -110,7 +144,24 @@ def _postgres_connection() -> DbConnection:
 
 @contextmanager
 def get_connection():
-    conn = _postgres_connection() if is_postgres() else _sqlite_connection()
+    if is_postgres():
+        pool = _get_postgres_pool()
+        if pool is not None:
+            with pool.connection() as raw:
+                yield DbConnection(raw, postgres=True)
+            return
+        conn = _postgres_connection()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return
+
+    conn = _sqlite_connection()
     try:
         yield conn
         conn.commit()

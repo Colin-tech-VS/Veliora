@@ -21,6 +21,7 @@ NATIONAL_DEFAULT_WEIGHTS: dict[str, float] = {
     "contact_email": 1.0,
     "vente": 1.0,
     "bien_cible": 1.0,
+    "demande": 1.0,
     "nouveau": 1.0,
     "malus_agence": 1.0,
     "malus_sur_marche": 1.0,

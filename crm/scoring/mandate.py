@@ -258,6 +258,29 @@ def compute_mandate_score(
                 "detail": "Soyez parmi les premiers à contacter",
             })
 
+    # Demande interne : acquéreurs / locataires compatibles déjà au portefeuille.
+    # Un bien qui répond à une demande enregistrée est plus facile à rentrer/placer.
+    demand = lead.get("demand_matches") or {}
+    tx = (lead.get("transaction_type") or "vente").lower()
+    relevant = int(demand.get("location" if tx == "location" else "vente") or 0)
+    if relevant > 0:
+        base = 6 if relevant == 1 else (10 if relevant == 2 else 14)
+        if int(demand.get("strong") or 0) > 0:
+            base += 3
+        base = min(base, 16)
+        pts = apply_weight(base, "demande", w)
+        seg = "locataire" if tx == "location" else "acquéreur"
+        label = f"{relevant} {seg}{'s' if relevant > 1 else ''} compatible{'s' if relevant > 1 else ''}"
+        contributions.append(
+            ScoreContribution("demande", label, pts, "Demande déjà en portefeuille")
+        )
+        tags.append("demande_interne")
+        positive.append({
+            "key": "demande",
+            "label": label,
+            "detail": "Acheteur/locataire en base — mise en relation rapide",
+        })
+
     raw = sum(c.points for c in contributions)
     capped_reason: str | None = None
     has_contact = _has_phone(lead) or _has_email(lead)
