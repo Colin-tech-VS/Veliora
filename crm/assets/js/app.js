@@ -2529,10 +2529,12 @@ function setLeadsLiveIndicator(on) {
 
 function scheduleLeadsRefreshDuringCrawl(job) {
   if (crawlState.leadsRefreshTimer) return;
+  // 3 s : /leads + /sources sont lourds (lecture complète + dedup). Les rafraîchir
+  // moins souvent pendant le crawl allège le worker unique et limite les coupures.
   crawlState.leadsRefreshTimer = setTimeout(async () => {
     crawlState.leadsRefreshTimer = null;
     await refreshLeadsDuringCrawl(job);
-  }, 700);
+  }, 3000);
 }
 
 async function refreshLeadsDuringCrawl(job) {
@@ -3566,7 +3568,9 @@ function startCrawlPolling(jobId, label, options = {}) {
         return;
       }
 
-      crawlState.pollTimer = setTimeout(tick, 600);
+      // 1,5 s (au lieu de 600 ms) : moins de requêtes concurrentes avec le thread
+      // de crawl (1 worker) → réduit les « Connexion interrompue » sans perdre le suivi.
+      crawlState.pollTimer = setTimeout(tick, 1500);
     } catch (err) {
       if (isNetworkFetchError(err) || err.message?.includes("Connexion perdue")) {
         networkFails += 1;
