@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS leads (
     priority_tier   TEXT,
     score_explanation TEXT,
     scores_computed_at TIMESTAMPTZ,
+    latitude        DOUBLE PRECISION,
+    longitude       DOUBLE PRECISION,
+    listing_image_url TEXT,
+    image_custom    SMALLINT NOT NULL DEFAULT 0,
+    image_updated_at TIMESTAMPTZ,
     missing_fields  TEXT NOT NULL DEFAULT '[]',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

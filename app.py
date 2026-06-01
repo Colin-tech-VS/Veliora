@@ -578,6 +578,80 @@ def api_scoring_weights():
     })
 
 
+@app.route("/api/leads/<int:lead_id>/image", methods=["GET", "POST"])
+def api_lead_image(lead_id):
+    from crm.leads.images import (
+        lead_has_display_image,
+        resolve_lead_image_path,
+        revert_lead_image_to_crawl,
+        save_custom_lead_image,
+        sync_lead_image_from_url,
+    )
+
+    agency_id = _aid()
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
+
+    if request.method == "GET":
+        path = resolve_lead_image_path(agency_id, lead_id)
+        if not path:
+            return jsonify({"error": "Pas d'image"}), 404
+        resp = send_file(
+            path,
+            mimetype="image/webp",
+            max_age=86400,
+            conditional=True,
+        )
+        resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+        return resp
+
+    action = (request.form.get("action") or "").strip().lower()
+    if request.is_json:
+        body = request.get_json(silent=True) or {}
+        action = action or (body.get("action") or "").strip().lower()
+
+    if action == "revert":
+        if not revert_lead_image_to_crawl(lead_id, agency_id):
+            return jsonify({"error": "Image crawl introuvable — recrawlez l'annonce"}), 400
+        return jsonify({"ok": True, "lead": get_lead(lead_id, agency_id)})
+
+    raw = None
+    if request.files and request.files.get("image"):
+        raw = request.files["image"].read()
+    if not raw:
+        return jsonify({"error": "Fichier image requis"}), 400
+    if len(raw) > 8 * 1024 * 1024:
+        return jsonify({"error": "Image trop lourde (max 8 Mo)"}), 400
+    if not save_custom_lead_image(lead_id, agency_id, raw):
+        return jsonify({"error": "Impossible d'enregistrer l'image"}), 400
+    return jsonify({"ok": True, "lead": get_lead(lead_id, agency_id)})
+
+
+@app.route("/api/leads/<int:lead_id>/image/sync", methods=["POST"])
+def api_lead_image_sync(lead_id):
+    """Re-télécharge l'image depuis l'URL portail (si pas d'image personnalisée)."""
+    from crm.leads.images import sync_lead_image_from_url
+
+    agency_id = _aid()
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
+    url = (lead.get("listing_image_url") or "").strip()
+    if not url:
+        return jsonify({"error": "Aucune URL d'image sur cette fiche — recrawlez l'annonce"}), 400
+    ok = sync_lead_image_from_url(lead_id, agency_id, url, respect_custom=True)
+    if not ok and lead.get("image_custom"):
+        return jsonify({
+            "ok": False,
+            "error": "Image personnalisée conservée — utilisez « Garder l'image crawl » pour réinitialiser",
+            "lead": lead,
+        }), 409
+    if not ok:
+        return jsonify({"error": "Téléchargement impossible"}), 502
+    return jsonify({"ok": True, "lead": get_lead(lead_id, agency_id)})
+
+
 @app.route("/api/leads/<int:lead_id>", methods=["GET", "PATCH", "DELETE"])
 def api_lead(lead_id):
     if request.method == "DELETE":
@@ -1409,6 +1483,18 @@ def api_mandate_templates():
 
     t = request.args.get("type", "vente")
     return jsonify({"ok": True, "template": get_template_meta(t)})
+
+
+@app.route("/api/map")
+def api_map():
+    """Marqueurs carte : agence (fiche légale) + annonces géocodées."""
+    from crm.maps.service import build_map_payload
+
+    try:
+        return jsonify(build_map_payload(_aid()))
+    except Exception as exc:
+        logging.exception("GET /api/map")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/api/mandates/agency-profile", methods=["GET", "PATCH"])

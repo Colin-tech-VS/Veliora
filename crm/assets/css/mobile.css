@@ -329,6 +329,34 @@
     overflow-y: auto;
   }
 
+  .map-view {
+    min-height: calc(100dvh - 11rem);
+  }
+
+  .map-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .map-toolbar-actions {
+    width: 100%;
+  }
+
+  .map-toolbar-actions .btn {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .map-filter-around {
+    width: 100%;
+    margin-bottom: 0.25rem;
+  }
+
+  .map-canvas-wrap,
+  .map-canvas {
+    min-height: calc(100dvh - 16rem);
+  }
+
   /* Crawler */
   .sources-grid {
     grid-template-columns: 1fr;

@@ -236,6 +236,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
             ("priority_tier", "TEXT"),
             ("score_explanation", "TEXT"),
             ("scores_computed_at", "TEXT"),
+            ("latitude", "REAL"),
+            ("longitude", "REAL"),
+            ("listing_image_url", "TEXT"),
+            ("image_custom", "INTEGER NOT NULL DEFAULT 0"),
+            ("image_updated_at", "TEXT"),
         ):
             if col not in lcols:
                 conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typedef}")
@@ -497,9 +502,25 @@ def init_db() -> None:
             init_postgres_schema()
         with get_connection() as conn:
             ensure_mandate_tables(conn)
+        try:
+            from crm.maps.service import ensure_map_schema
+            from crm.leads.images import ensure_lead_image_schema
+
+            ensure_map_schema()
+            ensure_lead_image_schema()
+        except Exception:
+            logger.exception("ensure_map_schema / lead images")
         logger.info("Base Supabase Veliora prête")
         return
     _init_sqlite()
+    try:
+        from crm.maps.service import ensure_map_schema
+        from crm.leads.images import ensure_lead_image_schema
+
+        ensure_map_schema()
+        ensure_lead_image_schema()
+    except Exception:
+        logger.exception("ensure_map_schema / lead images")
 
 
 def scoped_source_id(agency_id: str, base_id: str) -> str:
@@ -1173,6 +1194,7 @@ def save_lead(
     segment = _segment_crawled_lead(preview, lead, partial)
 
     listing_title = lead.raw_extras.get("listing_title") or None
+    listing_image_url = (lead.raw_extras.get("listing_image_url") or "").strip() or None
     facts_audit_json = (
         json.dumps(lead.raw_extras.get("facts_audit"), ensure_ascii=False)
         if lead.raw_extras.get("facts_audit")
@@ -1236,6 +1258,7 @@ def save_lead(
                    score = ?, mandate_score = ?, mandate_score_reason = ?,
                    priority_tier = ?, score_explanation = ?, scores_computed_at = ?,
                    missing_fields = ?, listing_title = ?, facts_audit = ?,
+                   listing_image_url = COALESCE(?, listing_image_url),
                    updated_at = ?{dvf_touch}
                    WHERE source_url = ? AND agency_id = ?""",
                 (
@@ -1266,16 +1289,14 @@ def save_lead(
                     missing_json,
                     listing_title,
                     facts_audit_json,
+                    listing_image_url,
                     now,
                     lead.source_url,
                     agency_id,
                 ),
             )
             conn.commit()
-            # NB : pas de recalc_source_found_counts ici — appelé en fin de source
-            # (engine). Le faire par-lead provoque des deadlocks sur « sources »
-            # avec les workers DVF parallèles (UPDATE concurrents de toutes les sources).
-            return {
+            saved_out = {
                 "id": existing_row["id"],
                 "created": False,
                 "verified": True,
@@ -1285,6 +1306,8 @@ def save_lead(
                 "price_changed": price_changed,
                 "surface_changed": surface_changed,
             }
+            _schedule_lead_image_after_save(lead, agency_id, int(existing_row["id"]), saved_out)
+            return saved_out
 
         try:
             cur = conn.execute(
@@ -1294,8 +1317,8 @@ def save_lead(
                     source_url, listing_type, agency, agency_id, score,
                     mandate_score, mandate_score_reason, priority_tier, score_explanation,
                     scores_computed_at, missing_fields,
-                    listing_title, facts_audit, pipeline, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    listing_title, facts_audit, listing_image_url, pipeline, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     lead.first_name,
                     lead.last_name,
@@ -1325,6 +1348,7 @@ def save_lead(
                     missing_json,
                     listing_title,
                     facts_audit_json,
+                    listing_image_url,
                     segment["pipeline"],
                     segment["status"],
                     now,
@@ -1362,9 +1386,7 @@ def save_lead(
         if agency_id and new_id and lead.price:
             _record_price_change(conn, int(new_id), agency_id, int(lead.price), now=now)
         conn.commit()
-        # Pas de recalc par-lead (deadlocks « sources » avec DVF parallèle) —
-        # fait en fin de source par l'engine.
-        return {
+        saved_out = {
             "id": new_id,
             "created": True,
             "verified": True,
@@ -1372,6 +1394,27 @@ def save_lead(
             "verification": verification.summary(),
             "updated": False,
         }
+        _schedule_lead_image_after_save(lead, agency_id, int(new_id), saved_out)
+        return saved_out
+
+
+def _schedule_lead_image_after_save(
+    lead: LeadData,
+    agency_id: str,
+    lead_id: int,
+    saved: dict,
+) -> None:
+    if not saved.get("verified") or not lead_id or not agency_id:
+        return
+    url = (lead.raw_extras or {}).get("listing_image_url")
+    if not url:
+        return
+    try:
+        from crm.leads.images import schedule_lead_image_sync
+
+        schedule_lead_image_sync(lead_id, agency_id, url)
+    except Exception:
+        logger.exception("schedule lead image %s", lead_id)
 
 
 def add_activity(type_: str, text: str, agency_id: str | None = None) -> None:
@@ -1578,6 +1621,12 @@ def delete_lead(lead_id: int, agency_id: str) -> bool:
         owner = " ".join(p for p in (row["first_name"], row["last_name"]) if p) or f"#{lead_id}"
         conn.execute("DELETE FROM leads WHERE id = ? AND agency_id = ?", (lead_id, agency_id))
         conn.commit()
+    try:
+        from crm.leads.images import delete_lead_images
+
+        delete_lead_images(agency_id, lead_id)
+    except Exception:
+        logger.exception("delete lead images %s", lead_id)
     recalc_source_found_counts(agency_id)
     add_activity("lead", f"Prospect supprimé — {owner}", agency_id)
     return True
@@ -1742,6 +1791,12 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         "priority_tier": row["priority_tier"] if "priority_tier" in keys else None,
         "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
     }
+    try:
+        from crm.leads.images import lead_image_meta_from_row
+
+        base.update(lead_image_meta_from_row(row))
+    except Exception:
+        base.update({"has_image": False, "image_custom": False, "image_url": None})
     if "score_explanation" in keys and row["score_explanation"]:
         try:
             base["score_explanation"] = json.loads(row["score_explanation"])

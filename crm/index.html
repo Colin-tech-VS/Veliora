@@ -9,8 +9,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=43">
-  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=33">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=45">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=35">
 </head>
 <body>
   <div class="sidebar-overlay" id="sidebar-overlay"></div>
@@ -49,6 +49,10 @@
           <button class="nav-item" data-view="pipeline">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
             Pipeline
+          </button>
+          <button class="nav-item" data-view="map">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m0 0L9 7"/></svg>
+            Carte
           </button>
           <button class="nav-item" data-view="mandates">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -673,6 +677,43 @@
           <div class="pipeline-board" id="pipeline-board"></div>
         </div>
 
+        <!-- Carte -->
+        <div class="view" id="view-map">
+          <div class="map-view">
+            <div class="map-toolbar">
+              <div class="map-toolbar-start">
+                <p class="map-status" id="map-status">Annonces autour de vous et position de l'agence</p>
+                <p class="map-legend">
+                  <span class="map-legend-dot map-legend-dot--user"></span> Vous
+                  <span class="map-legend-dot map-legend-dot--agency"></span> Agence
+                  <span class="map-legend-dot map-legend-dot--lead"></span> Annonces
+                  <span id="map-legend-count"></span>
+                </p>
+                <p class="map-legend-pending" id="map-legend-pending" hidden></p>
+              </div>
+              <div class="map-toolbar-actions">
+                <label class="map-filter-around">
+                  <input type="checkbox" id="map-filter-around">
+                  Autour de moi (15 km)
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" id="map-btn-locate" title="Ma position GPS">
+                  Ma position
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="map-btn-agency" title="Centrer sur l'agence">
+                  Agence
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="map-btn-refresh" title="Recharger les marqueurs">
+                  Actualiser
+                </button>
+              </div>
+            </div>
+            <div class="map-setup-panel" id="map-setup-panel" hidden></div>
+            <div class="map-canvas-wrap" id="map-canvas-wrap">
+              <div id="map-canvas" class="map-canvas" role="application" aria-label="Carte des annonces"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Mandats -->
         <div class="view" id="view-mandates">
           <div class="module-intro">
@@ -1123,7 +1164,8 @@
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
-  <script src="/crm/assets/js/app.js?v=63"></script>
+  <script src="/crm/assets/js/map.js?v=1"></script>
+  <script src="/crm/assets/js/app.js?v=65"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/crm/sw.js?v=5").then((reg) => {

@@ -2068,6 +2068,12 @@ def enrich_core_listing_fields(html: str, url: str, lead: LeadData) -> LeadData:
             if not is_hub_listing_address(addr_text):
                 lead.address = addr_text
 
+    from crawler.listing_images import extract_primary_listing_image
+
+    img_url = extract_primary_listing_image(soup, url)
+    if img_url:
+        lead.raw_extras["listing_image_url"] = img_url
+
     return lead
 
 

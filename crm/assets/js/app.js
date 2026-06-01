@@ -73,6 +73,10 @@ const viewTitles = {
   leads: { title: "Opportunités", subtitle: "Classées par Score Mandat™ (vendeurs détectés)" },
   crawler: { title: "Sources", subtitle: "Alimenter le radar (Mode 1)" },
   pipeline: { title: "Pipeline", subtitle: "Glissez-déposez vos dossiers — du premier contact au mandat" },
+  map: {
+    title: "Carte",
+    subtitle: "Vos annonces, votre agence et votre position (mobile & bureau)",
+  },
   mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
   clients: {
     title: "Acheteurs / Locataires",
@@ -1372,6 +1376,7 @@ async function init() {
   setupDrawer();
   setupLeadRefresh();
   setupLeadsActions();
+  setupLeadsListDelegation();
   setupCrawler();
   setupCrawlBackground();
   setupScriptPanel();
@@ -1542,6 +1547,12 @@ async function switchView(view) {
     } catch (err) {
       showToast(err.message, "error");
     }
+  }
+  if (view === "map" && window.VelioraMap?.enter) {
+    void window.VelioraMap.enter();
+    setTimeout(() => {
+      if (state.currentView === "map") window.VelioraMap?.resize?.();
+    }, 250);
   }
   if (view === "playbook") {
     const prev = PLAYBOOK;
@@ -3196,6 +3207,20 @@ function applyLeadLiveUpdate(lead, prevLead) {
   patchDrawerLeadFields(lead, prevLead);
   patchLeadRowInList(lead, prevLead);
   renderLeadRefreshFieldChips(lead, prevLead);
+  const imgChanged =
+    !prevLead ||
+    prevLead.has_image !== lead.has_image ||
+    prevLead.image_updated_at !== lead.image_updated_at ||
+    prevLead.image_custom !== lead.image_custom;
+  if (
+    imgChanged &&
+    document.getElementById("lead-drawer")?.classList.contains("open") &&
+    state.selectedLead?.id === lead.id
+  ) {
+    refreshDrawerBodyContent(lead);
+    updateDrawerChrome(lead);
+  }
+  if (imgChanged && state.currentView === "leads") renderLeads();
 }
 
 async function fetchLeadSnapshot(leadId) {
@@ -4002,20 +4027,73 @@ function getFilteredLeads() {
   return leads.sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
 }
 
-function renderAll() {
-  renderStats();
-  renderRadarBriefing();
-  renderPlaybook();
-  renderActivity();
-  renderSourceChart();
-  renderLeads();
-  renderPipeline();
-  renderCrawler();
-  renderDashboardTopLeads();
+function renderView(view = state.currentView) {
   updateBadges();
   updateSidebarCount();
-  if (typeof renderClientsModule === "function") renderClientsModule();
-  if (typeof renderMandatesModule === "function") renderMandatesModule();
+  renderStats();
+  renderActivity();
+  switch (view) {
+    case "dashboard":
+      renderRadarBriefing();
+      renderDashboardTopLeads();
+      renderSourceChart();
+      break;
+    case "playbook":
+      renderPlaybook();
+      break;
+    case "leads":
+      renderLeads();
+      break;
+    case "pipeline":
+      renderPipeline();
+      break;
+    case "crawler":
+      renderCrawler();
+      break;
+    case "mandates":
+      if (typeof renderMandatesModule === "function") renderMandatesModule();
+      break;
+    case "clients":
+      if (typeof renderClientsModule === "function") renderClientsModule();
+      break;
+    default:
+      break;
+  }
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(() => {
+      if (view !== "dashboard") {
+        renderRadarBriefing();
+        renderSourceChart();
+      }
+      if (view !== "playbook" && PLAYBOOK?.guide?.length) {
+        /* playbook déjà chargé en arrière-plan */
+      }
+    });
+  }
+}
+
+function renderAll() {
+  renderView(state.currentView);
+}
+
+function leadImageUrl(lead) {
+  if (!lead?.has_image && !lead?.image_url) return null;
+  return lead.image_url || `/api/leads/${lead.id}/image`;
+}
+
+function leadThumbHtml(lead, className = "lead-thumb") {
+  const url = leadImageUrl(lead);
+  if (!url) {
+    return `<div class="${className} ${className}--empty" aria-hidden="true"></div>`;
+  }
+  return `<img class="${className}" src="${escapeHtml(url)}" alt="" loading="lazy" decoding="async" width="80" height="60">`;
+}
+
+function mergeLeadInCache(lead) {
+  const idx = LEADS.findIndex((l) => l.id === lead.id);
+  if (idx >= 0) LEADS[idx] = { ...LEADS[idx], ...lead };
+  if (state.selectedLead?.id === lead.id) state.selectedLead = LEADS[idx] || lead;
+  return idx;
 }
 
 function renderStats() {
@@ -4797,9 +4875,12 @@ function renderLeadRow(lead) {
         </div>
       </td>
       <td>
-        <div class="lead-property">
-          <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}</div>
-          <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
+        <div class="lead-property lead-property--with-thumb">
+          ${leadThumbHtml(lead)}
+          <div class="lead-property-text">
+            <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}</div>
+            <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
+          </div>
         </div>
       </td>
       <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
@@ -4831,9 +4912,6 @@ function renderLeads() {
     }
 
     tableContainer.innerHTML = leads.map(renderLeadRow).join("");
-    tableContainer.querySelectorAll("tr").forEach((row) => {
-      row.addEventListener("click", () => openDrawer(parseInt(row.dataset.id)));
-    });
   } else {
     tableWrapper.style.display = "none";
     gridWrapper.style.display = "block";
@@ -4847,7 +4925,11 @@ function renderLeads() {
       <div class="lead-card" data-id="${lead.id}">
         <div class="lead-card-header">
           <div class="lead-owner">
-            <div class="lead-avatar" style="background:${getAvatarColor(lead.id)}">${getInitials(lead.owner)}</div>
+            ${
+              lead.has_image
+                ? leadThumbHtml(lead, "lead-card-thumb")
+                : `<div class="lead-avatar" style="background:${getAvatarColor(lead.id)}">${getInitials(lead.owner)}</div>`
+            }
             <div class="lead-info">
               <div class="name">${lead.owner}</div>
               <div class="phone">${lead.phone}</div>
@@ -4870,8 +4952,26 @@ function renderLeads() {
         </div>
       </div>`).join("");
 
-    gridContainer.querySelectorAll(".lead-card").forEach((card) => {
-      card.addEventListener("click", () => openDrawer(parseInt(card.dataset.id)));
+  }
+}
+
+function setupLeadsListDelegation() {
+  const table = document.getElementById("leads-table-body");
+  if (table && table.dataset.delegate !== "1") {
+    table.dataset.delegate = "1";
+    table.addEventListener("click", (e) => {
+      if (e.target.closest("button, a, input, label")) return;
+      const row = e.target.closest("tr[data-id]");
+      if (row) openDrawer(parseInt(row.dataset.id, 10));
+    });
+  }
+  const grid = document.getElementById("leads-grid");
+  if (grid && grid.dataset.delegate !== "1") {
+    grid.dataset.delegate = "1";
+    grid.addEventListener("click", (e) => {
+      if (e.target.closest("button, a, input, label")) return;
+      const card = e.target.closest(".lead-card[data-id]");
+      if (card) openDrawer(parseInt(card.dataset.id, 10));
     });
   }
 }
@@ -5332,6 +5432,95 @@ function buildDrawerDvfHtml(lead) {
   return `${dvfHtml}</div>`;
 }
 
+function buildDrawerLeadImageHtml(lead) {
+  const url = leadImageUrl(lead);
+  const imgBlock = url
+    ? `<img class="drawer-lead-image-img" id="drawer-lead-img" src="${escapeHtml(url)}" alt="Photo du bien" decoding="async">`
+    : `<div class="drawer-lead-image-placeholder" id="drawer-lead-img-placeholder">Aucune photo — recrawlez l’annonce ou importez une image</div>`;
+  const revertDisabled = !lead.image_custom && !lead.has_image ? " disabled" : "";
+  return `
+    <div class="drawer-lead-image" id="drawer-lead-image-block">
+      ${imgBlock}
+      <div class="drawer-lead-image-actions">
+        <label class="btn btn-secondary btn-sm drawer-image-upload-label">
+          Changer la photo
+          <input type="file" id="drawer-image-upload" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+        </label>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawer-image-revert"${revertDisabled}>Photo du crawl</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawer-image-sync" title="Re-télécharger depuis le portail">↻ Portail</button>
+      </div>
+      <p class="form-hint drawer-lead-image-hint">${lead.image_custom ? "Image personnalisée active" : "Image issue du crawl (WebP)"}</p>
+    </div>`;
+}
+
+async function uploadDrawerLeadImage(lead, file) {
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch(`/api/leads/${lead.id}/image`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: fd,
+    credentials: "same-origin",
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Échec envoi image");
+  if (body.lead) {
+    mergeLeadInCache(body.lead);
+    if (state.currentView === "leads") renderLeads();
+    refreshDrawerBodyContent(body.lead);
+    updateDrawerChrome(body.lead);
+  }
+  showToast("Photo enregistrée (WebP)", "success");
+}
+
+async function revertDrawerLeadImage(lead) {
+  const res = await fetch(`/api/leads/${lead.id}/image`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "revert" }),
+    credentials: "same-origin",
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Image crawl indisponible");
+  if (body.lead) {
+    mergeLeadInCache(body.lead);
+    if (state.currentView === "leads") renderLeads();
+    refreshDrawerBodyContent(body.lead);
+    updateDrawerChrome(body.lead);
+  }
+  showToast("Photo du crawl restaurée", "success");
+}
+
+async function syncDrawerLeadImage(lead) {
+  const body = await api(`/leads/${lead.id}/image/sync`, { method: "POST" });
+  if (body.lead) {
+    mergeLeadInCache(body.lead);
+    if (state.currentView === "leads") renderLeads();
+    refreshDrawerBodyContent(body.lead);
+    updateDrawerChrome(body.lead);
+    showToast("Photo portail mise à jour", "success");
+  }
+}
+
+function bindDrawerImageHandlers(lead) {
+  document.getElementById("drawer-image-upload")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      await uploadDrawerLeadImage(lead, file);
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  });
+  document.getElementById("drawer-image-revert")?.addEventListener("click", () => {
+    revertDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
+  });
+  document.getElementById("drawer-image-sync")?.addEventListener("click", () => {
+    syncDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
+  });
+}
+
 function buildDrawerBodyHtml(lead) {
   const daysTxt =
     lead.days_on_market != null
@@ -5341,6 +5530,7 @@ function buildDrawerBodyHtml(lead) {
         : "Publication inconnue";
   const ms = lead.mandate_score || 0;
   return `
+    ${buildDrawerLeadImageHtml(lead)}
     ${renderLeadJourneyHtml(lead)}
     <div class="drawer-mandate-hero">
       <span class="drawer-mandate-kicker">Score Mandat™</span>
@@ -5423,6 +5613,7 @@ function refreshDrawerBodyContent(lead) {
   if (!body) return;
   body.innerHTML = buildDrawerBodyHtml(lead);
   bindDrawerEditHandlers(lead);
+  bindDrawerImageHandlers(lead);
   wireDrawerJourneyButtons(lead);
 }
 
@@ -5476,6 +5667,7 @@ function openDrawer(id) {
   requestAnimationFrame(() => {
     body.innerHTML = buildDrawerBodyHtml(lead);
     bindDrawerEditHandlers(lead);
+    bindDrawerImageHandlers(lead);
     wireDrawerJourneyButtons(lead);
   });
 }
@@ -5537,7 +5729,7 @@ function leadsDataFingerprint(leads) {
   return leads
     .map(
       (l) =>
-        `${l.id}|${l.updated_at || ""}|${l.price || 0}|${l.mandate_score || 0}|${l.previous_price || ""}|${l.pipeline || ""}|${l.status || ""}`,
+        `${l.id}|${l.updated_at || ""}|${l.image_updated_at || ""}|${l.has_image ? 1 : 0}|${l.price || 0}|${l.mandate_score || 0}|${l.previous_price || ""}|${l.pipeline || ""}|${l.status || ""}`,
     )
     .join(";");
 }
