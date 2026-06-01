@@ -53,6 +53,31 @@ def resolve_base_portal_id(source_id: str | None) -> str | None:
     return None
 
 
+# Portails avec une vraie recherche PAR VILLE (URL ville native vérifiée).
+# Les autres portails par défaut (etreproprio, lefigaro, superimmo) n'ont pas d'URL
+# ville : pour un crawl ciblé ville, ils ne ramènent que du national (filtré → ~0),
+# donc on les saute quand une ville est demandée (cf. engine._job_scan_all).
+CITY_SEARCH_PORTAL_IDS = frozenset({
+    "paruvendu",
+    "ouestfranceimmo",
+    "lesiteimmo",
+    # Portails anti-bot (URL ville native) — exclus du crawl gratuit mais city-capables.
+    "leboncoin",
+    "pap",
+    "seloger",
+    "logicimmo",
+    "bienici",
+})
+
+
+def portal_supports_city_search(source_id: str | None) -> bool:
+    """True si le portail sait cibler une ville (ou site perso : filtre ville générique)."""
+    base = resolve_base_portal_id(source_id or "")
+    if base is None:
+        return True  # site personnalisé : on tente (seeds ville génériques)
+    return base in CITY_SEARCH_PORTAL_IDS
+
+
 def is_coming_soon_portal(portal_id: str | None) -> bool:
     """Portail anti-bot non encore crawlé (classé « Bientôt disponible »)."""
     base = resolve_base_portal_id(portal_id or "")

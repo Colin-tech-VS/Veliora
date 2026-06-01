@@ -224,9 +224,10 @@ def city_search_url_candidates(
         _add(f"https://www.avendrealouer.fr/vente/maison-{slug}.html")
         return out
 
-    if portal == "etreproprio" and slug:
-        _add(f"https://www.etreproprio.com/achat/appartement/{slug}")
-        _add(f"https://www.etreproprio.com/achat/maison/{slug}")
+    if portal == "etreproprio":
+        # Pas d'URL ville (recherche en JS) → national (filtré ville en aval).
+        # Évite les /achat/appartement/{ville} qui renvoyaient 404.
+        _add("https://www.etreproprio.com/annonces/vente")
         return out
 
     if portal == "maisonappart" and slug:

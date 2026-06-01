@@ -377,21 +377,41 @@ class CrawlerEngine:
             )
             return
 
-        names_preview = ", ".join(s["name"] for s in sources[:4])
-        if len(sources) > 4:
-            names_preview += f" +{len(sources) - 4}"
-        extra = f" ({added} site(s) ajouté(s))" if added else ""
-        update_crawl_job(
-            job_id,
-            progress=10,
-            message=f"Crawl portails recommandés — {len(sources)} site(s) : {names_preview}{extra}…",
-        )
-        from crawler.storage import get_crawl_job
-
         if not city:
             from crawler.storage import get_crawl_job as _gcj
             job_row = _gcj(job_id)
             city = (job_row or {}).get("city")
+
+        # Crawl par ville : ne garder que les portails capables de cibler une ville.
+        # Les national-only (etreproprio, lefigaro, superimmo) ne ramèneraient que du
+        # hors-zone filtré (→ 0) en explorant 22 pages chacun : on les saute pour que
+        # les résultats arrivent vite (paruvendu, ouest-france, lesiteimmo d'abord).
+        if city:
+            from crawler.portals import portal_supports_city_search
+
+            city_capable = [s for s in sources if portal_supports_city_search(s["id"])]
+            if city_capable:
+                skipped = [s["name"] for s in sources if s not in city_capable]
+                sources = city_capable
+                if skipped:
+                    add_crawl_log(
+                        None,
+                        "",
+                        "skip_source",
+                        f"Recherche {city} — portails sans recherche ville ignorés : {', '.join(skipped)}",
+                        job_id,
+                    )
+
+        names_preview = ", ".join(s["name"] for s in sources[:4])
+        if len(sources) > 4:
+            names_preview += f" +{len(sources) - 4}"
+        extra = f" ({added} site(s) ajouté(s))" if added else ""
+        scope = f"Crawl {city}" if city else "Crawl portails recommandés"
+        update_crawl_job(
+            job_id,
+            progress=10,
+            message=f"{scope} — {len(sources)} site(s) : {names_preview}{extra}…",
+        )
 
         self._prime_protected_sources(sources, job_id, city=city)
 
