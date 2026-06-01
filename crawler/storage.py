@@ -77,6 +77,21 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _coerce_timestamp(value: str | None) -> str:
+    """Valeur sûre pour colonnes TIMESTAMPTZ (Postgres) ou TEXT (SQLite)."""
+    if value is None:
+        return _now()
+    s = str(value).strip()
+    return s if s else _now()
+
+
+def _sql_dvf_not_compared_clause() -> str:
+    """Filtre « jamais comparé DVF » — Postgres n'accepte pas dvf_compared_at = ''."""
+    if is_postgres():
+        return "dvf_compared_at IS NULL"
+    return "(dvf_compared_at IS NULL OR dvf_compared_at = '')"
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     tables = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
@@ -2482,12 +2497,13 @@ def export_leads_csv(agency_id: str) -> str:
 def _should_recompare_dvf(lead: dict, *, force_recompare: bool) -> bool:
     if force_recompare:
         return True
-    if not lead.get("dvf_compared_at"):
+    compared_raw = lead.get("dvf_compared_at")
+    if not compared_raw or not str(compared_raw).strip():
         return True
     from crawler.config import DVF_RECOMPARE_HOURS
 
     try:
-        compared = datetime.fromisoformat(str(lead["dvf_compared_at"]).replace("Z", "+00:00"))
+        compared = datetime.fromisoformat(str(compared_raw).replace("Z", "+00:00"))
         if compared.tzinfo is None:
             compared = compared.replace(tzinfo=timezone.utc)
         age_h = (datetime.now(timezone.utc) - compared).total_seconds() / 3600
@@ -2607,7 +2623,7 @@ def compare_and_enrich_lead_dvf(
                     comp.get("listing_city"),
                     comp.get("listing_postcode"),
                     comp.get("listing_sector"),
-                    comp.get("compared_at"),
+                    _coerce_timestamp(comp.get("compared_at")),
                     enriched["mandate_score"],
                     enriched["mandate_score"],
                     enriched["mandate_score_reason"],
@@ -2625,7 +2641,7 @@ def compare_and_enrich_lead_dvf(
             conn.execute(
                 """UPDATE leads SET dvf_compared_at = ?, updated_at = ?
                    WHERE id = ? AND agency_id = ?""",
-                (comp.get("compared_at") or _now(), _now(), lead_id, agency_id),
+                (_coerce_timestamp(comp.get("compared_at")), _now(), lead_id, agency_id),
             )
             conn.commit()
 
@@ -2637,11 +2653,11 @@ def compare_leads_dvf_batch(agency_id: str, limit: int = 30) -> dict:
     """Compare les leads vente sans comparatif DVF récent."""
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT id FROM leads
+            f"""SELECT id FROM leads
                WHERE agency_id = ?
                AND COALESCE(transaction_type, 'vente') = 'vente'
                AND price > 0 AND surface > 0
-               AND (dvf_compared_at IS NULL OR dvf_compared_at = '')
+               AND {_sql_dvf_not_compared_clause()}
                ORDER BY created_at DESC LIMIT ?""",
             (agency_id, limit),
         ).fetchall()
