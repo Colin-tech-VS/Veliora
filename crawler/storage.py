@@ -45,48 +45,32 @@ def _compute_property_fingerprint(
 
 
 def _annotate_dedup(leads: list[dict]) -> list[dict]:
-    """Groupe les doublons cross-portail et ne garde que la fiche canonique.
+    """Annonce les doublons cross-portail SANS jamais masquer de lead.
 
-    Règles :
-    - Empreinte = CP + surface + prix (buckets).
-    - Dans chaque groupe, la fiche avec le score le plus élevé est canonique.
-    - Les leads en pipeline actif (à_contacter, contacté, RDV, mandat) sont
-      toujours conservés même s'ils sont doublons.
-    - La fiche canonique reçoit _also_on (liste de portails) et _portal_count.
+    Important : aucun prospect ne doit disparaître de la liste (sauf suppression
+    explicite par l'utilisateur). L'empreinte (CP + surface + prix par buckets) est
+    trop grossière pour masquer des biens — elle peut confondre deux appartements
+    distincts d'une même ville. On garde donc TOUS les leads et on se contente
+    d'annoter, pour un simple badge, la fiche la mieux scorée d'un groupe réellement
+    multi-portails (sources différentes).
     """
     from collections import defaultdict
 
-    active_statuses = {"a_contacter", "contacte", "rdv", "mandat"}
     groups: dict[str, list[dict]] = defaultdict(list)
-    no_fp: list[dict] = []
-
     for lead in leads:
         fp = lead.get("property_fingerprint")
         if fp:
             groups[fp].append(lead)
-        else:
-            no_fp.append(lead)
 
-    result: list[dict] = list(no_fp)
     for group in groups.values():
-        if len(group) == 1:
-            result.append(group[0])
-            continue
-
-        active = [l for l in group if (l.get("status") or "") in active_statuses]
-        passive = [l for l in group if (l.get("status") or "") not in active_statuses]
-
-        if passive:
-            passive.sort(key=lambda l: l.get("mandate_score") or 0, reverse=True)
-            canonical = passive[0]
-            sources = list({l.get("source") or "Portail" for l in group})
-            canonical["_also_on"] = sources
+        sources = {(l.get("source") or "") for l in group}
+        # Annoter uniquement un vrai doublon cross-portail (au moins 2 portails).
+        if len(group) > 1 and len([s for s in sources if s]) > 1:
+            canonical = max(group, key=lambda l: l.get("mandate_score") or 0)
+            canonical["_also_on"] = sorted(s for s in sources if s)
             canonical["_portal_count"] = len(group)
-            result.append(canonical)
 
-        result.extend(active)
-
-    return sorted(result, key=lambda l: l.get("created_at") or "", reverse=True)
+    return sorted(leads, key=lambda l: l.get("created_at") or "", reverse=True)
 
 
 def _now() -> str:
