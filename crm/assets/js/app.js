@@ -3569,6 +3569,17 @@ async function refreshLeadDeep(leadId) {
     showToast("Prospect introuvable", "error");
     return;
   }
+  // La copie en cache (LEADS / live-patch) peut être partielle et ne pas porter
+  // source_url alors que le serveur l'a bien : on revérifie côté serveur avant
+  // d'abandonner pour éviter un faux « pas de lien d'annonce ».
+  if (!(lead.source_url || "").trim()) {
+    const fresh = await fetchLeadSnapshot(id);
+    if (fresh && (fresh.source_url || "").trim()) {
+      lead = fresh;
+      const idx = LEADS.findIndex((l) => Number(l.id) === id);
+      if (idx >= 0) LEADS[idx] = fresh;
+    }
+  }
   if (!(lead.source_url || "").trim()) {
     showToast("Ce prospect n'a pas de lien d'annonce", "warning");
     return;
@@ -5648,6 +5659,30 @@ function fmtEuro(n) {
   return `${Math.round(n).toLocaleString("fr-FR")} €`;
 }
 
+function animateEstimatorTotal(scope) {
+  const el = (scope || document).querySelector(".drawer-estimator-total[data-count-to]");
+  if (!el) return;
+  const target = Number(el.dataset.countTo) || 0;
+  if (
+    !target ||
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  ) {
+    el.textContent = fmtEuro(target);
+    return;
+  }
+  el.removeAttribute("data-count-to");
+  const duration = 850;
+  const start = performance.now();
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+    el.textContent = fmtEuro(Math.round(target * eased));
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = fmtEuro(target);
+  };
+  requestAnimationFrame(tick);
+}
+
 function collectEstimatorInputs(lead, prefix = "tab-est") {
   const form = document.getElementById(`${prefix}-form`);
   const surface =
@@ -5696,7 +5731,7 @@ function renderPriceEstimateResultHtml(result) {
     <div class="drawer-estimator-result" data-confidence="${confCls}">
       <div class="drawer-estimator-main">
         <span class="drawer-estimator-label">Estimation indicative</span>
-        <strong class="drawer-estimator-total">${fmtEuro(result.estimate_total)}</strong>
+        <strong class="drawer-estimator-total" data-count-to="${Number(result.estimate_total) || 0}">${fmtEuro(result.estimate_total)}</strong>
         <span class="drawer-estimator-range">${fmtEuro(result.range_low)} – ${fmtEuro(result.range_high)}</span>
       </div>
       <p class="drawer-estimator-meta">
@@ -5860,6 +5895,8 @@ function renderEstimateurView() {
         ${renderEstimatorFormHtml(lead, "tab-est")}
       </div>
     </div>`;
+
+  animateEstimatorTotal(root);
 }
 
 function openEstimateurTab(leadId) {
@@ -5894,6 +5931,7 @@ async function runPriceEstimate(lead, prefix = "tab-est") {
     }
     drawerEstimates.set(lead.id, result);
     wrap.innerHTML = renderPriceEstimateResultHtml(result);
+    animateEstimatorTotal(wrap);
     showToast(
       `Estimation ${fmtEuro(result.estimate_total)} (${result.confidence_label})`,
       "success",
@@ -6116,7 +6154,10 @@ function updateDrawerChrome(lead) {
   const refreshFooterBtn = document.getElementById("drawer-refresh-lead-btn");
   if (refreshFooterBtn) {
     refreshFooterBtn.dataset.id = String(lead.id);
-    refreshFooterBtn.disabled = !(lead.source_url || "").trim();
+    // Ne pas désactiver sur la seule copie cache (peut être partielle) : le handler
+    // refreshLeadDeep revérifie côté serveur et affiche un message clair si vraiment
+    // aucun lien d'annonce. Évite un bouton grisé à tort.
+    refreshFooterBtn.disabled = false;
   }
 
   const mandateType = lead.transaction_type === "location" ? "location" : "vente";

@@ -121,7 +121,14 @@ def _cache_get(key: str) -> tuple[float, float] | None:
         ).fetchone()
     if not row:
         return None
-    return float(row[0]), float(row[1])
+    try:
+        lat = row["latitude"]
+        lng = row["longitude"]
+    except (KeyError, TypeError, IndexError):
+        lat, lng = row[0], row[1]
+    if lat is None or lng is None:
+        return None
+    return float(lat), float(lng)
 
 
 def _cache_set(key: str, lat: float, lng: float, formatted: str = "") -> None:
@@ -262,7 +269,9 @@ def build_agency_map_point(agency_id: str) -> dict | None:
     key = _norm_key(line)
     coords = _cache_get(key)
     if not coords:
-        coords = geocode_query(line)
+        # Ne pas géocoder en synchrone (bloque GET /api/map → timeout Scalingo).
+        # On programme un géocodage en arrière-plan ; la carte affiche l'agence au prochain refresh.
+        schedule_agency_geocode(line)
     return {
         "name": name,
         "address_line": line.replace(", France", ""),
@@ -270,6 +279,22 @@ def build_agency_map_point(agency_id: str) -> dict | None:
         "lng": coords[1] if coords else None,
         "configured": bool(coords),
     }
+
+
+def schedule_agency_geocode(line: str) -> None:
+    """Géocode l'adresse agence en arrière-plan (alimente geocode_cache)."""
+    line = (line or "").strip()
+    if not line:
+        return
+
+    def _run() -> None:
+        try:
+            ensure_map_schema()
+            geocode_query(line)
+        except Exception:
+            logger.exception("schedule_agency_geocode")
+
+    threading.Thread(target=_run, daemon=True, name="agency-geo").start()
 
 
 def build_map_payload(agency_id: str) -> dict:
