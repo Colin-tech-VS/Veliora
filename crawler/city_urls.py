@@ -249,6 +249,35 @@ def city_search_url_candidates(
     return out or [search_url]
 
 
+def pick_best_city_search_url(
+    search_url: str,
+    source_id: str,
+    city: str | None,
+    postcode: str | None = None,
+) -> str:
+    """Meilleure URL ville sans ouvrir de page (mode automatique)."""
+    city = (city or "").strip()
+    candidates = city_search_url_candidates(search_url, source_id, city, postcode=postcode)
+    if city:
+
+        def _rank(u: str) -> tuple:
+            ul = u.lower()
+            ps = _city_path_slug(city, postcode)
+            sl = _slug(city)
+            if f"immo-{ps}" in ul or ps in ul:
+                return (0, u)
+            if sl in ul:
+                return (1, u)
+            return (2, u)
+
+        candidates = sorted(candidates, key=_rank)
+
+    for url in candidates:
+        if not city or search_url_targets_city(url, city):
+            return url
+    return apply_city_to_search_url(search_url, source_id, city, postcode)
+
+
 def pick_working_city_search_url(
     search_url: str,
     source_id: str,

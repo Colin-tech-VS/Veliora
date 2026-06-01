@@ -166,8 +166,12 @@ PLAYWRIGHT_RETRIES = 6
 # Anti-bot : attente max pour laisser passer Cloudflare / challenge
 ANTIBOT_CHALLENGE_WAIT_MS = 30_000
 
-# Si bloqué en headless, réessayer avec Chrome visible (souvent débloque en local)
-PLAYWRIGHT_HEADED_FALLBACK = True
+# Si bloqué en headless, réessayer avec Chrome visible — OFF par défaut (mode automatique).
+PLAYWRIGHT_HEADED_FALLBACK = os.getenv("CRAWL_HEADED_FALLBACK", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # Chrome visible dès le départ — OFF par défaut pour la vitesse (headless = rapide).
 # Le navigateur ne passe en visible QUE si un site bloque (fallback _switch_to_headed),
@@ -207,24 +211,41 @@ CRAWL_PROXIES = [
     if p.strip()
 ]
 
+# Nouvelle IP à chaque job / portail crawlé (désactiver : CRAWL_PROXY_ROTATE_EACH_CRAWL=false).
+CRAWL_PROXY_ROTATE_EACH_CRAWL = os.getenv("CRAWL_PROXY_ROTATE_EACH_CRAWL", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+# Ne pas ouvrir Chrome pour « tester » les URLs ville avant le crawl.
+CRAWL_SKIP_CITY_PROBE = os.getenv("CRAWL_SKIP_CITY_PROBE", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 
 def pick_proxy() -> str | None:
-    """Renvoie un proxy (rotation aléatoire) ou None si aucun configuré."""
-    return _random.choice(CRAWL_PROXIES) if CRAWL_PROXIES else None
+    from crawler.proxy_manager import pick_proxy as _pick
+
+    return _pick()
 
 
 def proxies_enabled() -> bool:
-    return bool(CRAWL_PROXIES)
+    from crawler.proxy_manager import proxies_enabled as _enabled
+
+    return _enabled()
 
 # Délais entre pages de résultats (pagination)
 SEARCH_PAGE_DELAY_MIN_SEC = 3.0
 SEARCH_PAGE_DELAY_MAX_SEC = 8.0
 
 # Échauffement : visite page d’accueil avant la liste
-DOMAIN_WARMUP_ENABLED = os.getenv("DOMAIN_WARMUP", "auto").strip().lower() not in (
-    "0",
-    "false",
-    "no",
+DOMAIN_WARMUP_ENABLED = os.getenv("DOMAIN_WARMUP", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
 )
 DOMAIN_WARMUP_SEC = 3.5
 

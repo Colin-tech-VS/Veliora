@@ -243,6 +243,11 @@ class CrawlerEngine:
         )
 
         try:
+            from crawler.config import CRAWL_PROXY_ROTATE_EACH_CRAWL
+            from crawler.proxy_manager import begin_crawl_session
+
+            if CRAWL_PROXY_ROTATE_EACH_CRAWL:
+                begin_crawl_session(force_new=True)
             self.refresh_adapters(agency_id)
             if job_type == "all_sources":
                 self._job_scan_all(job_id, city=city)
@@ -276,6 +281,9 @@ class CrawlerEngine:
                 self._dvf_queue.drain()
             self._dvf_queue = None
             self._agency_id = None
+            from crawler.proxy_manager import end_crawl_session
+
+            end_crawl_session()
             close_browser_session()
 
     def _crawl_stopped(self, job_id: str | None) -> bool:
@@ -387,6 +395,11 @@ class CrawlerEngine:
         for i, src in enumerate(sources):
             if self._crawl_stopped(job_id):
                 return
+            from crawler.config import CRAWL_PROXY_ROTATE_EACH_CRAWL
+            from crawler.proxy_manager import begin_crawl_session
+
+            if CRAWL_PROXY_ROTATE_EACH_CRAWL:
+                begin_crawl_session(force_new=True)
             pct = int(10 + (i / len(sources)) * 80)
             update_crawl_job(
                 job_id,
@@ -553,27 +566,33 @@ class CrawlerEngine:
 
         base_search = adapter.config.search_url
         if city:
+            from crawler.city_urls import pick_best_city_search_url, pick_working_city_search_url
+            from crawler.config import CRAWL_SKIP_CITY_PROBE
 
-            def _probe_city_list_url(u: str) -> bool:
-                fetched = fetch_page(
-                    u,
-                    referer=adapter.config.base_url,
-                    prefer_browser=url_needs_browser(u),
-                    fast_mode=True,
-                )
-                if not fetched.ok:
-                    return False
-                listings = adapter.find_listings(fetched.html or "", u, limit=8)
-                if not listings:
-                    return False
-                in_city = sum(
-                    1 for link in listings if listing_url_likely_in_city(link, city)
-                )
-                return in_city >= max(1, len(listings) // 3)
+            if CRAWL_SKIP_CITY_PROBE:
+                search_url = pick_best_city_search_url(base_search, source_id, city)
+            else:
 
-            search_url = pick_working_city_search_url(
-                base_search, source_id, city, _probe_city_list_url
-            )
+                def _probe_city_list_url(u: str) -> bool:
+                    fetched = fetch_page(
+                        u,
+                        referer=adapter.config.base_url,
+                        prefer_browser=url_needs_browser(u),
+                        fast_mode=True,
+                    )
+                    if not fetched.ok:
+                        return False
+                    listings = adapter.find_listings(fetched.html or "", u, limit=8)
+                    if not listings:
+                        return False
+                    in_city = sum(
+                        1 for link in listings if listing_url_likely_in_city(link, city)
+                    )
+                    return in_city >= max(1, len(listings) // 3)
+
+                search_url = pick_working_city_search_url(
+                    base_search, source_id, city, _probe_city_list_url
+                )
         else:
             search_url = apply_city_to_search_url(base_search, source_id, city)
 
@@ -904,7 +923,7 @@ class CrawlerEngine:
                     prefer_browser=True,
                     fast_mode=fast_discover,
                 )
-            elif use_browser is False:
+            elif use_browser is False and not fast_discover:
                 batch_probe = adapter.find_listings(fetched.html or "", page_url, limit=5)
                 if not batch_probe:
                     fetched = fetch_page(
