@@ -181,7 +181,10 @@
       if (err.name === "AbortError") {
         return "Délai dépassé — le serveur met trop de temps à répondre. Réessayez Actualiser.";
       }
-      return "Carte indisponible — vérifiez votre connexion ou réessayez Actualiser";
+      return "Carte indisponible — rechargez la page (Ctrl+F5) ou vérifiez que le serveur Veliora tourne.";
+    }
+    if (/billing|facturation|payment/i.test(msg)) {
+      return "Google Maps nécessite la facturation GCP — la carte utilise OpenStreetMap sans facturation.";
     }
     return msg;
   }
@@ -460,7 +463,22 @@
     const wantGoogle = data.maps_provider === "google" && data.maps_api_key;
     let lastErr = null;
 
-    if (wantGoogle) {
+    async function bootOsm() {
+      await loadLeaflet();
+      state.provider = "osm";
+      initOsmMap();
+    }
+
+    if (!wantGoogle) {
+      try {
+        await bootOsm();
+      } catch (err) {
+        throw new Error(
+          err?.message ||
+            "OpenStreetMap indisponible — vérifiez /crm/assets/vendor/leaflet/ sur le serveur",
+        );
+      }
+    } else {
       try {
         await loadGoogleMaps(data.maps_api_key);
         state.provider = "google";
@@ -468,14 +486,22 @@
       } catch (err) {
         lastErr = err;
         resetMapContainer();
+        try {
+          await bootOsm();
+          deps().showToast(
+            "Google Maps indisponible — carte OpenStreetMap affichée",
+            "info",
+            7000,
+          );
+        } catch (osmErr) {
+          throw osmErr;
+        }
       }
     }
 
     if (!state.map) {
       try {
-        await loadLeaflet();
-        state.provider = "osm";
-        initOsmMap();
+        await bootOsm();
       } catch (err) {
         throw lastErr || err;
       }
@@ -584,9 +610,15 @@
     if (!panel) return;
     const hints = data?.hints || {};
     let msg = "";
-    if (hints.using_osm) {
+    if (hints.billing_hint) {
+      msg += `<p class="form-hint map-billing-hint">${hints.billing_hint}</p>`;
+    } else if (hints.using_osm) {
       msg =
-        '<p class="form-hint">Carte OpenStreetMap (aucune clé Google requise). Optionnel : <code>GOOGLE_MAPS_API_KEY</code> pour Google Maps.</p>';
+        '<p class="form-hint">Carte <strong>OpenStreetMap</strong> — fonctionne sans facturation Google. Clé optionnelle pour géocodage / Google Maps.</p>';
+    }
+    if (hints.google_key_set_osm_mode) {
+      msg +=
+        '<p class="form-hint">Pour passer en tuiles Google : facturation GCP + variable <code>GOOGLE_MAPS_JS=true</code>.</p>';
     }
     if (hints.no_agency_address) {
       msg +=
@@ -661,6 +693,7 @@
       }
     } catch (err) {
       state.lastError = err;
+      console.error("[VelioraMap]", err);
       const msg = mapErrorMessage(err);
       deps().showToast(msg, "error");
       showMapError(msg);

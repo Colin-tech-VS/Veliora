@@ -37,6 +37,17 @@ def google_maps_api_key() -> str:
     return (os.getenv("GOOGLE_MAPS_API_KEY") or os.getenv("GOOGLE_MAPS_KEY") or "").strip()
 
 
+def maps_use_google_javascript() -> bool:
+    """
+    Carte tuiles Google dans le navigateur — nécessite facturation GCP active.
+    Sans GOOGLE_MAPS_JS=true, Veliora affiche OpenStreetMap (gratuit, sans facturation).
+  La clé sert quand même au géocodage serveur si les APIs répondent.
+    """
+    if not google_maps_api_key():
+        return False
+    return os.getenv("GOOGLE_MAPS_JS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def ensure_map_schema() -> None:
     with get_connection() as conn:
         conn.execute(
@@ -238,7 +249,10 @@ def build_agency_map_point(agency_id: str) -> dict | None:
             "lng": None,
             "configured": False,
         }
-    coords = geocode_query(line)
+    key = _norm_key(line)
+    coords = _cache_get(key)
+    if not coords:
+        coords = geocode_query(line)
     return {
         "name": name,
         "address_line": line.replace(", France", ""),
@@ -251,6 +265,7 @@ def build_agency_map_point(agency_id: str) -> dict | None:
 def build_map_payload(agency_id: str) -> dict:
     ensure_map_schema()
     api_key = google_maps_api_key()
+    use_google_js = maps_use_google_javascript()
 
     from crawler.storage import get_agency_name
 
@@ -316,8 +331,8 @@ def build_map_payload(agency_id: str) -> dict:
 
     return {
         "ok": True,
-        "maps_provider": "google" if api_key else "osm",
-        "maps_api_key": api_key,
+        "maps_provider": "google" if use_google_js else "osm",
+        "maps_api_key": api_key if use_google_js else "",
         "agency_name": agency_name,
         "agency": agency,
         "markers": markers,
@@ -328,10 +343,18 @@ def build_map_payload(agency_id: str) -> dict:
             "geocoded_now": geocoded_this_run,
         },
         "hints": {
-            "no_api_key": False,
-            "using_osm": not bool(api_key),
+            "no_api_key": not bool(api_key),
+            "using_osm": not use_google_js,
+            "google_key_set_osm_mode": bool(api_key) and not use_google_js,
             "no_agency_address": not (agency or {}).get("address_line"),
             "refresh_hint": pending > 0,
+            "billing_hint": (
+                "Clé Google détectée : carte en OpenStreetMap (gratuit). "
+                "Pour Google Maps : activez la facturation GCP puis "
+                "GOOGLE_MAPS_JS=true sur Scalingo."
+                if api_key and not use_google_js
+                else None
+            ),
         },
     }
 
