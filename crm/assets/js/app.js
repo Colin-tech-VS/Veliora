@@ -969,15 +969,28 @@ async function handoffCrawlToBackground() {
   }
 }
 
+/** Annule le job côté serveur (non bloquant, timeout court). */
+function requestCrawlCancelOnServer(jobId) {
+  const headers = { "Content-Type": "application/json", ...getAuthHeaders() };
+  const opts = { method: "POST", headers };
+  const calls = [fetch(`${API}/crawler/jobs/cancel`, opts)];
+  if (jobId) {
+    calls.unshift(
+      fetch(`${API}/crawler/jobs/${encodeURIComponent(jobId)}/cancel`, opts),
+    );
+  }
+  Promise.allSettled(calls).catch(() => {});
+}
+
 /** Arrête le crawl serveur, coupe le polling et ferme modal + dock. */
-async function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) {
+function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) {
   const wasAnalyzeImport = Boolean(
     crawlState.pollOptions?.goToAnalyze && crawlState.pollOptions?.importUrl,
   );
   const jobId = crawlState.jobId;
 
   pausePageCrawlPoll();
-  if (window.CrawlWatch) await CrawlWatch.stop();
+  if (window.CrawlWatch) CrawlWatch.stop();
 
   if (wasAnalyzeImport) {
     hideCrawlLoader();
@@ -986,21 +999,13 @@ async function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) 
     return;
   }
 
-  try {
-    if (jobId) {
-      await api(`/crawler/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
-    }
-    await api("/crawler/jobs/cancel", { method: "POST" });
-  } catch {
-    /* ignore — on ferme quand même l'UI */
-  }
-
   hideCrawlLoader();
   if (toastMessage) showToast(toastMessage, "success", 3500);
+  requestCrawlCancelOnServer(jobId);
 }
 
-async function dismissCrawlUI() {
-  await stopCrawlJobAndCloseUi({ toastMessage: "Crawl fermé et arrêté" });
+function dismissCrawlUI() {
+  stopCrawlJobAndCloseUi({ toastMessage: "Crawl fermé et arrêté" });
 }
 
 async function finishCrawlFromJob(job, label, options = {}) {
@@ -1044,6 +1049,10 @@ async function finishCrawlFromJob(job, label, options = {}) {
 }
 
 function setupCrawlBackground() {
+  const loader = document.getElementById("crawl-loader");
+  loader?.addEventListener("click", (e) => {
+    if (e.target === loader) dismissCrawlUI();
+  });
   document.getElementById("crawl-close-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     dismissCrawlUI();
@@ -3604,8 +3613,8 @@ function startCrawlPolling(jobId, label, options = {}) {
   crawlState.pollTimer = setTimeout(tick, 400);
 }
 
-async function cancelStaleCrawlUi() {
-  await stopCrawlJobAndCloseUi({ toastMessage: "Crawl annulé" });
+function cancelStaleCrawlUi() {
+  stopCrawlJobAndCloseUi({ toastMessage: "Crawl annulé" });
 }
 
 async function resumeActiveCrawlIfAny() {
