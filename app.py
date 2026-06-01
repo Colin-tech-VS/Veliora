@@ -126,7 +126,14 @@ def ensure_db():
 
 @app.before_request
 def protect_api():
-    return require_api_auth()
+    from velora_db.connection import DatabaseBusyError
+
+    try:
+        return require_api_auth()
+    except DatabaseBusyError as exc:
+        if request.path.startswith("/api/"):
+            return jsonify({"error": str(exc), "code": "database_busy"}), 503
+        raise
 
 
 def _aid() -> str:
@@ -607,41 +614,58 @@ def api_scoring_weights():
 @app.route("/api/leads/<int:lead_id>/image", methods=["GET", "POST"])
 def api_lead_image(lead_id):
     from crm.leads.images import (
-        lead_has_display_image,
         resolve_lead_image_path,
         revert_lead_image_to_crawl,
         save_custom_lead_image,
-        sync_lead_image_from_url,
+        schedule_lead_image_sync,
     )
+    from velora_db.connection import DatabaseBusyError, get_connection
 
-    agency_id = _aid()
-    lead = get_lead(lead_id, agency_id)
-    if not lead:
-        return jsonify({"error": "Prospect introuvable"}), 404
+    try:
+        agency_id = _aid()
+    except DatabaseBusyError as exc:
+        return jsonify({"error": str(exc), "code": "database_busy"}), 503
 
     if request.method == "GET":
         path = resolve_lead_image_path(agency_id, lead_id)
-        if not path:
-            url = (lead.get("listing_image_url") or "").strip()
-            if url:
-                sync_lead_image_from_url(
-                    lead_id,
-                    agency_id,
-                    url,
-                    respect_custom=True,
-                    referer=(lead.get("source_url") or "").strip() or None,
-                )
-                path = resolve_lead_image_path(agency_id, lead_id)
-        if not path:
-            return jsonify({"error": "Pas d'image"}), 404
-        resp = send_file(
-            path,
-            mimetype="image/webp",
-            max_age=86400,
-            conditional=True,
-        )
-        resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
-        return resp
+        if path:
+            resp = send_file(
+                path,
+                mimetype="image/webp",
+                max_age=86400,
+                conditional=True,
+            )
+            resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+            return resp
+
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    """SELECT listing_image_url, source_url, image_custom
+                       FROM leads WHERE id = ? AND agency_id = ?""",
+                    (lead_id, agency_id),
+                ).fetchone()
+        except DatabaseBusyError as exc:
+            return jsonify({"error": str(exc), "code": "database_busy"}), 503
+
+        if not row:
+            return jsonify({"error": "Prospect introuvable"}), 404
+
+        url = (row["listing_image_url"] or "").strip()
+        if url and not int(row["image_custom"] or 0):
+            schedule_lead_image_sync(
+                lead_id,
+                agency_id,
+                url,
+                respect_custom=True,
+                referer=(row["source_url"] or "").strip() or None,
+                force=True,
+            )
+        return jsonify({"error": "Image en cours de téléchargement"}), 404
+
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
 
     action = (request.form.get("action") or "").strip().lower()
     if request.is_json:

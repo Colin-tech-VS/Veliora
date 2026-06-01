@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 import re
 import secrets
+import threading
+import time
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -13,6 +16,28 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from crawler.storage import get_connection
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+_SESSION_CACHE_TTL_SEC = float(os.getenv("AUTH_SESSION_CACHE_TTL", "120"))
+_session_lock = threading.Lock()
+_session_cache: dict[str, tuple[float, dict | None]] = {}
+_token_load_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+
+
+def invalidate_session_cache(token: str | None = None) -> None:
+    with _session_lock:
+        if token:
+            _session_cache.pop(token, None)
+        else:
+            _session_cache.clear()
+
+
+def _prune_session_cache() -> None:
+    if len(_session_cache) <= 400:
+        return
+    now = time.monotonic()
+    stale = [k for k, (ts, _) in _session_cache.items() if now - ts > _SESSION_CACHE_TTL_SEC]
+    for k in stale:
+        _session_cache.pop(k, None)
 
 
 def _now() -> str:
@@ -258,9 +283,7 @@ def reset_password_with_token(token: str, new_password: str) -> dict:
     return {"ok": True, "message": "Mot de passe mis à jour — vous pouvez vous connecter."}
 
 
-def get_session_user(token: str) -> dict | None:
-    if not token:
-        return None
+def _load_session_user_from_db(token: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
             """SELECT u.*, a.name AS agency_name
@@ -279,3 +302,24 @@ def get_session_user(token: str) -> dict | None:
             "agency_id": row["agency_id"],
             "agency_name": row["agency_name"],
         }
+
+
+def get_session_user(token: str) -> dict | None:
+    if not token:
+        return None
+    now = time.monotonic()
+    with _session_lock:
+        hit = _session_cache.get(token)
+        if hit and now - hit[0] < _SESSION_CACHE_TTL_SEC:
+            return hit[1]
+
+    with _token_load_locks[token]:
+        with _session_lock:
+            hit = _session_cache.get(token)
+            if hit and now - hit[0] < _SESSION_CACHE_TTL_SEC:
+                return hit[1]
+        user = _load_session_user_from_db(token)
+        with _session_lock:
+            _session_cache[token] = (time.monotonic(), user)
+            _prune_session_cache()
+        return user

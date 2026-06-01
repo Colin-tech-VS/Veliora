@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -11,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from velora_db.config import backend_name, database_url, is_postgres, sqlite_path
+
+
+class DatabaseBusyError(RuntimeError):
+    """Pool Postgres saturé (crawl + pics de requêtes)."""
 from velora_db.sql_adapt import adapt_sql
 
 logger = logging.getLogger(__name__)
@@ -116,14 +121,23 @@ def _get_postgres_pool():
         if not url:
             _pg_pool_failed = True
             return None
+        pool_max = int(os.getenv("DATABASE_POOL_MAX", "8"))
+        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "12"))
+        pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "40"))
         _pg_pool = ConnectionPool(
             url,
-            min_size=1,
-            max_size=12,
+            min_size=0,
+            max_size=pool_max,
+            timeout=pool_timeout,
+            max_waiting=pool_waiting,
             kwargs={"row_factory": dict_row},
             open=True,
         )
-        logger.info("Pool PostgreSQL Veliora actif (max 12)")
+        logger.info(
+            "Pool PostgreSQL Veliora actif (max=%s, timeout=%ss)",
+            pool_max,
+            pool_timeout,
+        )
         return _pg_pool
     except Exception as exc:
         logger.warning("Pool PostgreSQL indisponible, connexion directe : %s", exc)
@@ -147,8 +161,16 @@ def get_connection():
     if is_postgres():
         pool = _get_postgres_pool()
         if pool is not None:
-            with pool.connection() as raw:
-                yield DbConnection(raw, postgres=True)
+            try:
+                with pool.connection() as raw:
+                    yield DbConnection(raw, postgres=True)
+            except Exception as exc:
+                name = type(exc).__name__
+                if name == "PoolTimeout" or "PoolTimeout" in name:
+                    raise DatabaseBusyError(
+                        "Connexions base saturées — réessayez dans quelques secondes"
+                    ) from exc
+                raise
             return
         conn = _postgres_connection()
         try:
