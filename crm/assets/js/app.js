@@ -1554,16 +1554,6 @@ async function switchView(view) {
       showToast(err.message, "error");
     }
   }
-  if (view === "map" && window.VelioraMap?.enter) {
-    try {
-      await window.VelioraMap.enter();
-      requestAnimationFrame(() => {
-        if (state.currentView === "map") window.VelioraMap?.resize?.();
-      });
-    } catch (err) {
-      showToast(err?.message || "Carte indisponible", "error");
-    }
-  }
   if (view === "playbook") {
     const prev = PLAYBOOK;
     if (!PLAYBOOK?.guide?.length) {
@@ -1580,6 +1570,18 @@ async function switchView(view) {
     }
   }
   renderAll();
+  if (view === "map" && window.VelioraMap?.enter) {
+    try {
+      await window.VelioraMap.enter();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (state.currentView === "map") window.VelioraMap?.resize?.();
+        });
+      });
+    } catch (err) {
+      showToast(err?.message || "Carte indisponible", "error");
+    }
+  }
   if (view === "dashboard") {
     markOnboardingStep3Seen();
   }
@@ -2350,6 +2352,40 @@ function setupLeadsActions() {
   }
 }
 
+const drawerHtmlCache = new Map();
+const DRAWER_CACHE_MAX = 48;
+
+function drawerFingerprint(lead) {
+  return [
+    lead.id,
+    lead.updated_at || "",
+    lead.image_updated_at || "",
+    lead.mandate_score || 0,
+    lead.price || 0,
+    lead.surface || "",
+    lead.pipeline || "",
+    lead.dvf_verdict || "",
+    lead.dvf_compared_at || "",
+    lead.has_image ? 1 : 0,
+    state.drawerShowAllFields ? 1 : 0,
+  ].join("|");
+}
+
+function drawerHtmlCacheSet(key, html) {
+  if (drawerHtmlCache.size >= DRAWER_CACHE_MAX) {
+    const first = drawerHtmlCache.keys().next().value;
+    drawerHtmlCache.delete(first);
+  }
+  drawerHtmlCache.set(key, html);
+}
+
+function invalidateDrawerCache(leadId) {
+  const prefix = `${leadId}|`;
+  for (const key of [...drawerHtmlCache.keys()]) {
+    if (key.startsWith(prefix)) drawerHtmlCache.delete(key);
+  }
+}
+
 function setupDrawer() {
   document.getElementById("drawer-close").addEventListener("click", closeDrawer);
   document.getElementById("drawer-overlay").addEventListener("click", closeDrawer);
@@ -2380,6 +2416,11 @@ function setupDrawer() {
       compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
       return;
     }
+    if (e.target.closest("#drawer-estimate-btn")) {
+      e.preventDefault();
+      runPriceEstimate(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
     if (e.target.closest("#drawer-call-script-btn")) {
       e.preventDefault();
       loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
@@ -2403,6 +2444,60 @@ function setupDrawer() {
     if (e.target.closest("#drawer-journey-livret")) {
       e.preventDefault();
       openMandateLivretFromLead(lead);
+      return;
+    }
+    if (e.target.closest("#drawer-journey-call")) {
+      e.preventDefault();
+      const tel = (lead.phone || "").replace(/\s/g, "");
+      if (tel && tel !== "—") window.location.href = `tel:${tel}`;
+      else showToast("Pas de numéro de téléphone sur cette fiche", "warning");
+      return;
+    }
+    if (e.target.closest("#drawer-journey-script")) {
+      e.preventDefault();
+      loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-image-revert")) {
+      e.preventDefault();
+      revertDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-image-sync")) {
+      e.preventDefault();
+      syncDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#drawer-toggle-all-fields")) {
+      e.preventDefault();
+      state.drawerShowAllFields = !state.drawerShowAllFields;
+      invalidateDrawerCache(lead.id);
+      refreshDrawerBodyContent(lead);
+      return;
+    }
+    if (e.target.closest("#drawer-save-fields-btn")) {
+      e.preventDefault();
+      saveDrawerLeadFields(lead.id).catch((err) => showToast(err.message, "error"));
+    }
+  });
+
+  drawer?.addEventListener("change", (e) => {
+    const lead = state.selectedLead;
+    if (!lead) return;
+    if (e.target.id === "drawer-image-upload") {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) uploadDrawerLeadImage(lead, file).catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.id === "drawer-field-type") {
+      const current = LEADS.find((l) => l.id === lead.id) || lead;
+      const merged = { ...current, type: e.target.value };
+      const idx = LEADS.findIndex((l) => l.id === lead.id);
+      if (idx >= 0) LEADS[idx] = merged;
+      state.selectedLead = merged;
+      invalidateDrawerCache(lead.id);
+      refreshDrawerBodyContent(merged);
     }
   });
 }
@@ -2923,29 +3018,8 @@ function renderDrawerEditSection(lead) {
     </div>`;
 }
 
-function bindDrawerEditHandlers(lead) {
-  document.getElementById("drawer-toggle-all-fields")?.addEventListener("click", () => {
-    state.drawerShowAllFields = !state.drawerShowAllFields;
-    const section = document.querySelector(".drawer-edit-section");
-    if (section) {
-      section.outerHTML = renderDrawerEditSection(lead);
-      bindDrawerEditHandlers(lead);
-    }
-  });
-
-  document.getElementById("drawer-save-fields-btn")?.addEventListener("click", () => {
-    saveDrawerLeadFields(lead.id).catch((err) => showToast(err.message, "error"));
-  });
-
-  document.getElementById("drawer-field-type")?.addEventListener("change", (e) => {
-    const current = LEADS.find((l) => l.id === lead.id) || lead;
-    const merged = { ...current, type: e.target.value };
-    const section = document.querySelector(".drawer-edit-section");
-    if (section) {
-      section.outerHTML = renderDrawerEditSection(merged);
-      bindDrawerEditHandlers(merged);
-    }
-  });
+function bindDrawerEditHandlers(_lead) {
+  /* Délégation globale dans setupDrawer() — plus de re-bind à chaque ouverture. */
 }
 
 async function saveDrawerLeadFields(leadId) {
@@ -2973,8 +3047,8 @@ async function saveDrawerLeadFields(leadId) {
       state.selectedLead = result.lead;
       const section = document.querySelector(".drawer-edit-section");
       if (section) {
-        section.outerHTML = renderDrawerEditSection(result.lead);
-        bindDrawerEditHandlers(result.lead);
+        invalidateDrawerCache(leadId);
+        refreshDrawerBodyContent(result.lead);
       }
       patchDrawerLeadFields(result.lead, prev);
       renderLeads();
@@ -4159,9 +4233,14 @@ async function compareLeadDvf(leadId) {
   if (result.lead) {
     const idx = LEADS.findIndex((l) => l.id === leadId);
     if (idx >= 0) LEADS[idx] = result.lead;
+    mergeLeadInCache(result.lead);
+    invalidateDrawerCache(leadId);
   }
-  await loadRadarAndPlaybook();
-  renderAll();
+  void loadRadarAndPlaybook().then(() => {
+    if (state.currentView === "dashboard") renderRadarBriefing();
+    if (state.currentView === "playbook") renderPlaybook();
+  });
+  renderView(state.currentView);
   const c = result.comparison || {};
   if (c.available) {
     showToast(`${c.verdict_label} — ${c.delta_pct}% vs ${c.dvf_median_m2} €/m² (DVF)`, "success", 8000);
@@ -4172,8 +4251,9 @@ async function compareLeadDvf(leadId) {
       } catch {
         /* garde l'analyse affichée */
       }
-    } else {
-      openDrawer(leadId);
+    } else if (state.selectedLead?.id === leadId) {
+      refreshDrawerBodyContent(result.lead);
+      updateDrawerChrome(result.lead);
     }
   } else {
     showToast(c.reason || "Comparatif DVF indisponible", "warning", 7000);
@@ -4710,6 +4790,7 @@ async function patchLeadPipeline(leadId, pipeline) {
 
   if (state.selectedLead?.id === leadId && result.lead) {
     state.selectedLead = result.lead;
+    invalidateDrawerCache(leadId);
     updateDrawerChrome(result.lead);
     refreshDrawerBodyContent(result.lead);
   }
@@ -5416,6 +5497,234 @@ function renderLeadJourneyHtml(lead) {
     </div>`;
 }
 
+const ESTIMATOR_PROPERTY_TYPES = [
+  ["appartement", "Appartement"],
+  ["maison", "Maison"],
+  ["studio", "Studio"],
+  ["terrain", "Terrain"],
+  ["autre", "Autre"],
+];
+const ESTIMATOR_CONDITIONS = [
+  ["neuf", "Neuf / récent"],
+  ["bon", "Bon état"],
+  ["standard", "Standard"],
+  ["rafraichir", "À rafraîchir"],
+  ["renover", "À rénover"],
+];
+const ESTIMATOR_FEATURES = [
+  ["has_elevator", "Ascenseur"],
+  ["has_parking", "Parking / box"],
+  ["has_outdoor", "Balcon / terrasse / jardin"],
+  ["has_view", "Belle vue"],
+  ["noise_nuisance", "Nuisances (bruit, vis-à-vis…)"],
+  ["prime_sector", "Quartier très recherché"],
+];
+
+const drawerEstimates = new Map();
+
+function guessLeadPropertyType(lead) {
+  const t = (
+    lead.property_title ||
+    lead.listing_title ||
+    lead.address ||
+    ""
+  ).toLowerCase();
+  if (t.includes("studio")) return "studio";
+  if (/\b(maison|villa|pavillon|longère)\b/.test(t)) return "maison";
+  if (t.includes("terrain")) return "terrain";
+  if (/\b(appart|duplex|loft|t[1-5]|f[1-5])\b/.test(t)) return "appartement";
+  return "appartement";
+}
+
+function parseLeadRooms(lead) {
+  const t = (
+    lead.property_title ||
+    lead.listing_title ||
+    ""
+  ).toLowerCase();
+  const m = t.match(/\b(t|f)\s*(\d)\b/i) || t.match(/(\d+)\s*pi[eè]ce/);
+  if (m) {
+    const n = parseInt(m[2] || m[1], 10);
+    if (n > 0 && n < 20) return n;
+  }
+  return "";
+}
+
+function fmtEuro(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${Math.round(n).toLocaleString("fr-FR")} €`;
+}
+
+function collectEstimatorInputs(lead) {
+  const form = document.getElementById("drawer-estimator-form");
+  const surface =
+    parseFloat(form?.querySelector("#est-surface")?.value) ||
+    parseFloat(lead.surface) ||
+    0;
+  const inputs = {
+    surface,
+    property_type: form?.querySelector("#est-property-type")?.value || guessLeadPropertyType(lead),
+    rooms: form?.querySelector("#est-rooms")?.value || parseLeadRooms(lead) || null,
+    condition: form?.querySelector("#est-condition")?.value || "standard",
+    address: form?.querySelector("#est-address")?.value || lead.address || "",
+    city: form?.querySelector("#est-city")?.value || lead.city || "",
+    postcode: form?.querySelector("#est-postcode")?.value || lead.postcode || "",
+    sector: lead.sector || lead.dvf_sector || "",
+  };
+  ESTIMATOR_FEATURES.forEach(([key]) => {
+    inputs[key] = !!form?.querySelector(`#est-${key}`)?.checked;
+  });
+  return inputs;
+}
+
+function renderPriceEstimateResultHtml(result) {
+  if (!result?.ok) {
+    return `<p class="drawer-estimator-error">${escapeHtml(result?.reason || result?.error || "Estimation indisponible")}</p>`;
+  }
+  const confCls = result.confidence || "low";
+  const delta =
+    result.delta_vs_estimate_pct != null
+      ? `<p class="drawer-estimator-delta">Annonce : <strong>${fmtEuro(result.listing_price)}</strong> · écart <strong>${result.delta_vs_estimate_pct > 0 ? "+" : ""}${result.delta_vs_estimate_pct} %</strong> vs estimation</p>`
+      : "";
+  const adj =
+    result.adjustments?.length > 0
+      ? `<ul class="drawer-estimator-adj">${result.adjustments
+          .map(
+            (a) =>
+              `<li>${escapeHtml(a.label)} <span>${a.pct > 0 ? "+" : ""}${a.pct} %</span></li>`,
+          )
+          .join("")}</ul>`
+      : "";
+  const method = (result.methodology || [])
+    .map((line) => `<li>${escapeHtml(line)}</li>`)
+    .join("");
+  return `
+    <div class="drawer-estimator-result" data-confidence="${confCls}">
+      <div class="drawer-estimator-main">
+        <span class="drawer-estimator-label">Estimation indicative</span>
+        <strong class="drawer-estimator-total">${fmtEuro(result.estimate_total)}</strong>
+        <span class="drawer-estimator-range">${fmtEuro(result.range_low)} – ${fmtEuro(result.range_high)}</span>
+      </div>
+      <p class="drawer-estimator-meta">
+        <span class="drawer-estimator-conf conf-${confCls}">Confiance ${escapeHtml(result.confidence_label || "")}</span>
+        · ${result.sample_count || 0} ventes DVF · ${escapeHtml(result.reference_period || "")}
+        · ${escapeHtml(result.commune || result.sector || "")}
+      </p>
+      <p class="drawer-estimator-m2">
+        Base DVF <strong>${(result.median_m2 || 0).toLocaleString("fr-FR")} €/m²</strong>
+        · retenu <strong>${fmtEuro(result.price_per_m2)}/m²</strong>
+        · surface ${result.surface} m²
+      </p>
+      ${delta}
+      ${adj}
+      ${method ? `<ol class="drawer-estimator-method">${method}</ol>` : ""}
+      <p class="drawer-estimator-disclaimer">${escapeHtml(result.disclaimer || "")}</p>
+    </div>`;
+}
+
+function renderPriceEstimatorSection(lead) {
+  if ((lead.transaction_type || "vente").toLowerCase() === "location") {
+    return "";
+  }
+  const propType = guessLeadPropertyType(lead);
+  const rooms = parseLeadRooms(lead);
+  const addr = lead.address && lead.address !== "—" ? lead.address : "";
+  const typeOpts = ESTIMATOR_PROPERTY_TYPES.map(
+    ([v, l]) => `<option value="${v}"${v === propType ? " selected" : ""}>${l}</option>`,
+  ).join("");
+  const condOpts = ESTIMATOR_CONDITIONS.map(
+    ([v, l]) => `<option value="${v}"${v === "standard" ? " selected" : ""}>${l}</option>`,
+  ).join("");
+  const featHtml = ESTIMATOR_FEATURES.map(
+    ([key, label]) =>
+      `<label class="drawer-estimator-check"><input type="checkbox" id="est-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
+  ).join("");
+  const cached = drawerEstimates.get(lead.id);
+  return `
+    <div class="drawer-section drawer-estimator" id="drawer-estimator-section">
+      <div class="drawer-section-title">Estimateur de prix</div>
+      <p class="drawer-estimator-intro">
+        Fourchette indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
+        ajustée selon le bien — comme une première passe Meilleurs Agents / DVF.
+      </p>
+      <form id="drawer-estimator-form" class="drawer-estimator-form" onsubmit="return false">
+        <div class="drawer-estimator-grid">
+          <label class="drawer-estimator-field">
+            <span>Surface (m²)</span>
+            <input type="number" id="est-surface" min="1" step="0.1" required value="${lead.surface != null ? lead.surface : ""}">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Pièces</span>
+            <input type="number" id="est-rooms" min="1" max="15" placeholder="—" value="${rooms}">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Type de bien</span>
+            <select id="est-property-type">${typeOpts}</select>
+          </label>
+          <label class="drawer-estimator-field">
+            <span>État</span>
+            <select id="est-condition">${condOpts}</select>
+          </label>
+          <label class="drawer-estimator-field drawer-estimator-field--wide">
+            <span>Adresse</span>
+            <input type="text" id="est-address" value="${escapeAttr(addr)}" placeholder="Rue, n°">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Ville</span>
+            <input type="text" id="est-city" value="${escapeAttr(lead.city || "")}">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>CP</span>
+            <input type="text" id="est-postcode" value="${escapeAttr(lead.postcode || "")}" maxlength="5">
+          </label>
+        </div>
+        <div class="drawer-estimator-features">${featHtml}</div>
+        <button type="button" class="btn btn-primary btn-sm" id="drawer-estimate-btn">Calculer l'estimation</button>
+      </form>
+      <div id="drawer-estimator-result" class="drawer-estimator-result-wrap">${cached ? renderPriceEstimateResultHtml(cached) : ""}</div>
+    </div>`;
+}
+
+async function runPriceEstimate(lead) {
+  const btn = document.getElementById("drawer-estimate-btn");
+  const wrap = document.getElementById("drawer-estimator-result");
+  if (!wrap) return;
+  const inputs = collectEstimatorInputs(lead);
+  if (!inputs.surface || inputs.surface <= 0) {
+    showToast("Indiquez une surface en m² pour estimer", "warning");
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Calcul en cours…";
+  }
+  wrap.innerHTML = `<p class="drawer-estimator-loading">Analyse DVF et ajustements…</p>`;
+  try {
+    const result = await api(`/leads/${lead.id}/estimate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ inputs }),
+    });
+    if (!result.ok) {
+      wrap.innerHTML = renderPriceEstimateResultHtml(result);
+      showToast(result.reason || "Estimation impossible", "warning", 6000);
+      return;
+    }
+    drawerEstimates.set(lead.id, result);
+    wrap.innerHTML = renderPriceEstimateResultHtml(result);
+    showToast(
+      `Estimation ${fmtEuro(result.estimate_total)} (${result.confidence_label})`,
+      "success",
+      6000,
+    );
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Calculer l'estimation";
+    }
+  }
+}
+
 function buildDrawerDvfHtml(lead) {
   let dvfHtml = `<div class="drawer-dvf-block">
     <strong>Comparatif DVF</strong> — ventes réelles (DGFiP / <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Etalab</a>)<br>
@@ -5476,6 +5785,7 @@ async function uploadDrawerLeadImage(lead, file) {
   if (!res.ok) throw new Error(body.error || "Échec envoi image");
   if (body.lead) {
     mergeLeadInCache(body.lead);
+    invalidateDrawerCache(body.lead.id);
     if (state.currentView === "leads") renderLeads();
     refreshDrawerBodyContent(body.lead);
     updateDrawerChrome(body.lead);
@@ -5494,6 +5804,7 @@ async function revertDrawerLeadImage(lead) {
   if (!res.ok) throw new Error(body.error || "Image crawl indisponible");
   if (body.lead) {
     mergeLeadInCache(body.lead);
+    invalidateDrawerCache(body.lead.id);
     if (state.currentView === "leads") renderLeads();
     refreshDrawerBodyContent(body.lead);
     updateDrawerChrome(body.lead);
@@ -5505,6 +5816,7 @@ async function syncDrawerLeadImage(lead) {
   const body = await api(`/leads/${lead.id}/image/sync`, { method: "POST" });
   if (body.lead) {
     mergeLeadInCache(body.lead);
+    invalidateDrawerCache(body.lead.id);
     if (state.currentView === "leads") renderLeads();
     refreshDrawerBodyContent(body.lead);
     updateDrawerChrome(body.lead);
@@ -5512,23 +5824,8 @@ async function syncDrawerLeadImage(lead) {
   }
 }
 
-function bindDrawerImageHandlers(lead) {
-  document.getElementById("drawer-image-upload")?.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    try {
-      await uploadDrawerLeadImage(lead, file);
-    } catch (err) {
-      showToast(err.message, "error");
-    }
-  });
-  document.getElementById("drawer-image-revert")?.addEventListener("click", () => {
-    revertDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
-  });
-  document.getElementById("drawer-image-sync")?.addEventListener("click", () => {
-    syncDrawerLeadImage(lead).catch((err) => showToast(err.message, "error"));
-  });
+function bindDrawerImageHandlers(_lead) {
+  /* Délégation globale dans setupDrawer(). */
 }
 
 function buildDrawerBodyHtml(lead) {
@@ -5553,6 +5850,7 @@ function buildDrawerBodyHtml(lead) {
     </div>
     ${renderFactsVerificationHtml(lead)}
     ${buildDrawerDvfHtml(lead)}
+    ${renderPriceEstimatorSection(lead)}
     ${renderDrawerEditSection(lead)}
     <div class="drawer-section drawer-readonly-summary">
       <div class="drawer-section-title">Résumé</div>
@@ -5618,27 +5916,32 @@ function updateDrawerChrome(lead) {
   document.getElementById("drawer-mandate-location")?.classList.toggle("btn-ghost-dim", mandateType !== "location");
 }
 
-function refreshDrawerBodyContent(lead) {
-  const body = document.getElementById("drawer-body");
-  if (!body) return;
-  body.innerHTML = buildDrawerBodyHtml(lead);
-  bindDrawerEditHandlers(lead);
-  bindDrawerImageHandlers(lead);
-  wireDrawerJourneyButtons(lead);
+function restoreDrawerEstimatePanel(lead) {
+  const wrap = document.getElementById("drawer-estimator-result");
+  const est = drawerEstimates.get(lead.id);
+  if (wrap && est) wrap.innerHTML = renderPriceEstimateResultHtml(est);
 }
 
-function wireDrawerJourneyButtons(lead) {
-  document.getElementById("drawer-journey-call")?.addEventListener("click", () => {
-    const tel = (lead.phone || "").replace(/\s/g, "");
-    if (tel && tel !== "—") {
-      window.location.href = `tel:${tel}`;
-    } else {
-      showToast("Pas de numéro de téléphone sur cette fiche", "warning");
-    }
-  });
-  document.getElementById("drawer-journey-script")?.addEventListener("click", () => {
-    loadScriptForLead(lead).catch((err) => showToast(err.message, "error"));
-  });
+function setDrawerBodyHtml(lead, html) {
+  const body = document.getElementById("drawer-body");
+  if (!body) return;
+  body.innerHTML = html;
+  restoreDrawerEstimatePanel(lead);
+}
+
+function refreshDrawerBodyContent(lead, { skipCache = false } = {}) {
+  const key = drawerFingerprint(lead);
+  if (!skipCache && drawerHtmlCache.has(key)) {
+    setDrawerBodyHtml(lead, drawerHtmlCache.get(key));
+    return;
+  }
+  const html = buildDrawerBodyHtml(lead);
+  drawerHtmlCacheSet(key, html);
+  setDrawerBodyHtml(lead, html);
+}
+
+function wireDrawerJourneyButtons(_lead) {
+  /* Délégation globale dans setupDrawer(). */
 }
 
 function openMandateFromLead(lead, type) {
@@ -5663,22 +5966,28 @@ function openDrawer(id) {
   const lead = LEADS.find((l) => l.id === id);
   if (!lead) return;
 
-  state.drawerShowAllFields = false;
+  const sameLead = state.selectedLead?.id === id;
+  if (!sameLead) state.drawerShowAllFields = false;
   state.selectedLead = lead;
 
-  document.getElementById("drawer-overlay").classList.add("open");
-  document.getElementById("lead-drawer").classList.add("open");
+  const overlay = document.getElementById("drawer-overlay");
+  const drawerEl = document.getElementById("lead-drawer");
+  overlay.classList.add("open");
+  drawerEl.classList.add("open");
 
   updateDrawerChrome(lead);
 
+  const cacheKey = drawerFingerprint(lead);
+  const cached = drawerHtmlCache.get(cacheKey);
   const body = document.getElementById("drawer-body");
-  body.innerHTML = `<div class="drawer-loading">Chargement…</div>`;
+  if (cached) {
+    setDrawerBodyHtml(lead, cached);
+    return;
+  }
 
+  body.innerHTML = `<div class="drawer-loading drawer-loading--pulse">Ouverture…</div>`;
   requestAnimationFrame(() => {
-    body.innerHTML = buildDrawerBodyHtml(lead);
-    bindDrawerEditHandlers(lead);
-    bindDrawerImageHandlers(lead);
-    wireDrawerJourneyButtons(lead);
+    refreshDrawerBodyContent(lead);
   });
 }
 

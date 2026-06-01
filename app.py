@@ -755,6 +755,25 @@ def api_radar_settings():
     return jsonify({"ok": True, "settings": settings})
 
 
+@app.route("/api/leads/<int:lead_id>/estimate", methods=["GET", "POST"])
+def api_lead_price_estimate(lead_id):
+    from crm.estimator.service import build_price_estimate, estimator_form_schema
+
+    agency_id = _aid()
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
+    if request.method == "GET":
+        return jsonify({"ok": True, "schema": estimator_form_schema(), "lead": lead})
+    data = request.get_json(silent=True) or {}
+    try:
+        result = build_price_estimate(lead, data.get("inputs") or data)
+    except Exception as exc:
+        logging.exception("POST /api/leads/%s/estimate", lead_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    return jsonify(result)
+
+
 @app.route("/api/dvf/compare/<int:lead_id>", methods=["POST"])
 def api_dvf_compare_lead(lead_id):
     try:
@@ -1488,10 +1507,13 @@ def api_mandate_templates():
 @app.route("/api/map")
 def api_map():
     """Marqueurs carte : agence (fiche légale) + annonces géocodées."""
-    from crm.maps.service import build_map_payload
+    from crm.maps.service import build_map_payload, geocode_map_leads_sync
 
+    agency_id = _aid()
     try:
-        return jsonify(build_map_payload(_aid()))
+        if request.args.get("geocode") in ("1", "true", "yes"):
+            geocode_map_leads_sync(agency_id)
+        return jsonify(build_map_payload(agency_id))
     except Exception as exc:
         logging.exception("GET /api/map")
         return jsonify({"ok": False, "error": str(exc)}), 500

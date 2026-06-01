@@ -273,8 +273,7 @@ def build_map_payload(agency_id: str) -> dict:
     markers: list[dict] = []
     pending = 0
     geocoded_this_run = 0
-    geocode_deadline = time.monotonic() + _GEOCODE_TIME_BUDGET_SEC
-    use_nominatim = not bool(api_key)
+    needs_background_geocode: list[tuple[int, str]] = []
 
     for row in rows:
         keys = row.keys()
@@ -287,19 +286,8 @@ def build_map_payload(agency_id: str) -> dict:
             continue
 
         coords = _lead_coords_from_row(row)
-        if (
-            not coords
-            and geocoded_this_run < _GEOCODE_MAX_PER_REQUEST
-            and time.monotonic() < geocode_deadline
-        ):
-            coords = geocode_query(line)
-            if coords:
-                _save_lead_coords(int(row["id"]), agency_id, coords[0], coords[1])
-                geocoded_this_run += 1
-                if use_nominatim:
-                    time.sleep(1.05)
-
         if not coords:
+            needs_background_geocode.append((int(row["id"]), line))
             pending += 1
             continue
 
@@ -323,6 +311,9 @@ def build_map_payload(agency_id: str) -> dict:
             }
         )
 
+    if needs_background_geocode:
+        schedule_map_geocode_batch(agency_id, needs_background_geocode[:40])
+
     return {
         "ok": True,
         "maps_provider": "google" if api_key else "osm",
@@ -343,6 +334,80 @@ def build_map_payload(agency_id: str) -> dict:
             "refresh_hint": pending > 0,
         },
     }
+
+
+def schedule_map_geocode_batch(
+    agency_id: str,
+    items: list[tuple[int, str]],
+) -> None:
+    """Géocode les prospects sans coordonnées en arrière-plan (ne bloque pas GET /api/map)."""
+    if not items:
+        return
+
+    def _run() -> None:
+        try:
+            ensure_map_schema()
+            use_nominatim = not bool(google_maps_api_key())
+            for lead_id, line in items:
+                try:
+                    with get_connection() as conn:
+                        row = conn.execute(
+                            "SELECT latitude, longitude FROM leads WHERE id = ? AND agency_id = ?",
+                            (lead_id, agency_id),
+                        ).fetchone()
+                    if row and row["latitude"] is not None and row["longitude"] is not None:
+                        continue
+                    coords = geocode_query(line)
+                    if coords:
+                        _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
+                    if use_nominatim:
+                        time.sleep(1.05)
+                except Exception:
+                    logger.exception("map geocode lead %s", lead_id)
+        except Exception:
+            logger.exception("schedule_map_geocode_batch")
+
+    threading.Thread(
+        target=_run, daemon=True, name=f"map-geo-{agency_id[:8]}"
+    ).start()
+
+
+def geocode_map_leads_sync(
+    agency_id: str,
+    max_items: int = _GEOCODE_MAX_PER_REQUEST,
+) -> int:
+    """Géocode jusqu'à N prospects (appel explicite Actualiser)."""
+    ensure_map_schema()
+    done = 0
+    deadline = time.monotonic() + _GEOCODE_TIME_BUDGET_SEC
+    use_nominatim = not bool(google_maps_api_key())
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, address, city, postcode, latitude, longitude
+            FROM leads
+            WHERE agency_id = ?
+              AND (latitude IS NULL OR longitude IS NULL)
+            ORDER BY mandate_score DESC, score DESC
+            LIMIT ?
+            """,
+            (agency_id, max(1, min(max_items, 24))),
+        ).fetchall()
+    for row in rows:
+        if done >= max_items or time.monotonic() >= deadline:
+            break
+        line = format_location_line(row["address"], row["postcode"], row["city"])
+        if not line:
+            continue
+        if _lead_coords_from_row(row):
+            continue
+        coords = geocode_query(line)
+        if coords:
+            _save_lead_coords(int(row["id"]), agency_id, coords[0], coords[1])
+            done += 1
+            if use_nominatim:
+                time.sleep(1.05)
+    return done
 
 
 def schedule_lead_geocode(
