@@ -1249,8 +1249,9 @@ def save_lead(
                 ),
             )
             conn.commit()
-            if agency_id:
-                recalc_source_found_counts(agency_id)
+            # NB : pas de recalc_source_found_counts ici — appelé en fin de source
+            # (engine). Le faire par-lead provoque des deadlocks sur « sources »
+            # avec les workers DVF parallèles (UPDATE concurrents de toutes les sources).
             return {
                 "id": existing_row["id"],
                 "created": False,
@@ -1310,8 +1311,8 @@ def save_lead(
         if agency_id and new_id and lead.price:
             _record_price_change(conn, int(new_id), agency_id, int(lead.price), now=now)
         conn.commit()
-        if agency_id:
-            recalc_source_found_counts(agency_id)
+        # Pas de recalc par-lead (deadlocks « sources » avec DVF parallèle) —
+        # fait en fin de source par l'engine.
         return {
             "id": new_id,
             "created": True,
@@ -1467,30 +1468,48 @@ def get_lead(lead_id: int, agency_id: str) -> dict | None:
 
 
 def recalc_source_found_counts(agency_id: str | None = None) -> None:
-    """Synchronise found_total / found_today avec le nombre réel de prospects."""
-    if agency_id:
-        sync_lead_source_ids(agency_id)
-    with get_connection() as conn:
-        if agency_id:
-            rows = conn.execute(
-                "SELECT * FROM sources WHERE agency_id = ?", (agency_id,)
-            ).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM sources").fetchall()
-        for src in rows:
-            aid = src["agency_id"] if "agency_id" in src.keys() else agency_id
-            if not aid:
+    """Synchronise found_total / found_today avec le nombre réel de prospects.
+
+    L'UPDATE des sources entre en concurrence avec les UPDATE leads (verrou FK
+    leads.source_id → sources) des workers DVF parallèles : on retente sur deadlock
+    (façon standard de gérer un deadlock Postgres : la transaction perdante rejoue).
+    """
+    for attempt in range(4):
+        try:
+            if agency_id:
+                sync_lead_source_ids(agency_id)
+            with get_connection() as conn:
+                # ORDER BY id : verrouillage dans un ordre constant entre
+                # transactions concurrentes → réduit les deadlocks sur « sources ».
+                if agency_id:
+                    rows = conn.execute(
+                        "SELECT * FROM sources WHERE agency_id = ? ORDER BY id", (agency_id,)
+                    ).fetchall()
+                else:
+                    rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
+                for src in rows:
+                    aid = src["agency_id"] if "agency_id" in src.keys() else agency_id
+                    if not aid:
+                        continue
+                    keys = src.keys()
+                    domain = src["domain"] if "domain" in keys and src["domain"] else ""
+                    counts = _count_leads_for_source(
+                        conn, aid, src["id"], src["name"], domain, src["base_url"]
+                    )
+                    conn.execute(
+                        "UPDATE sources SET found_total = ?, found_today = ?, updated_at = ? WHERE id = ?",
+                        (counts["total"], counts["touched_today"], _now(), src["id"]),
+                    )
+                conn.commit()
+            return
+        except Exception as exc:
+            if "deadlock" in str(exc).lower() and attempt < 3:
+                import time
+
+                time.sleep(0.25 * (attempt + 1))
                 continue
-            keys = src.keys()
-            domain = src["domain"] if "domain" in keys and src["domain"] else ""
-            counts = _count_leads_for_source(
-                conn, aid, src["id"], src["name"], domain, src["base_url"]
-            )
-            conn.execute(
-                "UPDATE sources SET found_total = ?, found_today = ?, updated_at = ? WHERE id = ?",
-                (counts["total"], counts["touched_today"], _now(), src["id"]),
-            )
-        conn.commit()
+            logger.warning("recalc_source_found_counts: %s", str(exc)[:160])
+            return
 
 
 def delete_lead(lead_id: int, agency_id: str) -> bool:
