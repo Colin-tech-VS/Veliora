@@ -108,6 +108,37 @@ function getMandateScoreClass(score) {
   return "low";
 }
 
+/**
+ * % de chance de signer le mandat (miroir de crm/scoring/probability.py).
+ * Préfère la valeur calculée côté serveur ; recalcule sinon depuis le score.
+ */
+function signatureProbability(lead) {
+  if (lead && lead.signature_probability != null) {
+    return Math.round(lead.signature_probability);
+  }
+  const s = (lead && (lead.mandate_score ?? lead.score)) || 0;
+  const ceil = 0.82, k = 0.062, mid = 71;
+  const p = ceil / (1 + Math.exp(-k * (s - mid)));
+  const has = (v) => !!(v && String(v).trim() !== "" && v !== "—" && v !== "-");
+  const factor = has(lead && lead.phone) ? 1.0 : has(lead && lead.email) ? 0.82 : 0.5;
+  return Math.round(Math.max(0.01, Math.min(0.95, p * factor)) * 100);
+}
+
+/** Classe de couleur selon la probabilité de signature (et non le score brut). */
+function signatureClass(p) {
+  if (p >= 55) return "high";
+  if (p >= 40) return "medium";
+  return "low";
+}
+
+function signatureBandLabel(p) {
+  if (p >= 55) return "Très élevée";
+  if (p >= 40) return "Élevée";
+  if (p >= 25) return "Modérée";
+  if (p >= 12) return "Faible";
+  return "Très faible";
+}
+
 function isUrl(value) {
   return /^https?:\/\//i.test(value) || /^[\w.-]+\.(fr|com|net|org)\//i.test(value) || /^www\./i.test(value);
 }

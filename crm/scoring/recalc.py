@@ -138,6 +138,10 @@ def enrich_lead_scores(
     lead["mandate_score_reason"] = result.reason
     lead["alert_tags"] = result.tags
     lead["priority_tier"] = explanation["priority_tier"]
+    lead["signature_probability"] = explanation["signature_probability"]
+    lead["signature_band"] = explanation["signature_band"]
+    lead["signature_tone"] = explanation["signature_tone"]
+    lead["signature_label"] = explanation["signature_label"]
     lead["score_explanation"] = explanation
     lead["score_positive_factors"] = result.positive
     lead["score_negative_factors"] = result.negative
@@ -181,6 +185,22 @@ def hydrate_lead_from_stored(lead: dict) -> dict:
     ms = lead.get("mandate_score")
     if ms is not None:
         lead["score"] = ms
+
+    # Probabilité de signature : depuis l'explication stockée si présente,
+    # sinon (anciens enregistrements) recalcul direct depuis le score + contact.
+    from crm.scoring.probability import signature_probability
+
+    if isinstance(expl, dict) and expl.get("signature_probability") is not None:
+        lead["signature_probability"] = expl.get("signature_probability")
+        lead["signature_band"] = expl.get("signature_band")
+        lead["signature_tone"] = expl.get("signature_tone")
+        lead["signature_label"] = expl.get("signature_label")
+    else:
+        sig = signature_probability(lead, ms if ms is not None else 0)
+        lead["signature_probability"] = sig["probability"]
+        lead["signature_band"] = sig["band"]
+        lead["signature_tone"] = sig["tone"]
+        lead["signature_label"] = sig["label"]
     lead["days_on_market"] = days_since(lead.get("published_at") or lead.get("listedAt"))
 
     prev_p = lead.get("previous_price")

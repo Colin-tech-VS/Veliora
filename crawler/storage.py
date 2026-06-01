@@ -1955,6 +1955,22 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             base["score_explanation"] = None
     if base.get("mandate_score") is not None and base.get("score_explanation") is not None:
         base["_scores_enriched"] = True
+    # Probabilité de signature toujours présente, même quand enrich_lead_row
+    # court-circuite (lead déjà enrichi en base).
+    expl = base.get("score_explanation")
+    if isinstance(expl, dict) and expl.get("signature_probability") is not None:
+        base["signature_probability"] = expl.get("signature_probability")
+        base["signature_band"] = expl.get("signature_band")
+        base["signature_tone"] = expl.get("signature_tone")
+        base["signature_label"] = expl.get("signature_label")
+    else:
+        from crm.scoring.probability import signature_probability
+
+        sig = signature_probability(base, base.get("mandate_score") or 0)
+        base["signature_probability"] = sig["probability"]
+        base["signature_band"] = sig["band"]
+        base["signature_tone"] = sig["tone"]
+        base["signature_label"] = sig["label"]
     if enrich_scores:
         return enrich_lead_row(base)
     return base

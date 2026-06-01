@@ -1004,18 +1004,51 @@ function buildScriptPanelHtml(script) {
       .map((l) => `<p class="script-panel-p">${formatScriptRichText(l)}</p>`)
       .join("");
   }
+  let html = "";
+
+  // En-tête : probabilité de signature + quand appeler.
+  const plan = script.plan || null;
+  if (script.signature_probability != null) {
+    const p = script.signature_probability;
+    html += `<div class="script-proba ${signatureClass(p)}">
+      <div class="script-proba-pct">${p}<span>%</span></div>
+      <div class="script-proba-text">
+        <strong>de chance de signer le mandat</strong>
+        <span>${escapeHtml(script.signature_band || signatureBandLabel(p))}${
+      plan?.priority ? " · " + escapeHtml(priorityLabel(plan.priority)) : ""
+    }</span>
+      </div>
+    </div>`;
+  }
+  if (plan?.when_to_call) {
+    const w = plan.when_to_call;
+    const windows = (w.windows || [])
+      .map((win) => `<li><strong>${escapeHtml(win.label)}</strong> — ${escapeHtml(win.detail)}</li>`)
+      .join("");
+    html += `<div class="script-section script-when">
+      <div class="script-section-title">📞 Quand appeler</div>
+      ${w.best_window ? `<p class="script-best-window">${escapeHtml(w.best_window)}</p>` : ""}
+      ${windows ? `<ul class="script-windows">${windows}</ul>` : ""}
+      ${w.avoid ? `<p class="script-avoid">${escapeHtml(w.avoid)}</p>` : ""}
+    </div>`;
+  }
+
   const steps = [
     ["1", script.opening],
     ["2", script.observation],
     ["3", script.value],
     ["4", script.closing],
   ].filter(([, t]) => t);
-  let html = steps
-    .map(
-      ([n, t]) =>
-        `<div class="playbook-script-step"><span>${n}</span><p>${formatScriptRichText(t)}</p></div>`,
-    )
-    .join("");
+  if (steps.length) {
+    html += `<div class="script-section"><div class="script-section-title">🗣️ Script d'appel</div>`;
+    html += steps
+      .map(
+        ([n, t]) =>
+          `<div class="playbook-script-step"><span>${n}</span><p>${formatScriptRichText(t)}</p></div>`,
+      )
+      .join("");
+    html += `</div>`;
+  }
   if (script.advice?.length) {
     html += `<ul class="script-panel-advice">${script.advice.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`;
   }
@@ -1027,7 +1060,53 @@ function buildScriptPanelHtml(script) {
       )
       .join("")}</div>`;
   }
+
+  // SMS prêt à envoyer (avec bouton copier).
+  if (plan?.sms) {
+    html += `<div class="script-section script-channel">
+      <div class="script-section-title">💬 SMS prêt à envoyer
+        <button type="button" class="btn btn-ghost btn-xs script-copy-channel" data-copy="${escapeAttr(plan.sms)}">Copier</button>
+      </div>
+      <p class="script-message">${escapeHtml(plan.sms)}</p>
+    </div>`;
+  }
+  // Email prêt à envoyer (objet + corps).
+  if (plan?.email) {
+    const full = `Objet : ${plan.email.subject}\n\n${plan.email.body}`;
+    html += `<div class="script-section script-channel">
+      <div class="script-section-title">✉️ Email prêt à envoyer
+        <button type="button" class="btn btn-ghost btn-xs script-copy-channel" data-copy="${escapeAttr(full)}">Copier</button>
+      </div>
+      <p class="script-email-subject"><strong>Objet :</strong> ${escapeHtml(plan.email.subject)}</p>
+      <pre class="script-email-body">${escapeHtml(plan.email.body)}</pre>
+    </div>`;
+  }
+  // Cadence de relance (quoi faire, quand).
+  if (plan?.cadence?.length) {
+    const rows = plan.cadence
+      .map(
+        (c) =>
+          `<li><strong>${escapeHtml(c.step)}</strong> — ${escapeHtml(c.detail)}</li>`,
+      )
+      .join("");
+    html += `<div class="script-section script-cadence">
+      <div class="script-section-title">📆 Plan de relance</div>
+      <ul class="script-cadence-list">${rows}</ul>
+    </div>`;
+  }
+
   return html || `<p class="script-panel-p">${escapeHtml(scriptCopyText(script))}</p>`;
+}
+
+function priorityLabel(priority) {
+  return (
+    {
+      urgent: "Priorité immédiate",
+      high: "Priorité haute",
+      medium: "À traiter cette semaine",
+      low: "À surveiller",
+    }[priority] || ""
+  );
 }
 
 function syncScriptPanelUi() {
@@ -1129,6 +1208,19 @@ function setupScriptPanel() {
   });
   document.getElementById("script-panel-open-lead")?.addEventListener("click", () => {
     if (scriptPanelState.leadId) openDrawer(scriptPanelState.leadId);
+  });
+  // Copie d'un canal précis (SMS / email) depuis le corps du panneau.
+  document.getElementById("script-panel-body")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".script-copy-channel");
+    if (!btn) return;
+    const text = btn.getAttribute("data-copy") || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("Copié", "success", 2000);
+    } catch {
+      showToast("Copie impossible", "error");
+    }
   });
 }
 
@@ -2095,10 +2187,12 @@ function renderOnDemandAnalysis(analysis, lead) {
   state.onDemandAnalysis = { analysis, lead };
 
   const score = analysis.mandate_score ?? 0;
+  const prob = signatureProbability(analysis);
   const scoreEl = document.getElementById("analyze-score-display");
   if (scoreEl) {
-    scoreEl.innerHTML = `${score}<span class="analyze-score-max">/${analysis.mandate_score_max || 100}</span>`;
-    scoreEl.className = `analyze-score-value ${getMandateScoreClass(score)}`;
+    scoreEl.innerHTML = `${prob}<span class="analyze-score-max">% signature</span>`;
+    scoreEl.className = `analyze-score-value ${signatureClass(prob)}`;
+    scoreEl.title = `Score mandat ${score}/100`;
   }
   const addr = document.getElementById("analyze-score-address");
   if (addr) {
@@ -2284,7 +2378,7 @@ async function runOnDemandAnalysis(url, { skipViewSwitch } = {}) {
         else LEADS.unshift(res.lead);
       }
       renderOnDemandAnalysis(res.analysis, res.lead);
-      showToast(`Score Mandat™ : ${res.analysis.mandate_score}/100`, "success", 5000);
+      showToast(`${signatureProbability(res.analysis)} % de chance de signer le mandat`, "success", 5000);
       return;
     }
     setAnalyzeUiState("empty");
@@ -2316,7 +2410,7 @@ async function completeOnDemandAnalysisAfterImport(url) {
     if (analyzeImportState.aborted) return;
     if (res.status === "ready" && res.analysis) {
       renderOnDemandAnalysis(res.analysis, res.lead);
-      showToast(`Score Mandat™ : ${res.analysis.mandate_score}/100`, "success", 6000);
+      showToast(`${signatureProbability(res.analysis)} % de chance de signer le mandat`, "success", 6000);
     } else {
       setAnalyzeUiState("empty");
       showToast("Fiche importée — relancez l'analyse si le score n'apparaît pas", "warning");
@@ -4410,11 +4504,15 @@ function mandateCallRecommendation(score) {
 
 function renderMandatePill(lead, opts = {}) {
   const s = lead.mandate_score || 0;
-  const reason = escapeHtml(lead.mandate_score_reason || "");
+  const p = signatureProbability(lead);
+  const reason = lead.mandate_score_reason || "";
   const showMax = opts.showMax !== false;
   const large = opts.large ? " score-pill-lg" : "";
-  const label = showMax ? `${s}<span class="score-max">/100</span>` : String(s);
-  return `<span class="score-pill mandate ${getMandateScoreClass(s)}${large}" title="${reason}">${label}</span>`;
+  const label = showMax ? `${p}<span class="score-max">%</span>` : `${p}%`;
+  const title = escapeAttr(
+    `${p} % de chance de signer le mandat · Score ${s}/100${reason ? " · " + reason : ""}`,
+  );
+  return `<span class="score-pill mandate ${signatureClass(p)}${large}" title="${title}">${label}</span>`;
 }
 
 function renderDvfBadge(lead) {
@@ -4870,7 +4968,7 @@ function renderPlaybookOpportunities() {
       <article class="playbook-opp" data-lead-id="${o.lead_id}">
         <header class="playbook-opp-head">
           <div>
-            <span class="score-pill mandate ${getMandateScoreClass(o.mandate_score || 0)}">${o.mandate_score || 0}</span>
+            <span class="score-pill mandate ${signatureClass(signatureProbability(o))}" title="Score mandat ${o.mandate_score || 0}/100">${signatureProbability(o)}%</span>
             <span class="playbook-scenario">${escapeHtml(o.scenario_label || "")}</span>
           </div>
           <div class="playbook-opp-actions">
@@ -6011,7 +6109,7 @@ function renderEstimateurView() {
         <div class="estimateur-lead-card">
           <strong>${escapeHtml(lead.property_title || lead.listing_title || "Bien")}</strong>
           <p>${escapeHtml(lead.address || "—")}${lead.city ? `, ${escapeHtml(lead.city)}` : ""}</p>
-          <p class="estimateur-lead-meta">${escapeHtml(priceLine)} · Score Mandat ${ms}</p>
+          <p class="estimateur-lead-meta">${escapeHtml(priceLine)} · ${signatureProbability(lead)} % de chance de signer</p>
           <button type="button" class="btn btn-ghost btn-sm" id="tab-est-open-drawer">Voir la fiche</button>
         </div>
       </aside>

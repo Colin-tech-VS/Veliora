@@ -323,9 +323,17 @@ def build_listing_analysis(lead: dict, *, agency_name: str = "") -> dict[str, An
     expl = enriched.get("score_explanation") or {}
     reco = expl.get("recommendation") if isinstance(expl, dict) and expl.get("recommendation") else reco
 
+    from crm.scoring.probability import signature_probability
+
+    sig = signature_probability(enriched, score)
+
     return {
         "mandate_score": score,
         "mandate_score_max": 100,
+        "signature_probability": sig["probability"],
+        "signature_band": sig["band"],
+        "signature_tone": sig["tone"],
+        "signature_label": sig["label"],
         "mandate_score_reason": enriched.get("mandate_score_reason") or "",
         "priority_tier": enriched.get("priority_tier"),
         "positive_factors": factors,
@@ -566,34 +574,35 @@ SCENARIO_LABELS = {
 PLAYBOOK_GUIDE: list[dict[str, Any]] = [
     {
         "id": "mandate_score",
-        "title": "Score mandat",
+        "title": "Chance de signer le mandat",
         "emoji": "🎯",
-        "summary": "De 0 à 100 — plus le score est élevé, plus le prospect mérite un appel rapide.",
+        "summary": "Une probabilité en % — plus elle est haute, plus le prospect mérite un appel rapide.",
         "blocks": [
             {
-                "label": "85 – 100 · Priorité immédiate",
-                "detail": "Plusieurs signaux forts (sans agence, DVF, baisse, ancienneté…). Appelez dans la journée.",
+                "label": "55 %+ · Priorité immédiate",
+                "detail": "Plusieurs signaux forts (sans agence, DVF, baisse, ancienneté…) et vendeur joignable. Appelez dans la journée.",
                 "tone": "urgent",
             },
             {
-                "label": "60 – 84 · Bonne opportunité",
+                "label": "40 – 54 % · Bonne opportunité",
                 "detail": "Profil intéressant à qualifier au téléphone. Préparez un angle d'accroche (DVF ou ancienneté).",
                 "tone": "high",
             },
             {
-                "label": "30 – 59 · À suivre",
+                "label": "25 – 39 % · À suivre",
                 "detail": "Relancez si le bien évolue (baisse, DVF favorable) ou après un crawl qui enrichit la fiche.",
                 "tone": "medium",
             },
             {
-                "label": "0 – 29 · Veille",
-                "detail": "Peu de signaux mandat pour l'instant. Gardez en base pour suivi automatique.",
+                "label": "< 25 % · Veille",
+                "detail": "Peu de signaux mandat, ou vendeur difficile à joindre. Gardez en base pour suivi automatique.",
                 "tone": "low",
             },
         ],
         "tips": [
-            "Le score combine : particulier sans agence, ancienneté de l'annonce, baisse de prix, comparatif DVF, surface cohérente, téléphone/email renseignés.",
-            "Un score élevé ne garantit pas le mandat — c'est un ordre d'appel, pas une promesse de signature.",
+            "La probabilité combine : particulier sans agence, ancienneté de l'annonce, baisse de prix, comparatif DVF, surface cohérente, et surtout la joignabilité (téléphone / email).",
+            "Une probabilité élevée ne garantit pas le mandat — c'est un ordre d'appel, pas une promesse de signature.",
+            "Chaque fiche fournit le script d'appel, le SMS, l'email et le meilleur moment pour appeler.",
         ],
     },
     {
@@ -964,6 +973,11 @@ def _build_observation(lead: dict, scenario: str, tpl: dict[str, Any]) -> str:
 
 def build_call_script(lead: dict) -> dict[str, Any]:
     """Script structuré + texte complet pour un prospect (markdown **gras**)."""
+    # Robustesse : si le lead n'est pas encore scoré (mandate_score absent),
+    # on l'enrichit pour que la probabilité et le scénario soient corrects.
+    if lead.get("mandate_score") is None:
+        meta = {k: lead.get(k) for k in ("_caller", "_agency") if lead.get(k)}
+        lead = {**enrich_lead_row(dict(lead)), **meta}
     scenario = detect_lead_scenario(lead)
     tpl = SCRIPT_TEMPLATES.get(scenario, SCRIPT_TEMPLATES["default"])
     caller = lead.get("_caller") or "votre conseiller"
@@ -985,6 +999,8 @@ def build_call_script(lead: dict) -> dict[str, Any]:
     full_text_plain = "\n\n".join(_plain_script_text(s) for s in sections)
     advice = _advice_for_lead(lead, scenario)
 
+    plan = build_outreach_plan(lead)
+
     return {
         "scenario": scenario,
         "scenario_label": SCENARIO_LABELS.get(scenario, SCENARIO_LABELS["default"]),
@@ -998,6 +1014,176 @@ def build_call_script(lead: dict) -> dict[str, Any]:
         "full_text": full_text,
         "full_text_plain": full_text_plain,
         "city": city,
+        # % de chance de signer + plan multicanal (quand appeler, SMS, email, cadence).
+        "signature_probability": plan["signature_probability"],
+        "signature_band": plan["signature_band"],
+        "signature_label": plan["signature_label"],
+        "signature_tone": plan["signature_tone"],
+        "plan": plan,
+    }
+
+
+# ── Plan d'action multicanal (quand appeler, quoi dire, SMS / email / appel) ──
+
+# Créneaux d'appel d'un vendeur particulier (FSBO) — taux de décroché élevés.
+CALL_WINDOWS: list[dict[str, str]] = [
+    {"label": "En semaine, 12h00 – 13h30", "detail": "Pause déjeuner : bon taux de décroché."},
+    {"label": "En semaine, 18h00 – 20h00", "detail": "Après le travail : le créneau le plus efficace."},
+    {"label": "Samedi, 10h00 – 12h30", "detail": "Vendeurs disponibles et détendus."},
+]
+CALL_AVOID = (
+    "À éviter : avant 9h, les heures de bureau 14h – 17h en semaine, "
+    "le dimanche et après 20h30."
+)
+
+
+def _sms_value_phrase(scenario: str) -> str:
+    return {
+        "fort_potentiel": "Votre bien a un vrai potentiel sur le secteur.",
+        "dvf_sous_marche": "Votre prix semble en retrait vs les ventes récentes du quartier.",
+        "baisse_prix": "J'ai vu que vous aviez ajusté votre prix récemment.",
+        "nouveau_sans_agence": "Vous venez de publier votre annonce en direct.",
+        "annonce_ancienne": "Votre annonce est en ligne depuis un moment.",
+        "sans_agence": "Vous vendez en direct, sans agence.",
+        "default": "Votre annonce a retenu mon attention sur le secteur.",
+    }.get(scenario, "Votre annonce a retenu mon attention sur le secteur.")
+
+
+def _cap_first(text: str) -> str:
+    t = (text or "").strip()
+    return t[:1].upper() + t[1:] if t else t
+
+
+def build_outreach_sms(lead: dict, scenario: str, prop_ref: str) -> str:
+    """SMS court, prêt à envoyer (texte brut, sans markdown)."""
+    caller = lead.get("_caller") or "votre conseiller"
+    agency = lead.get("_agency") or "l'agence"
+    value = _sms_value_phrase(scenario)
+    return (
+        f"Bonjour, {caller} de {agency}. Je vous contacte au sujet de {prop_ref}. "
+        f"{value} Auriez-vous 10 min cette semaine pour une estimation offerte, "
+        f"sans engagement ? Vous pouvez me répondre directement par SMS. Bonne journée."
+    )
+
+
+def build_outreach_email(lead: dict, scenario: str, prop_ref: str) -> dict[str, str]:
+    """Email prêt à envoyer (objet + corps texte brut)."""
+    caller = lead.get("_caller") or "votre conseiller"
+    agency = lead.get("_agency") or "l'agence"
+    tpl = SCRIPT_TEMPLATES.get(scenario, SCRIPT_TEMPLATES["default"])
+    observation = _plain_script_text(_build_observation(lead, scenario, tpl))
+    value = _cap_first(_plain_script_text(tpl.get("value") or ""))
+
+    subject = f"{_cap_first(prop_ref)} — estimation offerte, sans engagement"
+    body_lines = [
+        "Bonjour,",
+        "",
+        f"Je suis {caller}, de {agency}. Je me permets de vous écrire au sujet de {prop_ref}.",
+    ]
+    if observation:
+        body_lines += ["", observation]
+    if value:
+        body_lines += ["", f"{value}."]
+    body_lines += [
+        "",
+        "Seriez-vous disponible pour un court échange cette semaine ? Je peux vous "
+        "proposer une estimation offerte et sans engagement, simplement pour vous "
+        "donner un repère fiable du marché actuel.",
+        "",
+        "Bien cordialement,",
+        f"{caller}",
+        f"{agency}",
+    ]
+    return {"subject": subject, "body": "\n".join(body_lines)}
+
+
+def _outreach_cadence(priority: str, has_phone: bool) -> list[dict[str, str]]:
+    """Séquence de relance jour par jour selon la priorité et la joignabilité."""
+    if has_phone:
+        first = {"step": "Jour 0 · Appel", "channel": "call",
+                 "detail": "Appel prioritaire sur un créneau du soir ou le midi — utilisez le script ci-dessous."}
+    else:
+        first = {"step": "Jour 0 · Message portail + email", "channel": "email",
+                 "detail": "Pas de téléphone : passez par la messagerie du portail et l'email ci-dessous."}
+
+    if priority == "urgent":
+        steps = [
+            first,
+            {"step": "Jour 0 +3h · SMS", "channel": "sms",
+             "detail": "Sans réponse, envoyez le SMS de présentation (ci-dessous)."},
+            {"step": "Jour 1 · 2ᵉ appel + email", "channel": "call" if has_phone else "email",
+             "detail": "Nouvelle tentative puis email récap avec l'estimation offerte."},
+            {"step": "Jour 3 · Relance", "channel": "call" if has_phone else "email",
+             "detail": "Dernière relance douce avant mise en veille du prospect."},
+        ]
+    elif priority == "high":
+        steps = [
+            first,
+            {"step": "Jour 1 · SMS", "channel": "sms",
+             "detail": "Sans réponse, relancez par SMS."},
+            {"step": "Jour 3 · Email", "channel": "email",
+             "detail": "Email avec estimation offerte et comparatif DVF si disponible."},
+            {"step": "Jour 6 · Relance appel", "channel": "call" if has_phone else "email",
+             "detail": "Nouvelle tentative téléphonique sur un autre créneau."},
+        ]
+    elif priority == "medium":
+        steps = [
+            first,
+            {"step": "Jour 2 · Email ou SMS", "channel": "email",
+             "detail": "Relance écrite avec proposition d'estimation."},
+            {"step": "Jour 7 · Relance", "channel": "call" if has_phone else "email",
+             "detail": "Relance hebdomadaire tant que l'annonce est active."},
+        ]
+    else:
+        steps = [
+            {"step": "Jour 0 · Email ou SMS d'introduction", "channel": "email",
+             "detail": "Premier contact écrit, sans pression — gardez la fiche en veille."},
+            {"step": "Jour 7 · Relance légère", "channel": "sms",
+             "detail": "Relancez si le bien évolue (baisse de prix, DVF favorable)."},
+        ]
+    return steps
+
+
+def build_outreach_plan(lead: dict) -> dict[str, Any]:
+    """Plan d'action complet : probabilité, quand appeler, cadence, SMS, email."""
+    from crm.scoring.probability import signature_probability
+
+    scenario = detect_lead_scenario(lead)
+    prop_ref = _plain_script_text(property_reference_for_script(lead))
+    score = lead.get("mandate_score") or lead.get("score") or 0
+    sig = signature_probability(lead, score)
+    has_phone = bool(lead.get("phone") and str(lead.get("phone")).strip() not in ("", "—"))
+
+    rec = mandate_call_recommendation(score)
+    priority = rec.get("urgency", "low")
+
+    if priority == "urgent":
+        best_window = "Dès aujourd'hui 18h – 20h (ou demain 12h – 13h30)."
+    elif priority == "high":
+        best_window = "Sous 48 h, en soirée (18h – 20h) ou samedi matin."
+    else:
+        best_window = "Cette semaine, en soirée ou samedi matin."
+
+    return {
+        "signature_probability": sig["probability"],
+        "signature_band": sig["band"],
+        "signature_tone": sig["tone"],
+        "signature_label": sig["label"],
+        "priority": priority,
+        "recommendation": rec,
+        "when_to_call": {
+            "best_window": best_window,
+            "windows": CALL_WINDOWS,
+            "avoid": CALL_AVOID,
+        },
+        "channels": {
+            "primary": "call" if has_phone else "email",
+            "has_phone": has_phone,
+            "has_email": bool(lead.get("email") and str(lead.get("email")).strip() not in ("", "—")),
+        },
+        "cadence": _outreach_cadence(priority, has_phone),
+        "sms": build_outreach_sms(lead, scenario, prop_ref),
+        "email": build_outreach_email(lead, scenario, prop_ref),
     }
 
 

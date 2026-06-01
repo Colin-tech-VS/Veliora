@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import re
 import threading
@@ -164,20 +165,49 @@ def curl_cffi_available() -> bool:
     return _curl_available
 
 
-def _get_curl_session():
+# Empreintes TLS/JA3 + User-Agent variées : sur une IP unique (Scalingo sans
+# proxy), faire varier le profil navigateur réduit le rate-limit par empreinte.
+# Profils desktop récents, largement disponibles dans curl_cffi ≥ 0.7.
+_IMPERSONATE_POOL = [
+    p.strip()
+    for p in os.getenv(
+        "CURL_CFFI_IMPERSONATE_POOL",
+        "chrome120,chrome123,chrome124,chrome131,edge101",
+    ).split(",")
+    if p.strip()
+] or [CURL_CFFI_IMPERSONATE]
+
+
+def _new_curl_session(impersonate: str | None = None):
     from curl_cffi.requests import Session
 
     from crawler.config import pick_proxy
 
+    target = impersonate or random.choice(_IMPERSONATE_POOL)
+    proxy = pick_proxy()
+    kwargs: dict[str, Any] = {}
+    if proxy:
+        kwargs["proxies"] = {"http": proxy, "https": proxy}
+    try:
+        session = Session(impersonate=target, **kwargs)
+    except Exception:
+        # Profil inconnu de la version curl_cffi installée → repli sûr.
+        session = Session(impersonate=CURL_CFFI_IMPERSONATE, **kwargs)
+    _thread.curl_impersonate = target
+    return session
+
+
+def _get_curl_session():
     session = getattr(_thread, "curl_session", None)
     if session is None:
-        kwargs = {"impersonate": CURL_CFFI_IMPERSONATE}
-        proxy = pick_proxy()
-        if proxy:
-            kwargs["proxies"] = {"http": proxy, "https": proxy}
-        session = Session(**kwargs)
+        session = _new_curl_session()
         _thread.curl_session = session
     return session
+
+
+def _rotate_curl_fingerprint() -> None:
+    """Nouvelle empreinte (UA/JA3) sans changer d'IP — utile au rate-limit transitoire."""
+    _thread.curl_session = _new_curl_session()
 
 
 def sync_cookies_from_playwright(context) -> None:
@@ -208,17 +238,9 @@ def sync_cookies_from_playwright(context) -> None:
             pass
 
 
-def curl_fetch(url: str, *, referer: str | None = None) -> tuple[str | None, str | None]:
-    """
-    GET via curl_cffi (empreinte TLS Chrome).
-    Retourne (html, error_detail) — html None si échec.
-    """
-    if not curl_cffi_available():
-        return None, "curl_cffi non installé"
-
+def _curl_fetch_once(url: str, referer: str | None) -> tuple[str | None, str | None]:
     headers = {**BROWSER_HEADERS}
     headers["Referer"] = referer or random.choice(REFERERS)
-
     try:
         session = _get_curl_session()
         resp = session.get(
@@ -227,6 +249,8 @@ def curl_fetch(url: str, *, referer: str | None = None) -> tuple[str | None, str
             timeout=CRAWL_HTTP_TIMEOUT_SEC,
             allow_redirects=True,
         )
+        if resp.status_code == 429:
+            return None, "HTTP 429"
         if resp.status_code == 403:
             return None, "HTTP 403"
         if resp.status_code >= 400:
@@ -238,6 +262,33 @@ def curl_fetch(url: str, *, referer: str | None = None) -> tuple[str | None, str
     except Exception as exc:
         logger.debug("curl_cffi %s: %s", url[:60], exc)
         return None, str(exc)[:200]
+
+
+def _is_transient_block(detail: str | None) -> bool:
+    d = (detail or "").lower()
+    return any(x in d for x in ("429", "403", "bloqu", "restreint", "trop"))
+
+
+def curl_fetch(url: str, *, referer: str | None = None) -> tuple[str | None, str | None]:
+    """
+    GET via curl_cffi (empreinte TLS Chrome).
+    Retourne (html, error_detail) — html None si échec.
+
+    Sur blocage transitoire (429 / 403 / rate-limit), on retente une fois après
+    un court backoff avec une NOUVELLE empreinte navigateur (UA/JA3) : sans
+    changer d'IP, cela suffit souvent à passer un rate-limit par empreinte.
+    """
+    if not curl_cffi_available():
+        return None, "curl_cffi non installé"
+
+    html, detail = _curl_fetch_once(url, referer)
+    if html or not _is_transient_block(detail):
+        return html, detail
+
+    # Backoff court + rotation d'empreinte, puis un seul nouvel essai.
+    time.sleep(random.uniform(1.2, 2.6))
+    _rotate_curl_fingerprint()
+    return _curl_fetch_once(url, referer)
 
 
 def clear_antibot_state() -> None:

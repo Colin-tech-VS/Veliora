@@ -973,7 +973,7 @@ def api_radar_analyze_url():
 
 @app.route("/api/radar/leads/<int:lead_id>/script")
 def api_radar_call_script(lead_id):
-    from crm.radar import call_script_for_lead
+    from crm.radar import build_call_script
 
     lead = get_lead(lead_id, _aid())
     if not lead:
@@ -982,7 +982,9 @@ def api_radar_call_script(lead_id):
     caller = " ".join(
         p for p in (user.get("first_name"), user.get("last_name")) if p
     ) or "votre conseiller"
-    return jsonify({"script": call_script_for_lead({
+    # Objet structuré : script d'appel + probabilité de signature + plan
+    # multicanal (quand appeler, SMS, email, cadence). full_text_plain sert au copier.
+    return jsonify({"script": build_call_script({
         **lead,
         "_caller": caller,
         "_agency": get_agency_name(_aid()),

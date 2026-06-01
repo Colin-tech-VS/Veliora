@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from crm.scoring.mandate import MandateScoreResult
+from crm.scoring.probability import signature_probability
 
 
 def priority_tier(score: int) -> str:
@@ -22,8 +23,13 @@ def build_score_explanation(
     result: MandateScoreResult,
 ) -> dict[str, Any]:
     score = result.score
+    sig = signature_probability(lead, score)
     return {
         "mandate_score": score,
+        "signature_probability": sig["probability"],
+        "signature_band": sig["band"],
+        "signature_tone": sig["tone"],
+        "signature_label": sig["label"],
         "positive_factors": result.positive[:10],
         "negative_factors": result.negative[:8],
         "contributions": [

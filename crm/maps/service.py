@@ -162,29 +162,71 @@ def _cache_set(key: str, lat: float, lng: float, formatted: str = "") -> None:
         conn.commit()
 
 
+# Priorité de précision BAN : un numéro de rue est « exact », une commune ne
+# l'est pas (centroïde). On préfère toujours le résultat le plus précis.
+_BAN_TYPE_PRECISION = {
+    "housenumber": 4,
+    "street": 3,
+    "locality": 2,
+    "village": 2,
+    "town": 2,
+    "city": 2,
+    "municipality": 1,
+}
+
+
+def _ban_request(params: dict) -> list[dict]:
+    url = f"https://api-adresse.data.gouv.fr/search/?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Veliora-CRM/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("BAN geocode failed for %s: %s", str(params.get("q"))[:80], exc)
+        return []
+    return payload.get("features") or []
+
+
 def _geocode_ban(query: str) -> tuple[float, float] | None:
     """Géocodage Base Adresse Nationale (api-adresse.data.gouv.fr).
 
     Officiel, gratuit, sans clé et pensé pour le volume — fiable depuis une IP
     datacenter (Scalingo), contrairement à Nominatim souvent bloqué/limité.
     Couvre adresses ET communes (fallback ville/CP).
+
+    Pour placer l'annonce à l'adresse EXACTE : on demande plusieurs candidats,
+    on filtre par code postal quand il est connu, et on retient le résultat le
+    plus précis (numéro de rue > rue > lieu-dit > commune). Sans cela, BAN
+    pouvait renvoyer le centroïde de la commune même si la rue exacte existait.
     """
     q = (query or "").replace(", France", "").strip()
     if not q:
         return None
-    params = urllib.parse.urlencode({"q": q, "limit": 1, "autocomplete": 0})
-    url = f"https://api-adresse.data.gouv.fr/search/?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Veliora-CRM/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        logger.warning("BAN geocode failed for %s: %s", q[:80], exc)
-        return None
-    feats = payload.get("features") or []
+
+    pc_match = re.search(r"\b(\d{5})\b", q)
+    postcode = pc_match.group(1) if pc_match else None
+
+    params: dict = {"q": q, "limit": 6, "autocomplete": 0}
+    if postcode:
+        params["postcode"] = postcode
+    feats = _ban_request(params)
+    if not feats and postcode:
+        # Le filtre code postal a tout exclu (CP/commune incohérents) → réessai libre.
+        feats = _ban_request({"q": q, "limit": 6, "autocomplete": 0})
     if not feats:
         return None
-    coords = (feats[0].get("geometry") or {}).get("coordinates") or []
+
+    def _rank(feat: dict) -> tuple[int, float]:
+        props = feat.get("properties") or {}
+        precision = _BAN_TYPE_PRECISION.get(str(props.get("type") or "").lower(), 0)
+        try:
+            score = float(props.get("score") or 0.0)
+        except (TypeError, ValueError):
+            score = 0.0
+        return (precision, score)
+
+    best = max(feats, key=_rank)
+    coords = (best.get("geometry") or {}).get("coordinates") or []
     if len(coords) != 2:
         return None
     # GeoJSON : [lon, lat]
@@ -390,9 +432,16 @@ def build_map_payload(agency_id: str) -> dict:
             pending += 1
             continue
 
-        title = row["listing_title"] if "listing_title" in keys else None
+        from crawler.hub_detection import parse_property_label
+
+        raw_title = row["listing_title"] if "listing_title" in keys else None
+        title = parse_property_label(
+            raw_title,
+            address if address not in _ADDRESS_BAD else None,
+            surface=row["surface"] if "surface" in keys else None,
+        )
         if not title or str(title).strip() in _ADDRESS_BAD:
-            title = (address or "Annonce")[:120]
+            title = (raw_title or address or "Annonce")[:120]
 
         markers.append(
             {
