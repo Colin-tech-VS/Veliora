@@ -49,3 +49,30 @@ def fetch_price_history_rows(conn, lead_id: int, agency_id: str) -> list[dict]:
         (lead_id, agency_id),
     )
     return [{"price": r["price"], "recorded_at": r["recorded_at"]} for r in cur.fetchall()]
+
+
+def fetch_price_history_map(
+    conn,
+    agency_id: str,
+    lead_ids: list[int],
+) -> dict[int, list[dict]]:
+    """Historique prix pour plusieurs leads — une requête SQL."""
+    if not lead_ids:
+        return {}
+    ids = [int(i) for i in lead_ids if i is not None]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    cur = conn.execute(
+        f"""SELECT lead_id, price, recorded_at FROM lead_price_history
+            WHERE agency_id = ? AND lead_id IN ({placeholders})
+            ORDER BY lead_id, recorded_at ASC""",
+        [agency_id, *ids],
+    )
+    out: dict[int, list[dict]] = {}
+    for r in cur.fetchall():
+        lid = int(r["lead_id"])
+        out.setdefault(lid, []).append(
+            {"price": r["price"], "recorded_at": r["recorded_at"]}
+        )
+    return out

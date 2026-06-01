@@ -369,10 +369,10 @@ def _portal_from_url(url: str) -> str:
     return "Site immobilier"
 
 
-def enrich_lead_row(lead: dict) -> dict:
-    from crm.scoring.recalc import enrich_lead_scores
+def enrich_lead_row(lead: dict, *, force: bool = False) -> dict:
+    from crm.scoring.recalc import enrich_lead_row as _enrich
 
-    return enrich_lead_scores(lead)
+    return _enrich(lead, force=force)
 
 
 def compute_alerts(leads: list[dict]) -> list[dict]:
@@ -474,9 +474,7 @@ def build_briefing(
     filtered = leads
     if cities:
         filtered = [l for l in leads if _lead_matches_cities(l, cities)]
-    enriched = [
-        enrich_lead_row(dict(l)) for l in filtered if is_active_lead(l)
-    ]
+    enriched = [l for l in filtered if is_active_lead(l)]
     particuliers = [l for l in enriched if is_particulier_lead(l)]
 
     new_sans_agence = [
@@ -956,8 +954,10 @@ def _build_observation(lead: dict, scenario: str, tpl: dict[str, Any]) -> str:
     dvf_line = _dvf_observation_sentence(lead)
     if dvf_line:
         parts.append(dvf_line)
-    elif scenario == "dvf_sous_marche" and tpl.get("hook"):
-        parts.append(tpl["hook"][0].upper() + tpl["hook"][1:] + ".")
+    elif scenario == "dvf_sous_marche":
+        hook = (tpl.get("hook") or "").strip()
+        if hook:
+            parts.append(hook[0].upper() + hook[1:] + ".")
 
     return " ".join(p for p in parts if p).strip()
 
@@ -1020,6 +1020,61 @@ def _advice_for_lead(lead: dict, scenario: str) -> list[str]:
     return tips[:4]
 
 
+def _playbook_script_templates_payload() -> dict[str, Any]:
+    return {
+        k: {
+            **v,
+            "label": SCENARIO_LABELS.get(k, k),
+            "objections": [{"q": q, "a": a} for q, a in v.get("objections", [])],
+        }
+        for k, v in SCRIPT_TEMPLATES.items()
+    }
+
+
+def _playbook_counts(enriched: list[dict], particuliers: list[dict], opportunities: list) -> dict[str, int]:
+    return {
+        "total": len(enriched),
+        "particuliers": len(particuliers),
+        "with_script": len(opportunities),
+        "hot": sum(1 for l in enriched if (l.get("mandate_score") or 0) >= 85),
+        "dvf_sous_marche": sum(
+            1 for l in enriched if "dvf_sous_marche" in (l.get("alert_tags") or [])
+        ),
+    }
+
+
+def playbook_static_shell(
+    agency_name: str = "",
+    *,
+    caller: str = "votre conseiller",
+    target_cities: list[str] | None = None,
+    partial: bool = False,
+) -> dict[str, Any]:
+    """Guide + modèles toujours disponibles (même si le calcul prospect échoue)."""
+    cities = [c.strip() for c in (target_cities or []) if c and str(c).strip()]
+    payload: dict[str, Any] = {
+        "agency_name": agency_name,
+        "caller": caller,
+        "date": date.today().isoformat(),
+        "target_cities": cities,
+        "filtered_by_cities": bool(cities),
+        "guide": PLAYBOOK_GUIDE,
+        "scenario_labels": SCENARIO_LABELS,
+        "script_templates": _playbook_script_templates_payload(),
+        "opportunities": [],
+        "counts": {
+            "total": 0,
+            "particuliers": 0,
+            "with_script": 0,
+            "hot": 0,
+            "dvf_sous_marche": 0,
+        },
+    }
+    if partial:
+        payload["_partial"] = True
+    return payload
+
+
 def build_playbook(
     leads: list[dict],
     agency_name: str = "",
@@ -1032,15 +1087,20 @@ def build_playbook(
     filtered = leads
     if cities:
         filtered = [l for l in leads if _lead_matches_cities(l, cities)]
-    enriched = [
-        enrich_lead_row(dict(l)) for l in filtered if is_active_lead(l)
-    ]
+
+    enriched = [l for l in filtered if is_active_lead(l)]
     particuliers = [l for l in enriched if is_particulier_lead(l)]
     prioritized = sorted(particuliers, key=lambda x: (x.get("mandate_score") or 0), reverse=True)
 
     opportunities: list[dict[str, Any]] = []
+    agency_label = agency_name or "l'agence"
     for lead in prioritized[:25]:
-        script = build_call_script({**lead, "_caller": caller, "_agency": agency_name or "l'agence"})
+        try:
+            script = build_call_script(
+                {**lead, "_caller": caller, "_agency": agency_label}
+            )
+        except Exception:
+            continue
         opportunities.append({
             "lead_id": lead.get("id"),
             "address": lead.get("address") or "—",
@@ -1059,30 +1119,11 @@ def build_playbook(
             "script": script,
         })
 
-    return {
-        "agency_name": agency_name,
-        "caller": caller,
-        "date": date.today().isoformat(),
-        "target_cities": cities,
-        "filtered_by_cities": bool(cities),
-        "guide": PLAYBOOK_GUIDE,
-        "scenario_labels": SCENARIO_LABELS,
-        "script_templates": {
-            k: {
-                **v,
-                "label": SCENARIO_LABELS.get(k, k),
-                "objections": [{"q": q, "a": a} for q, a in v.get("objections", [])],
-            }
-            for k, v in SCRIPT_TEMPLATES.items()
-        },
-        "opportunities": opportunities,
-        "counts": {
-            "total": len(enriched),
-            "particuliers": len(particuliers),
-            "with_script": len(opportunities),
-            "hot": sum(1 for l in enriched if (l.get("mandate_score") or 0) >= 85),
-            "dvf_sous_marche": sum(
-                1 for l in enriched if "dvf_sous_marche" in (l.get("alert_tags") or [])
-            ),
-        },
-    }
+    payload = playbook_static_shell(
+        agency_name,
+        caller=caller,
+        target_cities=cities,
+    )
+    payload["opportunities"] = opportunities
+    payload["counts"] = _playbook_counts(enriched, particuliers, opportunities)
+    return payload

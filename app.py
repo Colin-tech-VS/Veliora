@@ -459,6 +459,76 @@ def api_leads():
     return jsonify(get_leads(_aid()))
 
 
+@app.route("/api/bootstrap")
+def api_bootstrap():
+    """Chargement initial CRM — une requête, un passage base pour les leads."""
+    agency_id = _aid()
+    leads = get_leads(agency_id)
+    stats = get_stats(agency_id)
+    sources = get_sources(agency_id)
+    engine_status = engine.status()
+    return jsonify({
+        "leads": leads,
+        "stats": stats,
+        "source_stats": get_source_stats(agency_id),
+        "activities": get_activities(agency_id),
+        "sources": sources,
+        "crawler": {
+            **engine_status,
+            "found_today": sum(
+                s.get("leads_updated_today", s.get("today", 0)) for s in sources
+            ),
+            "active_sources": sum(1 for s in sources if s["enabled"]),
+            "total_leads": stats["total"],
+            "prospects_in_db": sum(
+                s.get("leads_count", s.get("found", 0)) for s in sources
+            ),
+        },
+        "settings": get_agency_settings(agency_id),
+    })
+
+
+@app.route("/api/radar/summary")
+def api_radar_summary():
+    """Briefing + playbook — un seul chargement des leads."""
+    from crm.radar import build_briefing, build_playbook
+
+    agency_id = _aid()
+    leads = get_leads(agency_id)
+    settings = get_agency_settings(agency_id)
+    agency_name = get_agency_name(agency_id)
+    target_cities = settings.get("target_cities") or []
+    user = get_current_user() or {}
+    caller = " ".join(
+        p for p in (user.get("first_name"), user.get("last_name")) if p
+    ) or "votre conseiller"
+    try:
+        return jsonify({
+            "briefing": build_briefing(
+                leads, agency_name, target_cities=target_cities
+            ),
+            "playbook": build_playbook(
+                leads,
+                agency_name,
+                caller=caller,
+                target_cities=target_cities,
+            ),
+        })
+    except Exception:
+        app.logger.exception("api_radar_summary failed for agency %s", agency_id)
+        from crm.radar import playbook_static_shell
+
+        return jsonify({
+            "briefing": build_briefing(leads, agency_name, target_cities=target_cities),
+            "playbook": playbook_static_shell(
+                agency_name,
+                caller=caller,
+                target_cities=target_cities,
+                partial=True,
+            ),
+        })
+
+
 @app.route("/api/leads/<int:lead_id>/outcome", methods=["POST"])
 def api_lead_outcome(lead_id):
     """Enregistre un outcome terrain (call, rdv, mandat_signe, refuse…)."""
@@ -523,47 +593,72 @@ def api_lead(lead_id):
 @app.route("/api/radar/briefing", methods=["GET"])
 @app.route("/api/radar/briefing/", methods=["GET"])
 def api_radar_briefing():
-    from crm.radar import build_briefing, call_script_for_lead
+    from crm.radar import build_briefing
 
     agency_id = _aid()
     leads = get_leads(agency_id)
     settings = get_agency_settings(agency_id)
-    briefing = build_briefing(
-        leads,
-        get_agency_name(agency_id),
-        target_cities=settings.get("target_cities") or [],
+    return jsonify(
+        build_briefing(
+            leads,
+            get_agency_name(agency_id),
+            target_cities=settings.get("target_cities") or [],
+        )
     )
-    user = get_current_user() or {}
-    caller = " ".join(
-        p for p in (user.get("first_name"), user.get("last_name")) if p
-    ) or "votre conseiller"
-    for p in briefing.get("priorities", []):
-        p["_call_script"] = call_script_for_lead({
-            **p,
-            "_caller": caller,
-            "_agency": get_agency_name(agency_id),
-        })
-    return jsonify(briefing)
 
 
 @app.route("/api/radar/playbook", methods=["GET"])
 @app.route("/api/radar/playbook/", methods=["GET"])
 def api_radar_playbook():
-    from crm.radar import build_playbook
+    from crm.radar import build_playbook, playbook_static_shell
 
     agency_id = _aid()
-    leads = get_leads(agency_id)
+    settings = get_agency_settings(agency_id)
+    user = get_current_user() or {}
+    caller = " ".join(
+        p for p in (user.get("first_name"), user.get("last_name")) if p
+    ) or "votre conseiller"
+    agency_name = get_agency_name(agency_id)
+    target_cities = settings.get("target_cities") or []
+    try:
+        leads = get_leads(agency_id)
+        return jsonify(
+            build_playbook(
+                leads,
+                agency_name,
+                caller=caller,
+                target_cities=target_cities,
+            )
+        )
+    except Exception:
+        app.logger.exception("api_radar_playbook failed for agency %s", agency_id)
+        return jsonify(
+            playbook_static_shell(
+                agency_name,
+                caller=caller,
+                target_cities=target_cities,
+                partial=True,
+            )
+        )
+
+
+@app.route("/api/radar/playbook/static", methods=["GET"])
+def api_radar_playbook_static():
+    """Guide + modèles sans calcul sur les leads (secours client)."""
+    from crm.radar import playbook_static_shell
+
+    agency_id = _aid()
     settings = get_agency_settings(agency_id)
     user = get_current_user() or {}
     caller = " ".join(
         p for p in (user.get("first_name"), user.get("last_name")) if p
     ) or "votre conseiller"
     return jsonify(
-        build_playbook(
-            leads,
+        playbook_static_shell(
             get_agency_name(agency_id),
             caller=caller,
             target_cities=settings.get("target_cities") or [],
+            partial=True,
         )
     )
 

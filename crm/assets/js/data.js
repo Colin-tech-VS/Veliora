@@ -12,9 +12,23 @@ const AVATAR_COLORS = [
 
 function formatPublishedDate(lead) {
   const raw = lead?.published_at || lead?.listedAt;
-  if (!raw) return "—";
+  if (!raw) return null;
   const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
-  if (Number.isNaN(d.getTime())) return raw;
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** Libellé « Publié … » — date portail uniquement (pas la date de crawl). */
+function formatPublishedLine(lead) {
+  const d = formatPublishedDate(lead);
+  return d ? `Publié ${d}` : "Publication inconnue";
+}
+
+function formatDetectedDate(lead) {
+  const raw = lead?.detected_at || lead?.created_at;
+  if (!raw) return null;
+  const d = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
+  if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 }
 

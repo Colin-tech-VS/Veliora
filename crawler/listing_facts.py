@@ -653,6 +653,9 @@ def verify_and_apply_listing_facts(
             audit.checks_failed.append(date_err or "date non confirmée")
             if not _published_at_ok(date_val):
                 lead.published_at = None
+    elif lead.published_at and _published_at_ok(lead.published_at):
+        audit.published_at = lead.published_at
+        audit.checks_passed.append("date extraite du portail")
     elif lead.published_at:
         audit.checks_failed.append("date absente ou non confirmée")
         lead.published_at = None

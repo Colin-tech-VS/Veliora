@@ -982,7 +982,12 @@ def extract_listing_published_date(soup: BeautifulSoup, page_url: str = "") -> s
 
     domain_key = _domain_key_from_url(page_url)
     date_selectors = {
-        "leboncoin": ["[data-qa-id*='adview_date']", "[data-qa-id*='date']"],
+        "leboncoin": [
+            "[data-qa-id='adview_publication_date']",
+            "[data-qa-id*='adview_date']",
+            "[data-qa-id*='publication']",
+            "p[data-test-id='ad-date']",
+        ],
         "pap": [".date-pub", ".item-date", "[class*='date-pub']"],
         "seloger": ["[data-testid*='publication']", "[data-testid*='date']"],
         "logic-immo": [".date-publication", ".publication-date"],

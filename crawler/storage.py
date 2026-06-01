@@ -913,6 +913,12 @@ def claim_orphan_leads(agency_id: str) -> int:
     if not agency_id:
         return 0
     with get_connection() as conn:
+        orphan = conn.execute(
+            """SELECT 1 FROM leads
+               WHERE agency_id IS NULL OR agency_id = '' LIMIT 1"""
+        ).fetchone()
+        if not orphan:
+            return 0
         cur = conn.execute(
             """UPDATE leads SET agency_id = ?, updated_at = ?
                WHERE agency_id IS NULL OR agency_id = ''""",
@@ -1054,6 +1060,7 @@ def save_lead(
         merge_lead_for_update,
         prepare_lead_defaults,
         resolve_crawl_verification,
+        resolve_published_at,
     )
 
     if not lead.source_url or not agency_id:
@@ -1068,8 +1075,16 @@ def save_lead(
         lead = merge_lead_for_update(existing_lead, lead, deep_refresh=deep_refresh)
 
     lead = prepare_lead_defaults(lead)
+    stored_pub = existing_row.get("published_at") if existing_row else None
+    lead.published_at = resolve_published_at(lead.published_at, stored_pub)
+
+    effective_require_verification = require_verification
+    if deep_refresh and existing_row:
+        # Mise à jour par annonce : enregistrer dès que la fiche reste identifiable.
+        effective_require_verification = False
+
     verification, partial = resolve_crawl_verification(
-        lead, require_verification=require_verification
+        lead, require_verification=effective_require_verification
     )
     if require_verification and not verification.ok:
         return {
@@ -1108,7 +1123,7 @@ def save_lead(
         "price": lead.price,
         "previous_price": previous_price,
         "price_change_count": (existing_row or {}).get("price_change_count"),
-        "published_at": lead.published_at,
+        "published_at": resolve_published_at(lead.published_at, stored_pub),
         "created_at": existing_row.get("created_at") if existing_row else now,
         "transaction_type": lead.transaction_type,
         "surface": lead.surface,
@@ -1208,7 +1223,7 @@ def save_lead(
                     previous_price,
                     lead.transaction_type,
                     lead.price_period,
-                    lead.published_at,
+                    resolve_published_at(lead.published_at, stored_pub),
                     lead.source,
                     source_id,
                     lead.type,
@@ -1265,7 +1280,7 @@ def save_lead(
                     lead.price,
                     lead.transaction_type,
                     lead.price_period,
-                    lead.published_at,
+                    resolve_published_at(lead.published_at),
                     lead.source,
                     source_id,
                     lead.source_url,
@@ -1454,14 +1469,18 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
     return fixed
 
 
-def get_leads(agency_id: str) -> list[dict]:
+def get_leads(agency_id: str, *, enrich: bool = True) -> list[dict]:
     claim_orphan_leads(agency_id)
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM leads WHERE agency_id = ? ORDER BY created_at DESC",
             (agency_id,),
         ).fetchall()
-        leads = [_row_to_lead(r) for r in rows]
+        leads = [_row_to_lead(r, enrich_scores=False) for r in rows]
+    if enrich and leads:
+        from crm.scoring.recalc import batch_enrich_leads
+
+        leads = batch_enrich_leads(leads, agency_id)
     return _annotate_dedup(leads)
 
 
@@ -1548,7 +1567,7 @@ def delete_all_leads(agency_id: str) -> int:
     return count
 
 
-def _row_to_lead(row: sqlite3.Row) -> dict:
+def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
     from crm.scoring.recalc import enrich_lead_scores as enrich_lead_row
     from crawler.hub_detection import (
         is_listing_title_name,
@@ -1641,10 +1660,11 @@ def _row_to_lead(row: sqlite3.Row) -> dict:
         "published_at": row["published_at"] if "published_at" in keys else None,
         "created_at": row["created_at"] if "created_at" in keys else None,
         "listedAt": (
-            (row["published_at"] or row["created_at"] or "")[:10]
-            if "published_at" in keys
-            else (row["created_at"] or "")[:10]
+            (row["published_at"] or "")[:10]
+            if "published_at" in keys and row["published_at"]
+            else ""
         ),
+        "detected_at": (row["created_at"] or "")[:10] if "created_at" in keys else "",
         "city": city,
         "postcode": postcode,
         "sector": sector,
@@ -1676,7 +1696,9 @@ def _row_to_lead(row: sqlite3.Row) -> dict:
             base["score_explanation"] = json.loads(row["score_explanation"])
         except json.JSONDecodeError:
             base["score_explanation"] = None
-    return enrich_lead_row(base)
+    if enrich_scores:
+        return enrich_lead_row(base)
+    return base
 
 
 def _extract_city(address: str | None) -> str:

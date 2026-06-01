@@ -583,13 +583,50 @@ function buildClientBriefing() {
   };
 }
 
-async function loadData() {
-  const [leadsResult, statsResult, sourcesResult, crawlerResult] = await Promise.allSettled([
-    api("/leads"),
-    api("/stats"),
-    api("/sources"),
-    api("/crawler/status"),
+function applyBootstrapPayload(data) {
+  if (!data || typeof data !== "object") return false;
+  if (!Array.isArray(data.leads) || !Array.isArray(data.sources)) return false;
+  LEADS = data.leads;
+  SOURCES = data.sources;
+  const stats = data.stats || {};
+  ACTIVITIES = data.activities || [];
+  SOURCE_STATS = data.source_stats || [];
+  if (data.crawler && typeof data.crawler === "object") {
+    state.crawlerRunning = !!data.crawler.running;
+  }
+  if (data.settings && typeof data.settings === "object") {
+    state.settings = normalizeSettingsPayload({ settings: data.settings });
+    applyAgencyCityToCrawl();
+  }
+  return true;
+}
+
+async function fetchBootstrap() {
+  try {
+    const res = await fetchWithTimeout(`${API}/bootstrap`, {
+      headers: { ...getAuthHeaders(), Accept: "application/json" },
+    }, 45000);
+    if (!res.ok) return null;
+    return res.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
+async function loadDataCore() {
+  const bootstrap = await fetchBootstrap();
+  if (applyBootstrapPayload(bootstrap)) {
+    return;
+  }
+
+  const [coreResult, settingsResult] = await Promise.all([
+    Promise.allSettled([api("/leads"), api("/stats"), api("/sources"), api("/crawler/status")]),
+    refreshAgencySettings().catch(() => {
+      applyAgencyCityToCrawl();
+    }),
   ]);
+
+  const [leadsResult, statsResult, sourcesResult, crawlerResult] = coreResult;
 
   if (leadsResult.status === "rejected") throw leadsResult.reason;
   if (sourcesResult.status === "rejected") throw sourcesResult.reason;
@@ -612,22 +649,83 @@ async function loadData() {
     console.warn("État crawl indisponible", crawlerResult.reason);
   }
 
-  await refreshAgencySettings().catch(() => {
+  if (settingsResult.status === "rejected") {
     applyAgencyCityToCrawl();
-  });
-
-  RADAR = await fetchRadarBriefing();
-  PLAYBOOK = await fetchPlaybook();
-  applyMobileLeadsLayout();
-
-  if (RADAR?._clientFallback && !sessionStorage.getItem("veliora_radar_warn")) {
-    sessionStorage.setItem("veliora_radar_warn", "1");
-    showToast(
-      "Briefing en mode local — relancez python app.py (ou demarrer.bat) pour le radar complet",
-      "warning",
-      7000,
-    );
   }
+}
+
+async function fetchRadarSummary() {
+  try {
+    const res = await fetchWithTimeout(`${API}/radar/summary`, {
+      headers: { ...getAuthHeaders(), Accept: "application/json" },
+    }, 30000);
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null);
+    if (!body?.briefing) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+async function loadRadarAndPlaybook() {
+  const summary = await fetchRadarSummary();
+  if (summary) {
+    RADAR = summary.briefing;
+    if (summary.playbook?.guide?.length) {
+      PLAYBOOK = summary.playbook;
+    } else {
+      PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+    }
+    return;
+  }
+
+  const [radarResult, playbookResult] = await Promise.allSettled([
+    fetchRadarBriefing(),
+    fetchPlaybook(),
+  ]);
+  if (radarResult.status === "fulfilled") RADAR = radarResult.value;
+  if (playbookResult.status === "fulfilled" && playbookResult.value) {
+    PLAYBOOK = playbookResult.value;
+  }
+}
+
+let radarPlaybookLoadPromise = null;
+
+function scheduleRadarPlaybookLoad() {
+  if (radarPlaybookLoadPromise) return radarPlaybookLoadPromise;
+  radarPlaybookLoadPromise = loadRadarAndPlaybook()
+    .then(() => {
+      renderRadarBriefing();
+      if (state.currentView === "playbook") renderPlaybook();
+      if (RADAR?._clientFallback && !sessionStorage.getItem("veliora_radar_warn")) {
+        sessionStorage.setItem("veliora_radar_warn", "1");
+        showToast(
+          "Briefing en mode local — relancez python app.py (ou demarrer.bat) pour le radar complet",
+          "warning",
+          7000,
+        );
+      }
+    })
+    .catch((err) => console.warn("Radar / playbook", err))
+    .finally(() => {
+      radarPlaybookLoadPromise = null;
+    });
+  return radarPlaybookLoadPromise;
+}
+
+async function loadData() {
+  await loadDataCore();
+  applyMobileLeadsLayout();
+  scheduleRadarPlaybookLoad();
+}
+
+/** Recharge tout (y compris radar) — après crawl, import, etc. */
+async function reloadCrmData() {
+  radarPlaybookLoadPromise = null;
+  await loadDataCore();
+  await loadRadarAndPlaybook();
+  applyMobileLeadsLayout();
 }
 
 function normalizeSettingsPayload(data) {
@@ -1445,8 +1543,20 @@ async function switchView(view) {
       showToast(err.message, "error");
     }
   }
-  if (view === "playbook" && !PLAYBOOK) {
-    PLAYBOOK = await fetchPlaybook().catch(() => null);
+  if (view === "playbook") {
+    const prev = PLAYBOOK;
+    if (!PLAYBOOK?.guide?.length) {
+      PLAYBOOK = await fetchPlaybook().catch(() => prev);
+      notifyPlaybookLoadIssues(PLAYBOOK);
+    } else {
+      void fetchPlaybook()
+        .then((pb) => {
+          if (!pb?.guide?.length) return;
+          PLAYBOOK = pb;
+          if (state.currentView === "playbook") renderPlaybook();
+        })
+        .catch(() => {});
+    }
   }
   renderAll();
   if (view === "dashboard") {
@@ -2564,7 +2674,10 @@ async function refreshLeadsDuringCrawl(job) {
 
     const added = Math.max(0, leads.length - prevCount);
 
-    RADAR = await fetchRadarBriefing().catch(() => RADAR);
+    void loadRadarAndPlaybook().then(() => {
+      renderRadarBriefing();
+      if (state.currentView === "playbook") renderPlaybook();
+    });
     await refreshStats();
     updateSidebarCount();
     updateBadges();
@@ -2817,6 +2930,7 @@ const leadRefreshState = {
 const LEAD_REFRESH_FIELD_DEFS = [
   { key: "price", label: "Prix", has: (l) => !!l.price },
   { key: "surface", label: "Surface", has: (l) => l.surface != null && l.surface > 0 },
+  { key: "published_at", label: "Publication", has: (l) => !!l.published_at },
   { key: "phone", label: "Tél.", has: (l) => l.phone && l.phone !== "—" },
   { key: "email", label: "Email", has: (l) => l.email && l.email !== "—" },
   { key: "address", label: "Adresse", has: (l) => l.address && l.address !== "—" },
@@ -2833,6 +2947,7 @@ function leadLiveFingerprint(lead) {
     lead.email || "",
     lead.score || 0,
     lead.address || "",
+    lead.published_at || "",
   ].join("|");
 }
 
@@ -2963,7 +3078,9 @@ function renderLeadRefreshFieldChips(lead, prevLead) {
         ? formatPrice(lead)
         : def.key === "surface" && filled
           ? `${lead.surface} m²`
-          : "";
+          : def.key === "published_at" && filled
+            ? formatPublishedDate(lead) || ""
+            : "";
     return `<span class="${cls}" data-chip="${def.key}">${def.label}${val ? ` · ${escapeHtml(val)}` : ""}</span>`;
   }).join("");
 }
@@ -3015,7 +3132,7 @@ function patchLeadRowInList(lead, prevLead) {
     const details = row.querySelector(".lead-property .details");
     if (details && lead.surface && prevLead?.surface !== lead.surface) {
       const base = escapeHtml(lead.property_detail || lead.property || "");
-      details.textContent = `${base} · Publié ${formatPublishedDate(lead)}`;
+      details.textContent = `${base} · ${formatPublishedLine(lead)}`;
     }
   }
   const card = document.querySelector(`.lead-card[data-id="${lead.id}"]`);
@@ -3791,7 +3908,7 @@ async function refreshStats() {
 
 /** Recharge leads, sources, stats et met à jour toute l’interface. */
 async function refreshAppData() {
-  await loadData();
+  await reloadCrmData();
   renderAll();
   syncCrawlerUI();
   await refreshOnboardingUi();
@@ -3910,8 +4027,7 @@ async function compareLeadDvf(leadId) {
     const idx = LEADS.findIndex((l) => l.id === leadId);
     if (idx >= 0) LEADS[idx] = result.lead;
   }
-  RADAR = await fetchRadarBriefing();
-  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  await loadRadarAndPlaybook();
   renderAll();
   const c = result.comparison || {};
   if (c.available) {
@@ -3946,8 +4062,7 @@ async function compareAllLeadsDvf() {
     body: JSON.stringify({ limit: 25 }),
   });
   LEADS = result.leads || LEADS;
-  RADAR = await fetchRadarBriefing();
-  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  await loadRadarAndPlaybook();
   renderAll();
   showToast(
     `DVF : ${result.compared || 0} annonce(s) analysée(s)${result.errors ? ` (${result.errors} erreurs)` : ""}`,
@@ -4098,17 +4213,112 @@ function renderRadarBriefing() {
   }
 }
 
+async function fetchPlaybookStatic() {
+  try {
+    const res = await fetchWithTimeout(`${API}/radar/playbook/static`, {
+      headers: { ...getAuthHeaders(), Accept: "application/json" },
+    }, 10000);
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null);
+    if (!body?.guide?.length) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+function buildClientPlaybook() {
+  const active = LEADS.filter((l) => (l.status || "").toLowerCase() !== "retire");
+  const particuliers = active.filter((l) => l.type !== "agence");
+  const prioritized = [...particuliers].sort(
+    (a, b) => (b.mandate_score || b.score || 0) - (a.mandate_score || a.score || 0),
+  );
+  const opportunities = prioritized.slice(0, 25).map((l) => ({
+    lead_id: l.id,
+    address: l.address || "—",
+    city: l.city || "",
+    price_label: formatPrice(l),
+    mandate_score: l.mandate_score || l.score || 0,
+    mandate_score_reason: l.mandate_score_reason || "",
+    alert_tags: l.alert_tags || [],
+    dvf_verdict: l.dvf_verdict,
+    dvf_verdict_label: l.dvf_verdict_label,
+    dvf_delta_pct: l.dvf_delta_pct,
+    days_on_market: l.days_on_market,
+    scenario: "default",
+    scenario_label: "Premier contact",
+    advice: ["Ouvrez la fiche prospect pour générer le script d'appel complet."],
+    script: {
+      opening: "Bonjour, je me permets de vous appeler concernant votre annonce.",
+      observation: "J'ai repéré votre bien dans le secteur.",
+      value: "Nous accompagnons des vendeurs avec de bons résultats sur des biens similaires.",
+      closing: "Seriez-vous disponible cette semaine pour une estimation gratuite ?",
+      objections: [],
+      full_text: "",
+    },
+  }));
+  return {
+    agency_name: state.user?.agency_name || "",
+    date: new Date().toISOString().slice(0, 10),
+    guide: [],
+    script_templates: {},
+    opportunities,
+    counts: {
+      total: active.length,
+      particuliers: particuliers.length,
+      with_script: opportunities.length,
+      hot: active.filter((l) => (l.mandate_score || l.score || 0) >= 85).length,
+      dvf_sous_marche: active.filter((l) => (l.alert_tags || []).includes("dvf_sous_marche")).length,
+    },
+    _clientFallback: true,
+  };
+}
+
+function notifyPlaybookLoadIssues(pb) {
+  if (!pb) return;
+  if (pb._partial && !sessionStorage.getItem("veliora_playbook_partial")) {
+    sessionStorage.setItem("veliora_playbook_partial", "1");
+    showToast(
+      "Guide chargé — scripts personnalisés partiels (rechargez après mise à jour serveur)",
+      "warning",
+      6000,
+    );
+  }
+  if (pb._clientFallback && !pb.guide?.length && !sessionStorage.getItem("veliora_playbook_fb")) {
+    sessionStorage.setItem("veliora_playbook_fb", "1");
+    showToast(
+      "Guide en mode local — relancez le serveur pour le contenu complet",
+      "warning",
+      7000,
+    );
+  }
+}
+
 async function fetchPlaybook() {
   try {
     const res = await fetchWithTimeout(`${API}/radar/playbook`, {
       headers: { ...getAuthHeaders(), Accept: "application/json" },
-    }, 15000);
-    if (!res.ok) return null;
-    const body = await res.json().catch(() => null);
-    if (!body || body.error) return null;
-    return body;
+    }, 20000);
+    if (res.ok) {
+      const body = await res.json().catch(() => null);
+      if (body?.guide?.length) return body;
+      if (body && Array.isArray(body.opportunities)) return body;
+    }
+    const shell = await fetchPlaybookStatic();
+    if (shell) {
+      const merged = buildClientPlaybook();
+      return {
+        ...shell,
+        opportunities: merged.opportunities,
+        counts: merged.counts,
+        _clientFallback: true,
+      };
+    }
+    return buildClientPlaybook();
   } catch {
-    return null;
+    const shell = await fetchPlaybookStatic();
+    if (shell) return shell;
+    return buildClientPlaybook();
   }
 }
 
@@ -4309,7 +4519,6 @@ function renderPlaybookStats() {
 }
 
 function renderPlaybook() {
-  if (state.currentView !== "playbook") return;
   const sub = document.getElementById("playbook-subtitle");
   if (sub && PLAYBOOK) {
     const agency = PLAYBOOK.agency_name || state.user?.agency_name || "votre agence";
@@ -4341,11 +4550,12 @@ async function copyPlaybookText(text, btn) {
 function setupPlaybook() {
   document.getElementById("playbook-refresh-btn")?.addEventListener("click", async () => {
     showToast("Actualisation du guide…", "info", 2000);
-    PLAYBOOK = await fetchPlaybook();
-    if (!PLAYBOOK) {
-      showToast("Guide indisponible — relancez python app.py", "warning");
+    PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+    if (!PLAYBOOK?.guide?.length) {
+      showToast("Guide indisponible — vérifiez la connexion ou relancez le serveur", "warning");
       return;
     }
+    notifyPlaybookLoadIssues(PLAYBOOK);
     renderPlaybook();
     showToast("Guide actualisé", "success");
   });
@@ -4359,8 +4569,7 @@ async function patchLeadPipeline(leadId, pipeline) {
   });
   const idx = LEADS.findIndex((l) => l.id === leadId);
   if (idx >= 0 && result.lead) LEADS[idx] = result.lead;
-  RADAR = await fetchRadarBriefing();
-  PLAYBOOK = await fetchPlaybook().catch(() => PLAYBOOK);
+  await loadRadarAndPlaybook();
   renderAll();
   if (state.selectedLead?.id === leadId && result.lead) {
     state.selectedLead = result.lead;
@@ -4539,7 +4748,7 @@ function renderLeadRow(lead) {
       <td>
         <div class="lead-property">
           <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}</div>
-          <div class="details">${escapeHtml(lead.property_detail || lead.property)} · Publié ${formatPublishedDate(lead)}</div>
+          <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
         </div>
       </td>
       <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
@@ -5026,7 +5235,11 @@ function openDrawer(id) {
   wireMandateDrawerBtn("drawer-mandate-location", "location");
 
   const daysTxt =
-    lead.days_on_market != null ? `${lead.days_on_market} j en ligne` : formatPublishedDate(lead);
+    lead.days_on_market != null
+      ? `${lead.days_on_market} j en ligne`
+      : formatPublishedDate(lead)
+        ? formatPublishedLine(lead)
+        : "Publication inconnue";
 
   let dvfHtml = `<div class="drawer-dvf-block">
     <strong>Comparatif DVF</strong> — ventes réelles (DGFiP / <a href="${DVF_APP_URL}" target="_blank" rel="noopener">Etalab</a>)<br>
@@ -5164,7 +5377,7 @@ function startPolling() {
       const changed = fp !== prevFp;
       LEADS = leads;
       if (changed) {
-        RADAR = await fetchRadarBriefing().catch(() => RADAR);
+        await loadRadarAndPlaybook().catch(() => {});
         await refreshStats();
         renderAll();
       } else {

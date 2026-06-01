@@ -313,15 +313,16 @@ def _price_ok(
 
 def prepare_lead_defaults(lead: LeadData) -> LeadData:
     """Complète les champs manquants non bloquants avant enregistrement."""
-    from datetime import date
 
     if is_hub_listing_address(lead.address):
         lead.address = None
 
     lead = sanitize_lead(lead)
 
-    if not lead.published_at:
-        lead.published_at = date.today().isoformat()
+    # Ne jamais inventer la date de publication (≠ date de crawl / created_at).
+    if lead.published_at and not _published_at_ok(lead.published_at):
+        lead.published_at = None
+
     if lead.first_name and not lead.last_name:
         if not is_listing_title_name(lead.first_name):
             lead.last_name = lead.first_name
@@ -672,10 +673,13 @@ def merge_lead_for_update(
     merged.price_period = fresh.price_period if fresh.price_period else existing.price_period
     if _facts_field_confirmed(fresh, "published_at") and _published_at_ok(fresh.published_at):
         merged.published_at = fresh.published_at
+    elif _published_at_ok(fresh.published_at):
+        merged.published_at = fresh.published_at
     elif _published_at_ok(existing.published_at):
         merged.published_at = existing.published_at
     else:
-        merged.published_at = fresh.published_at or existing.published_at
+        merged.published_at = None
+
     pub_audit = fresh.raw_extras.get("publisher_audit") if isinstance(
         fresh.raw_extras.get("publisher_audit"), dict
     ) else {}
@@ -706,3 +710,15 @@ def merge_lead_for_update(
     merged.raw_extras = {**existing.raw_extras, **fresh.raw_extras}
 
     return sanitize_lead(merged)
+
+
+def resolve_published_at(
+    incoming: str | None,
+    stored: str | None = None,
+) -> str | None:
+    """Date de mise en ligne portail — jamais la date de crawl."""
+    if _published_at_ok(incoming):
+        return str(incoming).strip()[:10]
+    if _published_at_ok(stored):
+        return str(stored).strip()[:10]
+    return None
