@@ -7,7 +7,7 @@ import logging
 import re
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import os
@@ -83,6 +83,35 @@ def _coerce_timestamp(value: str | None) -> str:
         return _now()
     s = str(value).strip()
     return s if s else _now()
+
+
+def _iso_date_prefix(value) -> str:
+    """Extrait YYYY-MM-DD (Postgres datetime/date ou TEXT SQLite)."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    s = str(value).strip()
+    if not s:
+        return ""
+    if "T" in s:
+        s = s.split("T", 1)[0]
+    return s[:10] if len(s) >= 10 else s
+
+
+def _iso_datetime_str(value) -> str | None:
+    """Normalise en chaîne ISO pour JSON / comparaisons."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return dt.isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return value.isoformat()
+    s = str(value).strip()
+    return s or None
 
 
 def _sql_dvf_not_compared_clause() -> str:
@@ -1655,16 +1684,31 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             row["mandate_score_reason"] if "mandate_score_reason" in keys else ""
         ),
         "notes": row["notes"] if "notes" in keys else "",
-        "next_follow_up": row["next_follow_up"] if "next_follow_up" in keys else None,
+        "next_follow_up": (
+            _iso_datetime_str(row["next_follow_up"])
+            if "next_follow_up" in keys and row["next_follow_up"]
+            else None
+        ),
         "missing_fields": missing,
-        "published_at": row["published_at"] if "published_at" in keys else None,
-        "created_at": row["created_at"] if "created_at" in keys else None,
+        "published_at": (
+            _iso_date_prefix(row["published_at"])
+            if "published_at" in keys and row["published_at"]
+            else None
+        ),
+        "created_at": (
+            _iso_datetime_str(row["created_at"]) if "created_at" in keys else None
+        ),
+        "updated_at": (
+            _iso_datetime_str(row["updated_at"]) if "updated_at" in keys else None
+        ),
         "listedAt": (
-            (row["published_at"] or "")[:10]
+            _iso_date_prefix(row["published_at"])
             if "published_at" in keys and row["published_at"]
             else ""
         ),
-        "detected_at": (row["created_at"] or "")[:10] if "created_at" in keys else "",
+        "detected_at": (
+            _iso_date_prefix(row["created_at"]) if "created_at" in keys else ""
+        ),
         "city": city,
         "postcode": postcode,
         "sector": sector,
@@ -1677,8 +1721,11 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         "dvf_sector": row["dvf_sector"] if "dvf_sector" in keys else None,
         "dvf_reference_period": row["dvf_reference_period"] if "dvf_reference_period" in keys else None,
         "dvf_sample_count": row["dvf_sample_count"] if "dvf_sample_count" in keys else None,
-        "dvf_compared_at": row["dvf_compared_at"] if "dvf_compared_at" in keys else None,
-        "updated_at": row["updated_at"] if "updated_at" in keys else None,
+        "dvf_compared_at": (
+            _iso_datetime_str(row["dvf_compared_at"])
+            if "dvf_compared_at" in keys and row["dvf_compared_at"]
+            else None
+        ),
         "listing_title": row["listing_title"] if "listing_title" in keys else None,
         "facts_audit": (
             json.loads(row["facts_audit"])
@@ -1687,7 +1734,11 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         ),
         "agency_id": row["agency_id"] if "agency_id" in keys else None,
         "price_change_count": row["price_change_count"] if "price_change_count" in keys else 0,
-        "last_price_change_at": row["last_price_change_at"] if "last_price_change_at" in keys else None,
+        "last_price_change_at": (
+            _iso_datetime_str(row["last_price_change_at"])
+            if "last_price_change_at" in keys and row["last_price_change_at"]
+            else None
+        ),
         "priority_tier": row["priority_tier"] if "priority_tier" in keys else None,
         "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
     }
