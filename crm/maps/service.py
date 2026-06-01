@@ -401,7 +401,7 @@ def build_map_payload(agency_id: str) -> dict:
             """
             SELECT id, address, city, postcode, latitude, longitude,
                    listing_title, price, mandate_score, score,
-                   pipeline, transaction_type, surface
+                   pipeline, transaction_type, surface, phone, email
             FROM leads
             WHERE agency_id = ?
             ORDER BY mandate_score DESC, score DESC
@@ -443,6 +443,17 @@ def build_map_payload(agency_id: str) -> dict:
         if not title or str(title).strip() in _ADDRESS_BAD:
             title = (raw_title or address or "Annonce")[:120]
 
+        mscore = int(row["mandate_score"] or 0) if "mandate_score" in keys else 0
+        from crm.scoring.probability import signature_probability
+
+        sig = signature_probability(
+            {
+                "phone": row["phone"] if "phone" in keys else None,
+                "email": row["email"] if "email" in keys else None,
+            },
+            mscore,
+        )
+
         markers.append(
             {
                 "id": int(row["id"]),
@@ -451,7 +462,8 @@ def build_map_payload(agency_id: str) -> dict:
                 "title": str(title)[:120],
                 "address": (address or "").strip() if address not in _ADDRESS_BAD else line,
                 "price": int(row["price"] or 0),
-                "mandate_score": int(row["mandate_score"] or 0) if "mandate_score" in keys else 0,
+                "mandate_score": mscore,
+                "signature_probability": sig["probability"],
                 "score": int(row["score"] or 0),
                 "pipeline": row["pipeline"] if "pipeline" in keys else "nouveau",
                 "transaction_type": row["transaction_type"] if "transaction_type" in keys else "vente",

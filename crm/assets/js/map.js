@@ -26,8 +26,13 @@
     infoWindow: null,
     leafletPopups: [],
     userPos: null,
+    userAccuracy: null,
     aroundMe: false,
-    aroundKm: 15,
+    aroundKm: 2,
+    watchId: null,
+    aroundCircle: null,
+    accuracyCircle: null,
+    firstFix: false,
     mapsReady: false,
     loading: false,
     lastError: null,
@@ -217,7 +222,11 @@
       typeof formatPrice === "function"
         ? formatPrice(m)
         : `${Number(m.price || 0).toLocaleString("fr-FR")} €`;
-    return `<div class="map-infowindow"><strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · Score ${m.mandate_score || m.score || 0}<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button></div>`;
+    const pct =
+      typeof signatureProbability === "function"
+        ? signatureProbability(m)
+        : m.signature_probability ?? m.mandate_score ?? m.score ?? 0;
+    return `<div class="map-infowindow"><strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · ${pct} % de chance de signer<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button></div>`;
   }
 
   function filteredMarkers() {
@@ -322,7 +331,7 @@
     return list;
   }
 
-  function renderLeadMarkers() {
+  function renderLeadMarkers(skipFit = false) {
     const list = spreadCoincident(filteredMarkers());
     clearLeadMarkers();
 
@@ -360,7 +369,7 @@
         state.leadMarkers.push(marker);
       });
     }
-    fitMapBounds();
+    if (!skipFit) fitMapBounds();
   }
 
   function placeAgencyMarker() {
@@ -574,6 +583,184 @@
     return apiFn(`/map${q}`, { timeoutMs: geocode ? 45000 : 25000 });
   }
 
+  function placeUserMarker() {
+    if (!state.userPos || !state.map) return;
+    if (state.userMarker) {
+      if (state.provider === "google") state.userMarker.setMap(null);
+      else state.map.removeLayer(state.userMarker);
+      state.userMarker = null;
+    }
+    if (state.provider === "google" && window.google?.maps) {
+      state.userMarker = new google.maps.Marker({
+        map: state.map,
+        position: state.userPos,
+        title: "Vous",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#2563eb",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 3,
+          scale: 8,
+        },
+        zIndex: 999,
+      });
+    } else if (window.L) {
+      state.userMarker = L.circleMarker([state.userPos.lat, state.userPos.lng], {
+        radius: 9,
+        color: "#fff",
+        weight: 3,
+        fillColor: "#2563eb",
+        fillOpacity: 1,
+      }).addTo(state.map);
+    }
+  }
+
+  function clearRadiusCircle() {
+    for (const key of ["aroundCircle", "accuracyCircle"]) {
+      const c = state[key];
+      if (!c) continue;
+      if (state.provider === "google") c.setMap(null);
+      else if (state.map?.removeLayer) state.map.removeLayer(c);
+      state[key] = null;
+    }
+  }
+
+  function drawRadiusCircle() {
+    if (!state.userPos || !state.map) return;
+    clearRadiusCircle();
+    const radiusM = state.aroundKm * 1000;
+    if (state.provider === "google" && window.google?.maps) {
+      state.aroundCircle = new google.maps.Circle({
+        map: state.map,
+        center: state.userPos,
+        radius: radiusM,
+        fillColor: "#2563eb",
+        fillOpacity: 0.08,
+        strokeColor: "#2563eb",
+        strokeOpacity: 0.45,
+        strokeWeight: 1.5,
+        clickable: false,
+        zIndex: 1,
+      });
+    } else if (window.L) {
+      state.aroundCircle = L.circle([state.userPos.lat, state.userPos.lng], {
+        radius: radiusM,
+        color: "#2563eb",
+        weight: 1.5,
+        opacity: 0.45,
+        fillColor: "#2563eb",
+        fillOpacity: 0.08,
+        interactive: false,
+      }).addTo(state.map);
+    }
+  }
+
+  function fitAroundView() {
+    if (!state.userPos || !state.map) return;
+    // Zoom adapté au rayon (cercle visible en entier).
+    const zoomByKm = { 1: 14, 2: 13, 5: 12, 10: 11, 15: 10 };
+    const z = zoomByKm[state.aroundKm] || 13;
+    if (state.provider === "google") {
+      state.map.panTo(state.userPos);
+      state.map.setZoom(z);
+    } else {
+      state.map.setView([state.userPos.lat, state.userPos.lng], z);
+    }
+  }
+
+  function nearbyMarkers() {
+    const markers = state.data?.markers || [];
+    if (!state.userPos) return [];
+    return markers
+      .map((m) => ({
+        ...m,
+        _dist: haversineKm(state.userPos.lat, state.userPos.lng, m.lat, m.lng),
+      }))
+      .filter((m) => m._dist <= state.aroundKm)
+      .sort((a, b) => a._dist - b._dist);
+  }
+
+  function fmtDistance(km) {
+    if (km < 1) return `${Math.round(km * 1000)} m`;
+    return `${km.toFixed(km < 10 ? 1 : 0)} km`;
+  }
+
+  function signaturePct(m) {
+    if (typeof signatureProbability === "function") return signatureProbability(m);
+    return m.signature_probability ?? m.mandate_score ?? m.score ?? 0;
+  }
+
+  function renderAroundList() {
+    const list = document.getElementById("map-around-list");
+    const sub = document.getElementById("map-around-sub");
+    if (!list) return;
+    if (!state.userPos) {
+      list.innerHTML = `<p class="map-around-empty">En attente de votre position GPS…</p>`;
+      if (sub) sub.textContent = "Localisation en cours…";
+      return;
+    }
+    const items = nearbyMarkers();
+    if (sub) {
+      sub.textContent = `${items.length} annonce${items.length > 1 ? "s" : ""} dans ${state.aroundKm} km`;
+    }
+    if (!items.length) {
+      list.innerHTML = `<p class="map-around-empty">Aucune annonce détectée dans ${state.aroundKm} km. Élargissez le rayon ou lancez un crawl sur ce secteur.</p>`;
+      return;
+    }
+    const { escapeHtml: esc, formatPrice } = deps();
+    list.innerHTML = items
+      .map((m) => {
+        const pct = signaturePct(m);
+        const cls =
+          typeof signatureClass === "function" ? signatureClass(pct) : "low";
+        const price = typeof formatPrice === "function" ? formatPrice(m) : "";
+        return `<button type="button" class="map-around-item" data-lead-id="${m.id}">
+          <span class="map-around-dist">${fmtDistance(m._dist)}</span>
+          <span class="map-around-info">
+            <span class="map-around-name">${esc(m.title || "Annonce")}</span>
+            <span class="map-around-meta">${esc(m.address || "")}${price ? " · " + esc(price) : ""}</span>
+          </span>
+          <span class="map-around-score ${cls}">${pct}%</span>
+        </button>`;
+      })
+      .join("");
+  }
+
+  function applyUserPosition(pos, { recenter = false } = {}) {
+    state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    state.userAccuracy = pos.coords.accuracy || null;
+    if (!state.map) return;
+    placeUserMarker();
+    if (state.aroundMe) {
+      drawRadiusCircle();
+      // Sur les fixes suivants (pas de recentrage), on ne re-cadre pas la carte
+      // pour éviter qu'elle « saute » à chaque pas pendant le suivi terrain.
+      renderLeadMarkers(!recenter);
+      renderAroundList();
+    } else {
+      renderLeadMarkers();
+    }
+    if (recenter) {
+      if (state.aroundMe) fitAroundView();
+      else if (state.provider === "google") {
+        state.map.panTo(state.userPos);
+        if (state.map.getZoom() < 13) state.map.setZoom(13);
+      } else {
+        state.map.setView([state.userPos.lat, state.userPos.lng], 13);
+      }
+    }
+  }
+
+  function geoErrorMessage(err) {
+    return err.code === 1
+      ? "Autorisez la géolocalisation dans le navigateur"
+      : err.code === 3
+        ? "Position GPS trop lente — réessayez à l'extérieur"
+        : "Impossible d'obtenir votre position";
+  }
+
+  /** Recentre une fois sur la position (sans activer le mode live). */
   function locateUser() {
     const { showToast } = deps();
     if (!navigator.geolocation) {
@@ -582,53 +769,68 @@
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        state.userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        if (!state.map) return;
-
-        if (state.userMarker) {
-          if (state.provider === "google") state.userMarker.setMap(null);
-          else state.map.removeLayer(state.userMarker);
-        }
-
-        if (state.provider === "google" && window.google?.maps) {
-          state.userMarker = new google.maps.Marker({
-            map: state.map,
-            position: state.userPos,
-            title: "Vous",
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              fillColor: "#2563eb",
-              fillOpacity: 1,
-              strokeColor: "#ffffff",
-              strokeWeight: 2,
-              scale: 9,
-            },
-            zIndex: 999,
-          });
-          state.map.panTo(state.userPos);
-          if (state.map.getZoom() < 13) state.map.setZoom(13);
-        } else if (window.L) {
-          state.userMarker = L.circleMarker([state.userPos.lat, state.userPos.lng], {
-            radius: 9,
-            color: "#fff",
-            weight: 2,
-            fillColor: "#2563eb",
-            fillOpacity: 1,
-          }).addTo(state.map);
-          state.map.setView([state.userPos.lat, state.userPos.lng], 13);
-        }
-        renderLeadMarkers();
-        showToast("Position affichée", "success");
+        applyUserPosition(pos, { recenter: true });
+        if (!state.aroundMe) showToast("Position affichée", "success");
       },
-      (err) => {
-        const msg =
-          err.code === 1
-            ? "Autorisez la géolocalisation dans le navigateur"
-            : "Impossible d'obtenir votre position";
-        showToast(msg, "warning");
-      },
+      (err) => showToast(geoErrorMessage(err), "warning"),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
     );
+  }
+
+  /** Active le détecteur live : suivi GPS continu + cercle + liste de proximité. */
+  function enableAroundMe() {
+    const { showToast } = deps();
+    if (!navigator.geolocation) {
+      showToast("Géolocalisation non disponible sur cet appareil", "warning");
+      return;
+    }
+    state.aroundMe = true;
+    state.firstFix = false;
+    syncAroundUi();
+    showToast("Détecteur activé — recherche de votre position…", "info", 3500);
+    if (state.watchId != null) navigator.geolocation.clearWatch(state.watchId);
+    state.watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const first = !state.firstFix;
+        state.firstFix = true;
+        applyUserPosition(pos, { recenter: first });
+      },
+      (err) => {
+        showToast(geoErrorMessage(err), "warning");
+        if (err.code === 1) disableAroundMe();
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 },
+    );
+  }
+
+  function disableAroundMe() {
+    if (state.watchId != null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.watchId);
+    }
+    state.watchId = null;
+    state.aroundMe = false;
+    clearRadiusCircle();
+    syncAroundUi();
+    renderLeadMarkers();
+  }
+
+  function toggleAroundMe() {
+    if (state.aroundMe) disableAroundMe();
+    else enableAroundMe();
+  }
+
+  function syncAroundUi() {
+    const btn = document.getElementById("map-btn-around");
+    const radius = document.getElementById("map-around-radius");
+    const panel = document.getElementById("map-around-panel");
+    if (btn) {
+      btn.setAttribute("aria-pressed", state.aroundMe ? "true" : "false");
+      btn.classList.toggle("active", state.aroundMe);
+      btn.textContent = state.aroundMe ? "📍 Suivi actif" : "📍 Autour de moi";
+    }
+    if (radius) radius.hidden = !state.aroundMe;
+    if (panel) panel.hidden = !state.aroundMe;
+    if (state.aroundMe) renderAroundList();
   }
 
   function centerOnAgency() {
@@ -757,9 +959,23 @@
     document.getElementById("map-btn-locate")?.addEventListener("click", locateUser);
     document.getElementById("map-btn-agency")?.addEventListener("click", centerOnAgency);
     document.getElementById("map-btn-refresh")?.addEventListener("click", () => enter(true));
-    document.getElementById("map-filter-around")?.addEventListener("change", (e) => {
-      state.aroundMe = e.target.checked;
-      renderLeadMarkers();
+    document.getElementById("map-btn-around")?.addEventListener("click", toggleAroundMe);
+    document.getElementById("map-around-close")?.addEventListener("click", disableAroundMe);
+    document.getElementById("map-around-radius")?.addEventListener("change", (e) => {
+      state.aroundKm = parseFloat(e.target.value) || 2;
+      if (state.aroundMe && state.userPos) {
+        drawRadiusCircle();
+        renderLeadMarkers();
+        renderAroundList();
+        fitAroundView();
+      }
+    });
+    // Ouverture de fiche depuis la liste de proximité.
+    document.getElementById("map-around-list")?.addEventListener("click", (e) => {
+      const item = e.target.closest(".map-around-item");
+      if (!item) return;
+      const id = parseInt(item.dataset.leadId, 10);
+      if (id && deps().openDrawer) deps().openDrawer(id);
     });
   }
 
@@ -794,5 +1010,11 @@
     setTimeout(() => fitMapBounds(), 80);
   }
 
-  window.VelioraMap = { enter, locateUser, refresh: () => enter(true), resize };
+  window.VelioraMap = {
+    enter,
+    locateUser,
+    refresh: () => enter(true),
+    resize,
+    leave: disableAroundMe,
+  };
 })();

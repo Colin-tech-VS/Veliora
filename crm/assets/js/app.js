@@ -1686,6 +1686,10 @@ async function switchView(view) {
   ) {
     cancelAnalyzeImport({ silent: true });
   }
+  // Quitter la carte : couper le suivi GPS live (batterie).
+  if (state.currentView === "map" && view !== "map") {
+    window.VelioraMap?.leave?.();
+  }
   state.currentView = view;
   syncProductModeTabs(view);
   document.querySelectorAll(".nav-item").forEach((el) => {

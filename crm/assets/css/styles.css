@@ -6982,6 +6982,155 @@ body:has(.crawl-dock.open) .script-dock.open {
   user-select: none;
 }
 
+/* ─── Détecteur « Autour de moi » (live geoloc) ─── */
+.map-btn-around.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+.map-around-radius {
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  font-size: 0.85rem;
+  color: inherit;
+}
+
+.map-around-panel {
+  position: absolute;
+  z-index: 600;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 320px;
+  max-width: calc(100% - 1.5rem);
+  max-height: calc(100% - 1.5rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+.map-around-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), transparent);
+}
+.map-around-head strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.map-around-sub {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.map-around-close {
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 0.25rem;
+}
+.map-around-list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.4rem;
+}
+.map-around-empty {
+  padding: 1rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+.map-around-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.5rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.map-around-item + .map-around-item {
+  border-top: 1px solid var(--border);
+}
+.map-around-item:hover,
+.map-around-item:active {
+  background: var(--surface-2, rgba(37, 99, 235, 0.07));
+}
+.map-around-dist {
+  flex: 0 0 auto;
+  min-width: 52px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #2563eb;
+  text-align: center;
+}
+.map-around-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.map-around-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-around-meta {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-around-score {
+  flex: 0 0 auto;
+  font-weight: 800;
+  font-size: 0.82rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+}
+.map-around-score.high { color: #047857; background: rgba(16, 185, 129, 0.15); }
+.map-around-score.medium { color: #92740c; background: rgba(214, 178, 94, 0.2); }
+.map-around-score.low { color: var(--text-muted); background: rgba(148, 163, 184, 0.18); }
+
+/* Mobile : la liste devient une bottom sheet (terrain). */
+@media (max-width: 640px) {
+  .map-around-panel {
+    top: auto;
+    left: 0.5rem;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    width: auto;
+    max-width: none;
+    max-height: 52%;
+    border-radius: var(--radius-lg, 16px);
+  }
+  .map-toolbar-actions {
+    width: 100%;
+  }
+  .map-btn-around {
+    flex: 1 1 100%;
+  }
+}
+
 .map-setup-panel {
   padding: 0.75rem 1rem;
   background: rgba(196, 92, 38, 0.08);
