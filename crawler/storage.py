@@ -769,12 +769,12 @@ def expire_stale_crawl_jobs() -> int:
         )
         cur2 = conn.execute(
             """UPDATE crawl_jobs SET status = 'failed',
-               message = 'Interrompu — redémarrage du serveur ou crawl terminé',
+               message = 'Interrompu — crawl bloqué ou trop long (timeout)',
                finished_at = ?
                WHERE status = 'running'
                AND (
                  started_at IS NULL
-                 OR datetime(started_at) < datetime('now', '-15 minutes')
+                 OR datetime(started_at) < datetime('now', '-90 minutes')
                )""",
             (now,),
         )
@@ -831,6 +831,19 @@ def cancel_all_active_crawl_jobs(agency_id: str | None = None) -> int:
             )
         conn.commit()
         return cur.rowcount or 0
+
+
+def get_pending_or_running_crawl_job(agency_id: str) -> dict | None:
+    """Job en cours ou en file — évite deux crawls Playwright en parallèle."""
+    expire_stale_crawl_jobs()
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM crawl_jobs
+               WHERE agency_id = ? AND status IN ('pending', 'running')
+               ORDER BY created_at DESC LIMIT 1""",
+            (agency_id,),
+        ).fetchone()
+    return _row_to_job(row) if row else None
 
 
 def get_active_crawl_job(agency_id: str | None = None) -> dict | None:

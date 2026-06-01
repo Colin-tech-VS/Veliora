@@ -622,6 +622,17 @@ def api_lead_image(lead_id):
     if request.method == "GET":
         path = resolve_lead_image_path(agency_id, lead_id)
         if not path:
+            url = (lead.get("listing_image_url") or "").strip()
+            if url:
+                sync_lead_image_from_url(
+                    lead_id,
+                    agency_id,
+                    url,
+                    respect_custom=True,
+                    referer=(lead.get("source_url") or "").strip() or None,
+                )
+                path = resolve_lead_image_path(agency_id, lead_id)
+        if not path:
             return jsonify({"error": "Pas d'image"}), 404
         resp = send_file(
             path,
@@ -1184,6 +1195,9 @@ def _job_response(job: dict) -> dict:
 
 @app.route("/api/crawler/status")
 def api_crawler_status():
+    from crawler.storage import expire_stale_crawl_jobs
+
+    expire_stale_crawl_jobs()
     agency_id = _aid()
     status = engine.status()
     stats = get_stats(agency_id)

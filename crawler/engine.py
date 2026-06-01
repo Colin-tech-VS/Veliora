@@ -197,6 +197,16 @@ class CrawlerEngine:
         if listings_total is None:
             listings_total = MAX_LISTING_LINKS
         with self._job_lock:
+            from crawler.storage import get_pending_or_running_crawl_job
+
+            existing = get_pending_or_running_crawl_job(agency_id)
+            if existing:
+                logger.info(
+                    "Crawl déjà actif pour l'agence %s — job %s",
+                    agency_id,
+                    existing.get("id"),
+                )
+                return existing
             job = create_crawl_job(
                 job_type,
                 target_url or "multi",

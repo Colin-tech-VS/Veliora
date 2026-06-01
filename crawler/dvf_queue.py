@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from crawler.config import (
@@ -61,11 +62,18 @@ class DvfParallelQueue:
         if not pending:
             return dict(self.stats)
 
-        done = 0
+        per_task = min(45.0, max(8.0, timeout / max(len(pending), 1)))
+        deadline = time.monotonic() + timeout
         for fut in pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                fut.cancel()
+                with self._lock:
+                    self.stats["completed"] += 1
+                    self.stats["errors"] += 1
+                continue
             try:
-                comp = fut.result(timeout=timeout)
-                done += 1
+                comp = fut.result(timeout=min(per_task, remaining))
                 with self._lock:
                     self.stats["completed"] += 1
                     if comp.get("error"):

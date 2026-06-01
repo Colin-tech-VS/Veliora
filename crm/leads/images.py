@@ -35,7 +35,12 @@ def ensure_lead_image_schema() -> None:
                   AND column_name IN ('listing_image_url', 'image_custom', 'image_updated_at')
                 """
             )
-            cols = {r[0] if isinstance(r, (tuple, list)) else r["column_name"] for r in cur.fetchall()}
+            cols = set()
+            for r in cur.fetchall():
+                if isinstance(r, dict):
+                    cols.add(r.get("column_name") or next(iter(r.values()), ""))
+                elif isinstance(r, (tuple, list)):
+                    cols.add(r[0])
             if "listing_image_url" not in cols:
                 conn.execute("ALTER TABLE leads ADD COLUMN listing_image_url TEXT")
             if "image_custom" not in cols:
@@ -278,13 +283,19 @@ def lead_image_meta_from_row(row) -> dict:
     custom = int(row["image_custom"] or 0) if "image_custom" in keys else 0
     lead_id = int(row["id"])
     agency_id = row["agency_id"] if "agency_id" in keys else ""
-    has = lead_has_display_image(str(agency_id), lead_id) if agency_id else False
+    has_file = lead_has_display_image(str(agency_id), lead_id) if agency_id else False
+    listing_url = (
+        (row["listing_image_url"] or "").strip()
+        if "listing_image_url" in keys and row["listing_image_url"]
+        else ""
+    )
+    has = has_file or bool(listing_url)
     updated = row["image_updated_at"] if "image_updated_at" in keys else None
     v = str(updated or lead_id) if has else None
     return {
         "has_image": has,
         "image_custom": bool(custom),
-        "listing_image_url": row["listing_image_url"] if "listing_image_url" in keys else None,
+        "listing_image_url": listing_url or None,
         "image_url": f"/api/leads/{lead_id}/image?v={v}" if has else None,
     }
 

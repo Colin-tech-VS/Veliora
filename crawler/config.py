@@ -43,7 +43,7 @@ SAVE_CRAWL_SNAPSHOT = os.getenv("SAVE_CRAWL_SNAPSHOT", "true").lower() in ("1", 
 # DVF en parallèle pendant le crawl (ne ralentit pas Playwright)
 DVF_PARALLEL_DURING_CRAWL = True
 DVF_PARALLEL_WORKERS = 5
-DVF_QUEUE_DRAIN_TIMEOUT_SEC = 600
+DVF_QUEUE_DRAIN_TIMEOUT_SEC = int(os.getenv("DVF_QUEUE_DRAIN_TIMEOUT_SEC", "120"))
 DVF_RECOMPARE_HOURS = 48
 
 # Annonces traitées par crawl (0 = pas de plafond, jusqu'à MAX_LISTING_LINKS)

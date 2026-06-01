@@ -26,6 +26,11 @@ def _extract_token() -> str:
     auth = request.headers.get("Authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
+    # <img src="…"> n'envoie pas Authorization — token en query pour GET image prospect.
+    if request.method == "GET" and "/leads/" in request.path and request.path.endswith("/image"):
+        q = (request.args.get("access_token") or request.args.get("token") or "").strip()
+        if q:
+            return q
     return (request.cookies.get("propscout_token") or "").strip()
 
 

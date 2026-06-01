@@ -4278,7 +4278,11 @@ function renderAll() {
 
 function leadImageUrl(lead) {
   if (!lead?.has_image && !lead?.image_url) return null;
-  return lead.image_url || `/api/leads/${lead.id}/image`;
+  const base = lead.image_url || `/api/leads/${lead.id}/image`;
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (!token) return base;
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}access_token=${encodeURIComponent(token)}`;
 }
 
 function leadThumbHtml(lead, className = "lead-thumb") {
