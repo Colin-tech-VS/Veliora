@@ -101,6 +101,11 @@ def score_client_for_lead(lead: dict, client: dict) -> dict | None:
 
     # Surface
     surface = lead.get("surface")
+    if surface is not None:
+        try:
+            surface = float(surface)
+        except (TypeError, ValueError):
+            surface = None
     smin = client.get("surface_min")
     if smin and surface:
         if surface + 0.5 >= smin:

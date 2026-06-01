@@ -39,6 +39,16 @@ _LEADS_LIST_SQL = """
 _SOURCES_CACHE_TTL_SEC = 50.0
 _sources_cache: dict[str, tuple[float, list[dict]]] = {}
 
+_SETTINGS_CACHE_TTL_SEC = float(os.getenv("AGENCY_SETTINGS_CACHE_TTL", "90"))
+_settings_cache: dict[str, tuple[float, dict]] = {}
+
+
+def invalidate_agency_settings_cache(agency_id: str | None = None) -> None:
+    if agency_id:
+        _settings_cache.pop(agency_id, None)
+    else:
+        _settings_cache.clear()
+
 
 def invalidate_sources_cache(agency_id: str | None = None) -> None:
     if agency_id:
@@ -782,18 +792,18 @@ def expire_stale_crawl_jobs() -> int:
         return (cur1.rowcount or 0) + (cur2.rowcount or 0)
 
 
-def cancel_crawl_job(job_id: str) -> bool:
+def cancel_crawl_job(job_id: str, agency_id: str) -> bool:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, status FROM crawl_jobs WHERE id = ?",
-            (job_id,),
+            "SELECT id, status FROM crawl_jobs WHERE id = ? AND agency_id = ?",
+            (job_id, agency_id),
         ).fetchone()
         if not row or row["status"] not in ("pending", "running"):
             return False
         conn.execute(
             """UPDATE crawl_jobs SET status = 'failed',
-               message = 'Annulé par l'utilisateur', finished_at = ? WHERE id = ?""",
-            (_now(), job_id),
+               message = 'Annulé par l'utilisateur', finished_at = ? WHERE id = ? AND agency_id = ?""",
+            (_now(), job_id, agency_id),
         )
         conn.commit()
     return True
@@ -1016,20 +1026,26 @@ def _segment_crawled_lead(preview: dict, lead: LeadData, partial: bool) -> dict:
 
 
 def claim_orphan_leads(agency_id: str) -> int:
-    """Rattache les leads sans agence (anciens crawls) à l'agence connectée."""
+    """Rattache les prospects orphelins liés aux sources de l'agence (pas tous les orphelins globaux)."""
     if not agency_id:
+        return 0
+    if os.getenv("DISABLE_CLAIM_ORPHAN_LEADS", "").strip().lower() in ("1", "true", "yes"):
         return 0
     with get_connection() as conn:
         orphan = conn.execute(
             """SELECT 1 FROM leads
-               WHERE agency_id IS NULL OR agency_id = '' LIMIT 1"""
+               WHERE (agency_id IS NULL OR agency_id = '')
+                 AND source_id IN (SELECT id FROM sources WHERE agency_id = ?)
+               LIMIT 1""",
+            (agency_id,),
         ).fetchone()
         if not orphan:
             return 0
         cur = conn.execute(
             """UPDATE leads SET agency_id = ?, updated_at = ?
-               WHERE agency_id IS NULL OR agency_id = ''""",
-            (agency_id, _now()),
+               WHERE (agency_id IS NULL OR agency_id = '')
+                 AND source_id IN (SELECT id FROM sources WHERE agency_id = ?)""",
+            (agency_id, _now(), agency_id),
         )
         conn.commit()
         n = cur.rowcount
@@ -1659,6 +1675,17 @@ def get_leads(
     return _annotate_dedup(leads)
 
 
+def _safe_json_field(raw) -> object | None:
+    if not raw:
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
 def get_lead(lead_id: int, agency_id: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
@@ -1667,7 +1694,13 @@ def get_lead(lead_id: int, agency_id: str) -> dict | None:
         ).fetchone()
     if not row:
         return None
-    lead = _row_to_lead(row)
+    lead = _row_to_lead(row, enrich_scores=False)
+    try:
+        from crm.scoring.recalc import hydrate_lead_from_stored
+
+        lead = hydrate_lead_from_stored(lead)
+    except Exception:
+        pass
     try:
         from crm.estimator.storage import get_lead_estimate
 
@@ -1771,7 +1804,10 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
 
     keys = row.keys()
     listing_type = row["listing_type"] if "listing_type" in keys else row["type"]
-    missing = json.loads(row["missing_fields"] or "[]")
+    try:
+        missing = json.loads(row["missing_fields"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        missing = []
     surface = row["surface"]
     listing_title = row["listing_title"] if "listing_title" in keys else None
     address = row["address"] or "—"
@@ -1891,11 +1927,7 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
             else None
         ),
         "listing_title": row["listing_title"] if "listing_title" in keys else None,
-        "facts_audit": (
-            json.loads(row["facts_audit"])
-            if "facts_audit" in keys and row["facts_audit"]
-            else None
-        ),
+        "facts_audit": _safe_json_field(row["facts_audit"] if "facts_audit" in keys else None),
         "agency_id": row["agency_id"] if "agency_id" in keys else None,
         "price_change_count": row["price_change_count"] if "price_change_count" in keys else 0,
         "last_price_change_at": (
@@ -2239,12 +2271,9 @@ def add_source(
             (source_id, agency_id),
         ).fetchone()
         out = _row_to_source(row, conn, agency_id) if row else {}
+    invalidate_sources_cache(agency_id)
     add_activity("crawl", f"Source configurée — {name} ({search_url})", agency_id)
     return out
-
-
-def update_source(source_id: str, enabled: bool | None = None) -> None:
-    update_source_fields(source_id, enabled=enabled)
 
 
 def update_source_fields(
@@ -2313,6 +2342,7 @@ def update_source_fields(
 
     if url or name:
         add_activity("crawl", f"Source mise à jour — {updated['name']}", agency_id)
+    invalidate_sources_cache(agency_id)
     return out
 
 
@@ -2334,6 +2364,7 @@ def delete_source(source_id: str, agency_id: str) -> bool:
             (source_id, agency_id),
         )
         conn.commit()
+    invalidate_sources_cache(agency_id)
     add_activity("crawl", f"Source supprimée — {source_id}", agency_id)
     return True
 
@@ -2499,6 +2530,15 @@ def _normalize_patch_lead_field(key: str, value: object) -> object | None:
         return value
     if col == "transaction_type" and value in ("vente", "location"):
         return value
+    if col == "next_follow_up":
+        if not value:
+            return None
+        s = str(value).strip()
+        if not s:
+            return None
+        if len(s) == 10 and s[4] == "-" and s[7] == "-":
+            return f"{s}T12:00:00Z"
+        return _iso_datetime_str(s) or _coerce_timestamp(s)
     return value
 
 
@@ -2603,26 +2643,32 @@ def patch_lead(lead_id: int, agency_id: str, data: dict) -> dict | None:
             "price",
         )
     ):
-        from crawler.validation import lead_from_db_row, sanitize_lead
+        try:
+            from crawler.validation import lead_from_db_row, sanitize_lead
 
-        row = get_lead(lead_id, agency_id)
-        if row:
-            ld = sanitize_lead(lead_from_db_row(row))
-            missing_json = json.dumps(ld.missing_fields())
-            with get_connection() as conn:
-                conn.execute(
-                    "UPDATE leads SET missing_fields = ?, updated_at = ? WHERE id = ? AND agency_id = ?",
-                    (missing_json, _now(), lead_id, agency_id),
-                )
-                conn.commit()
+            row = get_lead(lead_id, agency_id)
+            if row:
+                ld = sanitize_lead(lead_from_db_row(row))
+                missing_json = json.dumps(ld.missing_fields())
+                with get_connection() as conn:
+                    conn.execute(
+                        "UPDATE leads SET missing_fields = ?, updated_at = ? WHERE id = ? AND agency_id = ?",
+                        (missing_json, _now(), lead_id, agency_id),
+                    )
+                    conn.commit()
+        except Exception as exc:
+            logger.warning("patch_lead missing_fields lead %s: %s", lead_id, exc)
 
     lead = get_lead(lead_id, agency_id)
     if lead:
-        from crm.scoring.recalc import enrich_lead_scores
+        try:
+            from crm.scoring.recalc import enrich_lead_scores
 
-        enriched = enrich_lead_scores(dict(lead))
-        persist_lead_scores(lead_id, agency_id, enriched)
-        lead = get_lead(lead_id, agency_id)
+            enriched = enrich_lead_scores(dict(lead))
+            persist_lead_scores(lead_id, agency_id, enriched)
+            lead = get_lead(lead_id, agency_id)
+        except Exception as exc:
+            logger.warning("patch_lead scoring lead %s: %s", lead_id, exc)
     if lead and updates.get("pipeline") == "mandat":
         add_activity("mandat", f"Mandat signé — {lead.get('address', '')}", agency_id)
     if lead and any(
@@ -2651,32 +2697,50 @@ def list_agency_ids() -> list[str]:
     return [r["id"] for r in rows]
 
 
+def _agency_settings_from_row(row) -> dict:
+    if not row:
+        return {
+            "target_cities": [],
+            "target_neighborhoods": [],
+            "mandate_goal_month": 5,
+            "onboarding_step": 0,
+            "onboarding_completed": False,
+            "primary_city": None,
+        }
+    keys = row.keys()
+    try:
+        target_cities = json.loads(row["target_cities"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        target_cities = []
+    try:
+        target_neighborhoods = json.loads(row["target_neighborhoods"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        target_neighborhoods = []
+    settings = {
+        "target_cities": target_cities,
+        "target_neighborhoods": target_neighborhoods,
+        "mandate_goal_month": row["mandate_goal_month"] or 5,
+        "onboarding_step": row["onboarding_step"] if "onboarding_step" in keys else 0,
+        "onboarding_completed": bool(row["onboarding_completed"])
+        if "onboarding_completed" in keys
+        else False,
+    }
+    settings["primary_city"] = _first_target_city(settings.get("target_cities"))
+    return settings
+
+
 def get_agency_settings(agency_id: str) -> dict:
+    now = time.monotonic()
+    hit = _settings_cache.get(agency_id)
+    if hit and now - hit[0] < _SETTINGS_CACHE_TTL_SEC:
+        return dict(hit[1])
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM agency_settings WHERE agency_id = ?", (agency_id,)
         ).fetchone()
-        if not row:
-            return {
-                "target_cities": [],
-                "target_neighborhoods": [],
-                "mandate_goal_month": 5,
-                "onboarding_step": 0,
-                "onboarding_completed": False,
-                "primary_city": None,
-            }
-        keys = row.keys()
-        settings = {
-            "target_cities": json.loads(row["target_cities"] or "[]"),
-            "target_neighborhoods": json.loads(row["target_neighborhoods"] or "[]"),
-            "mandate_goal_month": row["mandate_goal_month"] or 5,
-            "onboarding_step": row["onboarding_step"] if "onboarding_step" in keys else 0,
-            "onboarding_completed": bool(row["onboarding_completed"])
-            if "onboarding_completed" in keys
-            else False,
-        }
-        settings["primary_city"] = _first_target_city(settings.get("target_cities"))
-        return settings
+    settings = _agency_settings_from_row(row)
+    _settings_cache[agency_id] = (time.monotonic(), settings)
+    return dict(settings)
 
 
 def _first_target_city(cities: list | None) -> str | None:
@@ -2727,9 +2791,7 @@ def set_onboarding(agency_id: str, *, step: int | None = None, completed: bool |
             (agency_id, int(new_step), 1 if new_done else 0, now),
         )
         conn.commit()
-    primary = _first_target_city(cities if isinstance(cities, list) else [])
-    if primary and data.get("target_cities") is not None:
-        _sync_legal_profile_city(agency_id, primary)
+    invalidate_agency_settings_cache(agency_id)
     return get_agency_settings(agency_id)
 
 
@@ -3012,4 +3074,5 @@ def upsert_agency_settings(agency_id: str, data: dict) -> dict:
     primary = _first_target_city(cities if isinstance(cities, list) else [])
     if primary and data.get("target_cities") is not None:
         _sync_legal_profile_city(agency_id, primary)
+    invalidate_agency_settings_cache(agency_id)
     return get_agency_settings(agency_id)

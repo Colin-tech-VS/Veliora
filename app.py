@@ -124,6 +124,19 @@ def ensure_db():
         logging.info("Base Veliora : %s", db_status())
 
 
+def _register_database_busy_handler(flask_app: Flask) -> None:
+    from velora_db.connection import DatabaseBusyError
+
+    @flask_app.errorhandler(DatabaseBusyError)
+    def _handle_database_busy(exc):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": str(exc), "code": "database_busy"}), 503
+        raise exc
+
+
+_register_database_busy_handler(app)
+
+
 @app.before_request
 def protect_api():
     from velora_db.connection import DatabaseBusyError
@@ -496,12 +509,19 @@ def api_leads():
 @app.route("/api/bootstrap")
 def api_bootstrap():
     """Chargement initial CRM — une requête, un passage base pour les leads."""
+    from velora_db.connection import DatabaseBusyError
+
     agency_id = _aid()
     try:
         from crawler.storage import claim_orphan_leads
 
-        claim_orphan_leads(agency_id)
+        try:
+            claim_orphan_leads(agency_id)
+        except Exception as exc:
+            logging.warning("claim_orphan_leads agency=%s: %s", agency_id, exc)
         leads = get_leads(agency_id, claim_orphans=False)
+    except DatabaseBusyError as exc:
+        return jsonify({"error": str(exc), "code": "database_busy"}), 503
     except Exception as exc:
         logging.exception("GET /api/bootstrap leads")
         return jsonify({"error": f"Prospects indisponibles : {exc}"}), 500
@@ -722,7 +742,11 @@ def api_lead(lead_id):
 
     if request.method == "PATCH":
         data = request.get_json(silent=True) or {}
-        lead = patch_lead(lead_id, _aid(), data)
+        try:
+            lead = patch_lead(lead_id, _aid(), data)
+        except Exception as exc:
+            logging.exception("PATCH /api/leads/%s", lead_id)
+            return jsonify({"error": f"Enregistrement impossible : {exc}"}), 500
         if not lead:
             return jsonify({"error": "Prospect introuvable"}), 404
         return jsonify({"ok": True, "lead": lead})
@@ -1295,7 +1319,7 @@ def api_cancel_active_jobs():
 
 @app.route("/api/crawler/jobs/<job_id>/cancel", methods=["POST"])
 def api_cancel_job(job_id):
-    if not cancel_crawl_job(job_id):
+    if not cancel_crawl_job(job_id, _aid()):
         return jsonify({"error": "Aucun crawl actif à annuler"}), 404
     return jsonify({"ok": True})
 
@@ -1365,24 +1389,38 @@ def api_public_config():
 
 @app.route("/api/onboarding", methods=["GET", "PATCH"])
 def api_onboarding():
+    from velora_db.connection import DatabaseBusyError
+
     agency_id = _aid()
     if request.method == "GET":
-        settings = get_agency_settings(agency_id)
-        from crawler.storage import get_connection, row_scalar
+        try:
+            from crawler.storage import (
+                _agency_settings_from_row,
+                get_agency_settings,
+                get_connection,
+                row_scalar,
+            )
 
-        with get_connection() as conn:
-            sources_count = row_scalar(
-                conn.execute(
-                    "SELECT COUNT(*) FROM sources WHERE agency_id = ?",
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT * FROM agency_settings WHERE agency_id = ?",
                     (agency_id,),
                 ).fetchone()
-            )
-            leads_count = row_scalar(
-                conn.execute(
-                    "SELECT COUNT(*) FROM leads WHERE agency_id = ?",
-                    (agency_id,),
-                ).fetchone()
-            )
+                sources_count = row_scalar(
+                    conn.execute(
+                        "SELECT COUNT(*) AS c FROM sources WHERE agency_id = ?",
+                        (agency_id,),
+                    ).fetchone()
+                )
+                leads_count = row_scalar(
+                    conn.execute(
+                        "SELECT COUNT(*) AS c FROM leads WHERE agency_id = ?",
+                        (agency_id,),
+                    ).fetchone()
+                )
+            settings = _agency_settings_from_row(row)
+        except DatabaseBusyError as exc:
+            return jsonify({"error": str(exc), "code": "database_busy"}), 503
         return jsonify(
             {
                 "ok": True,
@@ -1396,15 +1434,25 @@ def api_onboarding():
             }
         )
     data = request.get_json(silent=True) or {}
-    if data.get("complete"):
-        settings = set_onboarding(agency_id, step=3, completed=True)
-    else:
-        step = data.get("step")
-        settings = set_onboarding(
-            agency_id,
-            step=int(step) if step is not None else None,
-            completed=bool(data.get("completed")),
-        )
+    try:
+        if data.get("complete"):
+            settings = set_onboarding(agency_id, step=3, completed=True)
+        else:
+            step = data.get("step")
+            step_int = None
+            if step is not None:
+                try:
+                    step_int = int(step)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "Étape d'onboarding invalide"}), 400
+            settings = set_onboarding(
+                agency_id,
+                step=step_int,
+                completed=bool(data.get("completed")),
+            )
+    except Exception as exc:
+        logging.exception("PATCH /api/onboarding")
+        return jsonify({"error": str(exc)}), 500
     return jsonify({"ok": True, "settings": settings})
 
 
@@ -1482,6 +1530,15 @@ def api_login():
     if not result:
         return jsonify({"error": "Email ou mot de passe incorrect"}), 401
     return jsonify({"ok": True, **result})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    from crm.auth.context import _extract_token
+    from crm.auth.service import logout_user
+
+    logout_user(_extract_token())
+    return jsonify({"ok": True})
 
 
 @app.route("/api/auth/me", methods=["GET"])
@@ -1616,12 +1673,15 @@ def api_mandate_templates():
 def api_map():
     """Marqueurs carte : agence (fiche légale) + annonces géocodées."""
     from crm.maps.service import build_map_payload, geocode_map_leads_sync
+    from velora_db.connection import DatabaseBusyError
 
     agency_id = _aid()
     try:
         if request.args.get("geocode") in ("1", "true", "yes"):
             geocode_map_leads_sync(agency_id)
         return jsonify(build_map_payload(agency_id))
+    except DatabaseBusyError as exc:
+        return jsonify({"ok": False, "error": str(exc), "code": "database_busy"}), 503
     except Exception as exc:
         logging.exception("GET /api/map")
         return jsonify({"ok": False, "error": str(exc)}), 500

@@ -19,6 +19,9 @@ from velora_db.config import is_postgres
 
 logger = logging.getLogger(__name__)
 
+_map_schema_ready = False
+_map_schema_lock = threading.Lock()
+
 _GEOCODE_MAX_PER_REQUEST = 30
 _GEOCODE_TIME_BUDGET_SEC = 18.0
 _ADDRESS_BAD = frozenset({"", "—", "-", "n/a", "non renseigné"})
@@ -59,6 +62,17 @@ def maps_use_google_javascript() -> bool:
 
 
 def ensure_map_schema() -> None:
+    global _map_schema_ready
+    if _map_schema_ready:
+        return
+    with _map_schema_lock:
+        if _map_schema_ready:
+            return
+        _ensure_map_schema_once()
+        _map_schema_ready = True
+
+
+def _ensure_map_schema_once() -> None:
     with get_connection() as conn:
         conn.execute(
             """

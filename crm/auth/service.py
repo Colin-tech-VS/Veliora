@@ -279,7 +279,9 @@ def reset_password_with_token(token: str, new_password: str) -> dict:
             "UPDATE password_reset_tokens SET used = 1 WHERE token = ?",
             (token,),
         )
+        conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (row["user_id"],))
         conn.commit()
+    invalidate_session_cache()
     return {"ok": True, "message": "Mot de passe mis à jour — vous pouvez vous connecter."}
 
 
@@ -302,6 +304,16 @@ def _load_session_user_from_db(token: str) -> dict | None:
             "agency_id": row["agency_id"],
             "agency_name": row["agency_name"],
         }
+
+
+def logout_user(token: str) -> None:
+    token = (token or "").strip()
+    if not token:
+        return
+    with get_connection() as conn:
+        conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+        conn.commit()
+    invalidate_session_cache(token)
 
 
 def get_session_user(token: str) -> dict | None:

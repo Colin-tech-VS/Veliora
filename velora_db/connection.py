@@ -121,8 +121,9 @@ def _get_postgres_pool():
         if not url:
             _pg_pool_failed = True
             return None
-        pool_max = int(os.getenv("DATABASE_POOL_MAX", "8"))
-        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "12"))
+        default_pool_max = "6" if os.getenv("SCALINGO_APP", "").strip() else "8"
+        pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
+        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "40"))
         _pg_pool = ConnectionPool(
             url,
@@ -139,9 +140,14 @@ def _get_postgres_pool():
             pool_timeout,
         )
         return _pg_pool
-    except Exception as exc:
-        logger.warning("Pool PostgreSQL indisponible, connexion directe : %s", exc)
+    except ImportError as exc:
+        logger.warning("psycopg_pool absent — connexion directe : %s", exc)
         _pg_pool_failed = True
+        return None
+    except Exception as exc:
+        logger.warning(
+            "Pool PostgreSQL indisponible (nouvel essai au prochain appel) : %s", exc
+        )
         return None
 
 
@@ -163,7 +169,13 @@ def get_connection():
         if pool is not None:
             try:
                 with pool.connection() as raw:
-                    yield DbConnection(raw, postgres=True)
+                    conn = DbConnection(raw, postgres=True)
+                    try:
+                        yield conn
+                        conn.commit()
+                    except BaseException:
+                        conn.rollback()
+                        raise
             except Exception as exc:
                 name = type(exc).__name__
                 if name == "PoolTimeout" or "PoolTimeout" in name:

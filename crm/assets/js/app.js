@@ -132,6 +132,12 @@ function apiErrorMessage(status, path, body, res) {
     }
     return body.error || `Ressource introuvable (${path}).`;
   }
+  if (status === 503 || body?.code === "database_busy") {
+    return (
+      body?.error ||
+      "Serveur occupé (crawl ou forte charge) — réessayez dans quelques secondes."
+    );
+  }
   if (status === 500) {
     return body?.error || `Erreur serveur (${path}) — réessayez ou relancez python app.py`;
   }
@@ -1425,7 +1431,18 @@ function updateAuthHeader() {
   if (inviteBtn) inviteBtn.hidden = u?.role !== "admin";
 }
 
-function logout() {
+async function logout() {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  if (token) {
+    try {
+      await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      /* hors ligne — on efface quand même le token local */
+    }
+  }
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
   window.location.href = "/";

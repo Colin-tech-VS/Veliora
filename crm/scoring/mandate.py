@@ -230,8 +230,12 @@ def compute_mandate_score(
             ScoreContribution("vente", "Vente", apply_weight(5, "vente", w), "")
         )
 
-    surface = lead.get("surface")
-    if surface and 25 <= float(surface) <= 200:
+    surface_raw = lead.get("surface")
+    try:
+        surface = float(surface_raw) if surface_raw is not None else None
+    except (TypeError, ValueError):
+        surface = None
+    if surface and 25 <= surface <= 200:
         contributions.append(
             ScoreContribution(
                 "bien_cible",
