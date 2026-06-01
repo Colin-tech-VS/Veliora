@@ -285,15 +285,52 @@
     }
   }
 
+  // Disperse les marqueurs qui partagent EXACTEMENT les mêmes coordonnées
+  // (annonces géocodées au centre de la même commune faute d'adresse précise) :
+  // sans ça, 44 annonces « Lorient » se superposent et n'affichent qu'1 point.
+  // Spirale phyllotaxique autour du point partagé. N'altère pas m.lat/m.lng (data).
+  function spreadCoincident(list) {
+    const groups = new Map();
+    for (const m of list) {
+      const key = `${(+m.lat).toFixed(4)},${(+m.lng).toFixed(4)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(m);
+    }
+    const GOLDEN = 2.399963229728653; // ~137.5°
+    for (const grp of groups.values()) {
+      if (grp.length <= 1) {
+        grp[0].dlat = grp[0].lat;
+        grp[0].dlng = grp[0].lng;
+        continue;
+      }
+      const latRad = (grp[0].lat * Math.PI) / 180;
+      const cosLat = Math.max(0.2, Math.cos(latRad));
+      grp.forEach((m, i) => {
+        if (i === 0) {
+          m.dlat = m.lat;
+          m.dlng = m.lng;
+          return;
+        }
+        const rMeters = 22 * Math.sqrt(i); // espacement croissant
+        const ang = i * GOLDEN;
+        const dLat = (rMeters * Math.cos(ang)) / 111000;
+        const dLng = (rMeters * Math.sin(ang)) / (111000 * cosLat);
+        m.dlat = m.lat + dLat;
+        m.dlng = m.lng + dLng;
+      });
+    }
+    return list;
+  }
+
   function renderLeadMarkers() {
-    const list = filteredMarkers();
+    const list = spreadCoincident(filteredMarkers());
     clearLeadMarkers();
 
     if (state.provider === "google" && state.map && window.google?.maps) {
       list.forEach((m) => {
         const marker = new google.maps.Marker({
           map: state.map,
-          position: { lat: m.lat, lng: m.lng },
+          position: { lat: m.dlat ?? m.lat, lng: m.dlng ?? m.lng },
           title: m.title,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
@@ -312,7 +349,7 @@
       });
     } else if (state.provider === "osm" && state.map && window.L) {
       list.forEach((m) => {
-        const marker = L.circleMarker([m.lat, m.lng], {
+        const marker = L.circleMarker([m.dlat ?? m.lat, m.dlng ?? m.lng], {
           radius: 8,
           color: "#fff",
           weight: 2,
