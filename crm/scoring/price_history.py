@@ -55,24 +55,28 @@ def fetch_price_history_map(
     conn,
     agency_id: str,
     lead_ids: list[int],
+    *,
+    chunk_size: int = 400,
 ) -> dict[int, list[dict]]:
-    """Historique prix pour plusieurs leads — une requête SQL."""
+    """Historique prix pour plusieurs leads — requêtes SQL par lots."""
     if not lead_ids:
         return {}
     ids = [int(i) for i in lead_ids if i is not None]
     if not ids:
         return {}
-    placeholders = ",".join("?" * len(ids))
-    cur = conn.execute(
-        f"""SELECT lead_id, price, recorded_at FROM lead_price_history
-            WHERE agency_id = ? AND lead_id IN ({placeholders})
-            ORDER BY lead_id, recorded_at ASC""",
-        [agency_id, *ids],
-    )
     out: dict[int, list[dict]] = {}
-    for r in cur.fetchall():
-        lid = int(r["lead_id"])
-        out.setdefault(lid, []).append(
-            {"price": r["price"], "recorded_at": r["recorded_at"]}
+    for start in range(0, len(ids), chunk_size):
+        batch = ids[start : start + chunk_size]
+        placeholders = ",".join("?" * len(batch))
+        cur = conn.execute(
+            f"""SELECT lead_id, price, recorded_at FROM lead_price_history
+                WHERE agency_id = ? AND lead_id IN ({placeholders})
+                ORDER BY lead_id, recorded_at ASC""",
+            [agency_id, *batch],
         )
+        for r in cur.fetchall():
+            lid = int(r["lead_id"])
+            out.setdefault(lid, []).append(
+                {"price": r["price"], "recorded_at": r["recorded_at"]}
+            )
     return out

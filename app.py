@@ -456,14 +456,22 @@ def legacy_assets(filename):
 
 @app.route("/api/leads")
 def api_leads():
-    return jsonify(get_leads(_aid()))
+    try:
+        return jsonify(get_leads(_aid()))
+    except Exception as exc:
+        logging.exception("GET /api/leads")
+        return jsonify({"error": f"Prospects indisponibles : {exc}"}), 500
 
 
 @app.route("/api/bootstrap")
 def api_bootstrap():
     """Chargement initial CRM — une requête, un passage base pour les leads."""
     agency_id = _aid()
-    leads = get_leads(agency_id)
+    try:
+        leads = get_leads(agency_id)
+    except Exception as exc:
+        logging.exception("GET /api/bootstrap leads")
+        return jsonify({"error": f"Prospects indisponibles : {exc}"}), 500
     stats = get_stats(agency_id)
     sources = get_sources(agency_id)
     engine_status = engine.status()

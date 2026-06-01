@@ -1478,9 +1478,9 @@ def get_leads(agency_id: str, *, enrich: bool = True) -> list[dict]:
         ).fetchall()
         leads = [_row_to_lead(r, enrich_scores=False) for r in rows]
     if enrich and leads:
-        from crm.scoring.recalc import batch_enrich_leads
+        from crm.scoring.recalc import hydrate_leads_for_list
 
-        leads = batch_enrich_leads(leads, agency_id)
+        leads = hydrate_leads_for_list(leads, agency_id)
     return _annotate_dedup(leads)
 
 

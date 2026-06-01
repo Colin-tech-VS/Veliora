@@ -132,13 +132,89 @@ def enrich_lead_scores(
     return lead
 
 
+def hydrate_lead_from_stored(lead: dict) -> dict:
+    """Champs dérivés pour l'API liste — sans recalcul complet (scores déjà en base)."""
+    lead = dict(lead)
+    expl = lead.get("score_explanation")
+    if isinstance(expl, str):
+        try:
+            expl = json.loads(expl)
+            lead["score_explanation"] = expl
+        except json.JSONDecodeError:
+            expl = None
+    if isinstance(expl, dict):
+        lead["alert_tags"] = expl.get("tags") or []
+        lead["priority_tier"] = expl.get("priority_tier") or lead.get("priority_tier")
+        lead["score_positive_factors"] = expl.get("positive_factors") or []
+        lead["score_negative_factors"] = expl.get("negative_factors") or []
+    else:
+        lead.setdefault("alert_tags", [])
+
+    ms = lead.get("mandate_score")
+    if ms is not None:
+        lead["score"] = ms
+    lead["days_on_market"] = days_since(lead.get("published_at") or lead.get("listedAt"))
+
+    prev_p = lead.get("previous_price")
+    cur_p = lead.get("price")
+    try:
+        prev_i = int(prev_p) if prev_p is not None else 0
+        cur_i = int(cur_p) if cur_p is not None else 0
+    except (TypeError, ValueError):
+        prev_i, cur_i = 0, 0
+    if prev_i > 0 and cur_i:
+        lead["price_change_pct"] = round((cur_i - prev_i) / prev_i * 100, 1)
+    else:
+        lead["price_change_pct"] = None
+
+    lead["_scores_enriched"] = True
+    return lead
+
+
+def hydrate_leads_for_list(leads: list[dict], agency_id: str) -> list[dict]:
+    """Liste CRM : hydrate depuis la base ; recalcul seulement si score absent."""
+    if not leads:
+        return leads
+    missing = [l for l in leads if l.get("mandate_score") is None and l.get("id")]
+    enriched_by_id: dict[int, dict] = {}
+    if missing:
+        ctx = load_scoring_batch_context(
+            agency_id,
+            [int(l["id"]) for l in missing],
+        )
+        for raw in missing:
+            lid = int(raw["id"])
+            try:
+                enriched_by_id[lid] = enrich_lead_scores(dict(raw), scoring_ctx=ctx)
+            except Exception:
+                enriched_by_id[lid] = hydrate_lead_from_stored(raw)
+
+    out: list[dict] = []
+    for raw in leads:
+        lid = raw.get("id")
+        if lid is not None and int(lid) in enriched_by_id:
+            out.append(enriched_by_id[int(lid)])
+        else:
+            try:
+                out.append(hydrate_lead_from_stored(raw))
+            except Exception:
+                out.append(raw)
+    return out
+
+
 def batch_enrich_leads(leads: list[dict], agency_id: str) -> list[dict]:
-    """Enrichit une liste de leads avec 1–2 requêtes SQL au lieu de N."""
+    """Recalcul complet — réservé aux traitements explicites (pas GET /leads)."""
     if not leads:
         return leads
     lead_ids = [int(l["id"]) for l in leads if l.get("id")]
     ctx = load_scoring_batch_context(agency_id, lead_ids)
-    return [enrich_lead_scores(l, scoring_ctx=ctx) for l in leads]
+    out: list[dict] = []
+    for raw in leads:
+        try:
+            out.append(enrich_lead_scores(dict(raw), scoring_ctx=ctx))
+        except Exception:
+            out.append(hydrate_lead_from_stored(raw))
+    return out
 
 
 def enrich_lead_row(lead: dict, *, force: bool = False) -> dict:
