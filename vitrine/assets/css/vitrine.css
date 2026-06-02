@@ -10,22 +10,35 @@
 }
 
 :root {
-  --v-cream: #f6f4f0;
-  --v-sand: #ebe6de;
+  /* === Palette 2026 — confiance (bleu) / opportunité (vert) / urgence (orange) ===
+     Les anciens noms (--v-navy, --v-brass…) restent : on les pointe sur la nouvelle
+     palette pour ne pas réécrire toute la vitrine. */
+  --brand-primary:   #1F4ED8;
+  --brand-primary-dark: #1E3A8A;
+  --brand-primary-light: #3B82F6;
+  --brand-secondary: #16A34A;
+  --brand-secondary-dark: #15803D;
+  --brand-accent:    #F59E0B;
+  --brand-accent-dark: #D97706;
+  --brand-bg:        #F8FAFC;
+  --brand-text:      #0F172A;
+
+  --v-cream: var(--brand-bg);
+  --v-sand: #E2E8F0;
   --v-white: #ffffff;
-  --v-ink: #1e3340;
-  --v-ink-soft: #3d5563;
-  --v-muted: #6b7d86;
-  --v-navy: #2a4a5c;
-  --v-slate: #243b47;
-  --v-brass: #9a7349;
-  --v-brass-light: #c4a574;
-  --v-sage: #4a6b65;
-  --v-sage-bg: #eef4f2;
-  --v-clay: #b85c42;
-  --v-border: #ddd6cb;
-  --v-shadow: 0 2px 12px rgba(30, 51, 64, 0.05);
-  --v-shadow-lg: 0 4px 20px rgba(30, 51, 64, 0.07);
+  --v-ink: var(--brand-text);
+  --v-ink-soft: #475569;
+  --v-muted: #64748B;
+  --v-navy: var(--brand-primary);
+  --v-slate: var(--brand-primary-dark);
+  --v-brass: var(--brand-accent);
+  --v-brass-light: #FBBF24;
+  --v-sage: var(--brand-secondary);
+  --v-sage-bg: #ECFDF5;
+  --v-clay: #DC2626;
+  --v-border: #CBD5E1;
+  --v-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
+  --v-shadow-lg: 0 4px 20px rgba(15, 23, 42, 0.10);
   --v-radius: 8px;
   --v-radius-lg: 12px;
   --v-font: 'DM Sans', system-ui, sans-serif;

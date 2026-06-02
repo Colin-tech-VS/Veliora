@@ -593,9 +593,18 @@
   async function reverseCityFromPosition(lat, lng) {
     const { api: apiFn } = deps();
     if (!apiFn) throw new Error("API indisponible");
+    // Garde-fous : sans coords numériques le serveur renvoie 400
+    // « Coordonnées invalides ». On préfère un message clair côté client.
+    const nlat = Number(lat);
+    const nlng = Number(lng);
+    if (!Number.isFinite(nlat) || !Number.isFinite(nlng)) {
+      throw new Error("Position GPS indisponible — autorisez la géolocalisation puis réessayez.");
+    }
     const res = await apiFn("/map/reverse-city", {
       method: "POST",
-      body: { lat, lng },
+      // IMPORTANT : api() ne sérialise pas l'objet — sans JSON.stringify, fetch envoie
+      // "[object Object]" et le backend reçoit un body vide → 400 « Coordonnées invalides ».
+      body: JSON.stringify({ lat: nlat, lng: nlng }),
       timeoutMs: 15000,
     });
     if (!res?.ok || !res.city) {
@@ -634,7 +643,7 @@
       const city = geo.city;
       const scanRes = await apiFn("/crawler/scan", {
         method: "POST",
-        body: { city },
+        body: JSON.stringify({ city }),
         timeoutMs: 20000,
       });
       if (scanRes?.error) throw new Error(scanRes.error);

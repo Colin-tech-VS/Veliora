@@ -2401,6 +2401,149 @@ def api_property_client_matches(client_id):
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@app.route("/api/ai/health")
+def api_ai_health():
+    from crm.ai.ollama import health
+
+    return jsonify(health())
+
+
+@app.route("/api/ai/conversations", methods=["GET", "POST"])
+def api_ai_conversations():
+    from crm.ai.storage import create_conversation, list_conversations
+
+    agency_id = _aid()
+    if request.method == "GET":
+        return jsonify({"ok": True, "conversations": list_conversations(agency_id)})
+    data = request.get_json(silent=True) or {}
+    user = get_current_user() or {}
+    conv = create_conversation(
+        agency_id,
+        user_id=user.get("id"),
+        title=(data.get("title") or "").strip() or None,
+    )
+    return jsonify({"ok": True, "conversation": conv}), 201
+
+
+@app.route("/api/ai/conversations/<conv_id>", methods=["GET", "PATCH", "DELETE"])
+def api_ai_conversation_detail(conv_id):
+    from crm.ai.storage import (
+        delete_conversation,
+        get_conversation,
+        get_messages,
+        rename_conversation,
+    )
+
+    agency_id = _aid()
+    if request.method == "GET":
+        conv = get_conversation(conv_id, agency_id)
+        if not conv:
+            return jsonify({"error": "Conversation introuvable"}), 404
+        return jsonify({
+            "ok": True,
+            "conversation": conv,
+            "messages": get_messages(conv_id, agency_id),
+        })
+    if request.method == "DELETE":
+        if delete_conversation(conv_id, agency_id):
+            return jsonify({"ok": True})
+        return jsonify({"error": "Conversation introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "Titre requis"}), 400
+    if not rename_conversation(conv_id, agency_id, title):
+        return jsonify({"error": "Conversation introuvable"}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ai/chat", methods=["POST"])
+def api_ai_chat():
+    """Streame la réponse Ollama (NDJSON line-delimited).
+
+    Le frontend lit la réponse via fetch + reader.read() et concatène les tokens
+    au fur et à mesure. NDJSON plutôt que SSE pour rester simple côté JS, mais
+    on positionne quand même `X-Accel-Buffering: no` pour empêcher les proxies
+    de bufferiser.
+    """
+    import json
+
+    from crm.ai.service import ensure_conversation, stream_assistant_reply
+
+    agency_id = _aid()
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()
+    if not user_message:
+        return jsonify({"error": "Message vide"}), 400
+    conv_id_raw = (data.get("conversation_id") or "").strip() or None
+    user = get_current_user() or {}
+    conv = ensure_conversation(
+        agency_id,
+        conv_id_raw,
+        user_id=user.get("id"),
+        user_first_text=user_message,
+    )
+
+    def generate():
+        yield json.dumps({"type": "meta", "conversation": conv}) + "\n"
+        for event in stream_assistant_reply(
+            agency_id,
+            conv["id"],
+            user_message,
+            user_first_name=user.get("first_name"),
+        ):
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+
+    resp = Response(generate(), mimetype="application/x-ndjson")
+    resp.headers["Cache-Control"] = "no-cache, no-transform"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@app.route("/api/ai/action", methods=["POST"])
+def api_ai_action():
+    """Exécute une action proposée par l'IA (après validation explicite côté UI)."""
+    from crm.ai.tools import execute_action
+
+    agency_id = _aid()
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if not isinstance(action, dict):
+        return jsonify({"ok": False, "error": "Payload `action` manquant"}), 400
+    result = execute_action(agency_id, action)
+    return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@app.route("/api/ai/memory", methods=["GET", "POST"])
+def api_ai_memory():
+    from crm.ai.storage import add_memory, list_memories
+
+    agency_id = _aid()
+    if request.method == "GET":
+        return jsonify({"ok": True, "memories": list_memories(agency_id)})
+    data = request.get_json(silent=True) or {}
+    content = (data.get("content") or "").strip()
+    if not content:
+        return jsonify({"error": "content requis"}), 400
+    mem = add_memory(
+        agency_id,
+        content,
+        scope=(data.get("scope") or "general"),
+        source=data.get("source") or "user",
+    )
+    return jsonify({"ok": True, "memory": mem}), 201
+
+
+@app.route("/api/ai/memory/<memory_id>", methods=["DELETE"])
+def api_ai_memory_delete(memory_id):
+    from crm.ai.storage import delete_memory
+
+    agency_id = _aid()
+    if delete_memory(memory_id, agency_id):
+        return jsonify({"ok": True})
+    return jsonify({"error": "Souvenir introuvable"}), 404
+
+
 @app.route("/api/crawler/crawl-url", methods=["POST"])
 def api_crawler_crawl_url():
     data = request.get_json(silent=True) or {}

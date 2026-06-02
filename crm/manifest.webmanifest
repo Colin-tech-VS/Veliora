@@ -5,8 +5,8 @@
   "start_url": "/crm",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f6f4f0",
-  "theme_color": "#243b47",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1F4ED8",
   "orientation": "any",
   "icons": [
     {

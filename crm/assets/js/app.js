@@ -101,6 +101,10 @@ const viewTitles = {
     title: "Acheteurs / Locataires",
     subtitle: "Ajout manuel ou import CSV / Excel",
   },
+  ai: {
+    title: "Assistant IA",
+    subtitle: "Pose une question, analyse ton portefeuille, prépare l'action",
+  },
 };
 
 function apiErrorMessage(status, path, body, res) {
@@ -1789,6 +1793,13 @@ async function switchView(view) {
       showToast(err?.message || "Carte indisponible", "error");
     }
   }
+  if (view === "ai" && window.VelioraAI?.enter) {
+    try {
+      window.VelioraAI.enter();
+    } catch (err) {
+      console.warn("AI view init failed", err);
+    }
+  }
   if (view === "dashboard") {
     markOnboardingStep3Seen();
   }
@@ -1804,22 +1815,37 @@ async function switchView(view) {
 
 function setupSearch() {
   const input = document.getElementById("global-search");
+  if (!input) return;
+  const form = document.getElementById("global-search-form");
   let debounce;
-  input.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const value = e.target.value.trim();
-    if (!value) return;
 
-    if (isUrl(value)) {
-      e.preventDefault();
-      await runOnDemandAnalysis(value);
+  // Le submit fonctionne pour la touche Entrée, le bouton, et l'IME mobile.
+  const submit = async (value) => {
+    const v = (value || "").trim();
+    if (!v) return;
+    if (isUrl(v)) {
+      await runOnDemandAnalysis(v);
       return;
     }
-
-    state.searchQuery = value.toLowerCase();
+    state.searchQuery = v.toLowerCase();
     switchView("leads");
     renderLeads();
-  });
+    input.blur();
+  };
+
+  if (form) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      submit(input.value);
+    });
+  } else {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submit(input.value);
+      }
+    });
+  }
 
   input.addEventListener("input", (e) => {
     clearTimeout(debounce);
