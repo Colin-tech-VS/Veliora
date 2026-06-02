@@ -2710,7 +2710,7 @@ tr.lead-row-flash td {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 1.25rem;
+  padding: 1rem;
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
 }
@@ -2735,9 +2735,15 @@ tr.lead-row-flash td {
 }
 
 .lead-card-body .property-meta {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.45rem;
+  line-height: 1.35;
+}
+
+.property-meta-facts {
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .lead-card-footer {
@@ -4269,18 +4275,30 @@ tr.lead-row-flash td {
   text-align: right;
 }
 
+.drawer-link-inline a {
+  font-weight: 600;
+  color: var(--brand-blue);
+  text-decoration: none;
+}
+
+.drawer-link-inline a:hover {
+  text-decoration: underline;
+}
+
 .drawer-actions {
-  padding: 1rem 1.5rem;
+  padding: 0.85rem 1.25rem;
   border-top: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .drawer-actions .btn {
-  flex: 1;
+  flex: 0 1 auto;
   justify-content: center;
-  min-width: 7rem;
+  min-width: 6.25rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
 }
 
 .drawer-actions .btn-danger-outline {
@@ -6989,6 +7007,12 @@ body:has(.crawl-dock.open) .script-dock.open {
   color: #fff;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
+
+.map-btn-particuliers.active {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(5, 150, 105, 0.4);
+  color: #065f46;
+}
 .map-around-radius {
   padding: 0.3rem 0.5rem;
   border-radius: var(--radius-sm, 8px);
@@ -7003,7 +7027,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   z-index: 600;
   top: 0.75rem;
   right: 0.75rem;
-  width: 320px;
+  width: 300px;
   max-width: calc(100% - 1.5rem);
   max-height: calc(100% - 1.5rem);
   display: flex;
@@ -7011,7 +7035,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   background: var(--surface, #fff);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
   overflow: hidden;
 }
 .map-around-head {
@@ -7058,7 +7082,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   gap: 0.6rem;
   width: 100%;
   text-align: left;
-  padding: 0.55rem 0.5rem;
+  padding: 0.45rem 0.45rem;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -7096,9 +7120,30 @@ body:has(.crawl-dock.open) .script-dock.open {
 .map-around-meta {
   font-size: 0.76rem;
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: initial;
+  line-height: 1.3;
+}
+
+.map-around-precision {
+  display: inline-flex;
+  margin-left: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.08rem 0.32rem;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.map-around-precision.precise {
+  color: #065f46;
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.map-around-precision.approx {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.18);
 }
 .map-around-score {
   flex: 0 0 auto;

@@ -29,6 +29,9 @@
     userAccuracy: null,
     aroundMe: false,
     aroundKm: 2,
+    aroundPanelOpen: false,
+    aroundOnlyParticuliers: true,
+    aroundRefreshTimer: null,
     watchId: null,
     aroundCircle: null,
     accuracyCircle: null,
@@ -226,11 +229,14 @@
       typeof signatureProbability === "function"
         ? signatureProbability(m)
         : m.signature_probability ?? m.mandate_score ?? m.score ?? 0;
-    return `<div class="map-infowindow"><strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br>${esc(price)} · ${pct} % de chance de signer<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button></div>`;
+    const precision = m.location_precision === "precise" ? "Adresse précise" : "Adresse approximative";
+    return `<div class="map-infowindow"><strong>${esc(m.title)}</strong><br>${esc(m.address || "")}<br><small>${esc(precision)} · ${esc(m.type || "particulier")}</small><br>${esc(price)} · ${pct} % de chance de signer<br><button type="button" class="btn btn-primary btn-sm map-infowindow-btn" data-lead-id="${m.id}">Ouvrir la fiche</button></div>`;
   }
 
   function filteredMarkers() {
-    const markers = state.data?.markers || [];
+    const markers = (state.data?.markers || []).filter((m) =>
+      state.aroundOnlyParticuliers ? (m.type || "particulier") === "particulier" : true,
+    );
     if (!state.aroundMe || !state.userPos) return markers;
     return markers.filter(
       (m) => haversineKm(state.userPos.lat, state.userPos.lng, m.lat, m.lng) <= state.aroundKm,
@@ -670,7 +676,9 @@
   }
 
   function nearbyMarkers() {
-    const markers = state.data?.markers || [];
+    const markers = (state.data?.markers || []).filter((m) =>
+      state.aroundOnlyParticuliers ? (m.type || "particulier") === "particulier" : true,
+    );
     if (!state.userPos) return [];
     return markers
       .map((m) => ({
@@ -702,7 +710,8 @@
     }
     const items = nearbyMarkers();
     if (sub) {
-      sub.textContent = `${items.length} annonce${items.length > 1 ? "s" : ""} dans ${state.aroundKm} km`;
+      const segment = state.aroundOnlyParticuliers ? "particuliers" : "toutes";
+      sub.textContent = `${items.length} annonce${items.length > 1 ? "s" : ""} ${segment} dans ${state.aroundKm} km`;
     }
     if (!items.length) {
       list.innerHTML = `<p class="map-around-empty">Aucune annonce détectée dans ${state.aroundKm} km. Élargissez le rayon ou lancez un crawl sur ce secteur.</p>`;
@@ -715,11 +724,13 @@
         const cls =
           typeof signatureClass === "function" ? signatureClass(pct) : "low";
         const price = typeof formatPrice === "function" ? formatPrice(m) : "";
+        const precisionCls = m.location_precision === "precise" ? "precise" : "approx";
+        const precisionTxt = m.location_precision === "precise" ? "précise" : "approx";
         return `<button type="button" class="map-around-item" data-lead-id="${m.id}">
           <span class="map-around-dist">${fmtDistance(m._dist)}</span>
           <span class="map-around-info">
             <span class="map-around-name">${esc(m.title || "Annonce")}</span>
-            <span class="map-around-meta">${esc(m.address || "")}${price ? " · " + esc(price) : ""}</span>
+            <span class="map-around-meta">${esc(m.address || "")}${price ? " · " + esc(price) : ""}<span class="map-around-precision ${precisionCls}">${precisionTxt}</span></span>
           </span>
           <span class="map-around-score ${cls}">${pct}%</span>
         </button>`;
@@ -785,6 +796,7 @@
       return;
     }
     state.aroundMe = true;
+    state.aroundPanelOpen = false;
     state.firstFix = false;
     syncAroundUi();
     showToast("Détecteur activé — recherche de votre position…", "info", 3500);
@@ -801,6 +813,10 @@
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 },
     );
+    if (state.aroundRefreshTimer) clearInterval(state.aroundRefreshTimer);
+    state.aroundRefreshTimer = setInterval(() => {
+      if (state.aroundMe && !state.loading) enter(false);
+    }, 120000);
   }
 
   function disableAroundMe() {
@@ -808,10 +824,18 @@
       navigator.geolocation.clearWatch(state.watchId);
     }
     state.watchId = null;
+    if (state.aroundRefreshTimer) clearInterval(state.aroundRefreshTimer);
+    state.aroundRefreshTimer = null;
     state.aroundMe = false;
+    state.aroundPanelOpen = false;
     clearRadiusCircle();
     syncAroundUi();
     renderLeadMarkers();
+  }
+
+  function toggleAroundPanel(force) {
+    state.aroundPanelOpen = typeof force === "boolean" ? force : !state.aroundPanelOpen;
+    syncAroundUi();
   }
 
   function toggleAroundMe() {
@@ -823,13 +847,25 @@
     const btn = document.getElementById("map-btn-around");
     const radius = document.getElementById("map-around-radius");
     const panel = document.getElementById("map-around-panel");
+    const particuliersBtn = document.getElementById("map-btn-particuliers");
     if (btn) {
       btn.setAttribute("aria-pressed", state.aroundMe ? "true" : "false");
       btn.classList.toggle("active", state.aroundMe);
-      btn.textContent = state.aroundMe ? "📍 Suivi actif" : "📍 Autour de moi";
+      if (!state.aroundMe) {
+        btn.textContent = "📍 Autour de moi";
+      } else if (state.aroundPanelOpen) {
+        btn.textContent = "📍 Stop suivi";
+      } else {
+        btn.textContent = "📍 Voir les proches";
+      }
     }
     if (radius) radius.hidden = !state.aroundMe;
-    if (panel) panel.hidden = !state.aroundMe;
+    if (panel) panel.hidden = !(state.aroundMe && state.aroundPanelOpen);
+    if (particuliersBtn) {
+      particuliersBtn.classList.toggle("active", state.aroundOnlyParticuliers);
+      particuliersBtn.setAttribute("aria-pressed", state.aroundOnlyParticuliers ? "true" : "false");
+      particuliersBtn.textContent = state.aroundOnlyParticuliers ? "Particuliers" : "Tous";
+    }
     if (state.aroundMe) renderAroundList();
   }
 
@@ -959,8 +995,26 @@
     document.getElementById("map-btn-locate")?.addEventListener("click", locateUser);
     document.getElementById("map-btn-agency")?.addEventListener("click", centerOnAgency);
     document.getElementById("map-btn-refresh")?.addEventListener("click", () => enter(true));
-    document.getElementById("map-btn-around")?.addEventListener("click", toggleAroundMe);
-    document.getElementById("map-around-close")?.addEventListener("click", disableAroundMe);
+    document.getElementById("map-btn-around")?.addEventListener("click", () => {
+      if (!state.aroundMe) {
+        enableAroundMe();
+        // Le suivi démarre sans ouvrir immédiatement le panneau, pour éviter un popup intrusif.
+        state.aroundPanelOpen = false;
+        syncAroundUi();
+        return;
+      }
+      if (!state.aroundPanelOpen) {
+        toggleAroundPanel(true);
+        return;
+      }
+      disableAroundMe();
+    });
+    document.getElementById("map-around-close")?.addEventListener("click", () => toggleAroundPanel(false));
+    document.getElementById("map-btn-particuliers")?.addEventListener("click", () => {
+      state.aroundOnlyParticuliers = !state.aroundOnlyParticuliers;
+      syncAroundUi();
+      renderLeadMarkers();
+    });
     document.getElementById("map-around-radius")?.addEventListener("change", (e) => {
       state.aroundKm = parseFloat(e.target.value) || 2;
       if (state.aroundMe && state.userPos) {

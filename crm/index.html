@@ -112,7 +112,7 @@
           <div class="header-center">
             <div class="search-box">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input type="text" id="global-search" placeholder="Rechercher un prospect ou coller une URL…" enterkeyhint="search">
+              <input type="text" id="global-search" placeholder="Rechercher: ville:lyon m2>70 type:particulier (ou coller URL)…" enterkeyhint="search">
             </div>
           </div>
           <div class="header-end">
@@ -721,6 +721,9 @@
                   <option value="10">10 km</option>
                   <option value="15">15 km</option>
                 </select>
+                <button type="button" class="btn btn-secondary btn-sm map-btn-particuliers active" id="map-btn-particuliers" title="Filtrer les particuliers autour de moi" aria-pressed="true">
+                  Particuliers
+                </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="map-btn-locate" title="Recentrer sur ma position">
                   Ma position
                 </button>
@@ -867,6 +870,7 @@
   <!-- Dock crawl (réduit) -->
   <div class="crawl-dock" id="crawl-dock" role="status" aria-live="polite">
     <button type="button" class="crawl-dock-close" id="crawl-dock-close" title="Arrêter le crawl et fermer">×</button>
+    <button type="button" class="crawl-dock-compact" id="crawl-dock-compact" title="Réduire encore le widget" aria-pressed="false">Réduire +</button>
     <div class="crawl-dock-scene" aria-hidden="true">
       <span class="crawl-dock-icon crawl-dock-icon-house"></span>
       <span class="crawl-dock-icon crawl-dock-icon-key"></span>

@@ -401,7 +401,7 @@ def build_map_payload(agency_id: str) -> dict:
             """
             SELECT id, address, city, postcode, latitude, longitude,
                    listing_title, price, mandate_score, score,
-                   pipeline, transaction_type, surface, phone, email
+                   pipeline, transaction_type, surface, phone, email, type
             FROM leads
             WHERE agency_id = ?
             ORDER BY mandate_score DESC, score DESC
@@ -461,6 +461,7 @@ def build_map_payload(agency_id: str) -> dict:
                 "lng": coords[1],
                 "title": str(title)[:120],
                 "address": (address or "").strip() if address not in _ADDRESS_BAD else line,
+                "location_precision": "precise" if address and address not in _ADDRESS_BAD else "approx",
                 "price": int(row["price"] or 0),
                 "mandate_score": mscore,
                 "signature_probability": sig["probability"],
@@ -468,6 +469,7 @@ def build_map_payload(agency_id: str) -> dict:
                 "pipeline": row["pipeline"] if "pipeline" in keys else "nouveau",
                 "transaction_type": row["transaction_type"] if "transaction_type" in keys else "vente",
                 "surface": row["surface"],
+                "type": (row["type"] if "type" in keys else "particulier") or "particulier",
             }
         )
 

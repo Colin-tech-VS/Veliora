@@ -53,6 +53,7 @@ let backgroundPollTimer = null;
 const crawlState = {
   active: false,
   minimized: false,
+  compact: false,
   jobId: null,
   sourceId: null,
   label: "",
@@ -1341,8 +1342,15 @@ function setupCrawlBackground() {
     e.stopPropagation();
     dismissCrawlUI();
   });
+  document.getElementById("crawl-dock-compact")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    crawlState.compact = !crawlState.compact;
+    document.getElementById("crawl-dock")?.classList.toggle("compact", crawlState.compact);
+    e.currentTarget.setAttribute("aria-pressed", crawlState.compact ? "true" : "false");
+    e.currentTarget.textContent = crawlState.compact ? "Agrandir" : "Réduire +";
+  });
   document.getElementById("crawl-dock")?.addEventListener("click", (e) => {
-    if (e.target.closest(".crawl-dock-close")) return;
+    if (e.target.closest(".crawl-dock-close, .crawl-dock-compact")) return;
     expandCrawlUI();
   });
 
@@ -1444,7 +1452,9 @@ async function minimizeCrawlUI(opts = {}) {
   crawlState.minimized = true;
   document.getElementById("crawl-loader")?.classList.add("minimized");
   document.getElementById("crawl-loader")?.classList.remove("open");
-  document.getElementById("crawl-dock")?.classList.add("open");
+  const dock = document.getElementById("crawl-dock");
+  dock?.classList.add("open");
+  dock?.classList.toggle("compact", crawlState.compact);
 
   if (opts.notify !== false && window.CrawlWatch && crawlState.jobId) {
     const perm = await CrawlWatch.requestPermission();
@@ -1471,6 +1481,18 @@ function expandCrawlUI() {
   document.getElementById("crawl-loader")?.classList.remove("minimized");
   document.getElementById("crawl-loader")?.classList.add("open");
   document.getElementById("crawl-dock")?.classList.remove("open");
+}
+
+function leadQuickFactsHtml(lead) {
+  const bits = [];
+  if (lead.city || lead.postcode) bits.push(escapeHtml([lead.postcode, lead.city].filter(Boolean).join(" ")));
+  if (lead.surface) bits.push(`${lead.surface} m²`);
+  if (lead.rooms) bits.push(`${lead.rooms} pièce${lead.rooms > 1 ? "s" : ""}`);
+  if (lead.bedrooms) bits.push(`${lead.bedrooms} ch`);
+  if (lead.days_on_market != null) bits.push(`${lead.days_on_market} j en ligne`);
+  return bits.length
+    ? `<div class="property-meta property-meta-facts">${bits.join(" · ")}</div>`
+    : "";
 }
 
 async function ensureAuth() {
@@ -4375,17 +4397,111 @@ function getFilteredLeads() {
     );
 
   if (state.searchQuery && !isUrl(state.searchQuery)) {
-    const q = state.searchQuery;
-    leads = leads.filter(
-      (l) =>
-        (l.owner || "").toLowerCase().includes(q) ||
-        (l.address || "").toLowerCase().includes(q) ||
-        (l.city || "").toLowerCase().includes(q) ||
-        (l.property || "").toLowerCase().includes(q)
-    );
+    leads = leads.filter((l) => leadMatchesSearchQuery(l, state.searchQuery));
   }
 
   return leads.sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
+}
+
+function getLeadSearchText(lead) {
+  return [
+    lead.owner,
+    lead.first_name,
+    lead.last_name,
+    lead.address,
+    lead.city,
+    lead.postcode,
+    lead.property,
+    lead.property_title,
+    lead.property_detail,
+    lead.source,
+    lead.type,
+    lead.transaction_type,
+    lead.phone,
+    lead.email,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function parseFieldToken(token) {
+  const m = token.match(/^([a-z0-9_]+)\s*([:<>]=?|=)\s*(.+)$/i);
+  if (!m) return null;
+  return {
+    field: (m[1] || "").toLowerCase(),
+    op: m[2],
+    rawValue: (m[3] || "").trim().toLowerCase(),
+  };
+}
+
+function parseNumberValue(raw) {
+  const cleaned = String(raw || "").replace(",", ".").replace(/[^\d.-]/g, "");
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function matchNumericField(actual, op, expected) {
+  if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
+  if (op === ">" || op === ":>") return actual > expected;
+  if (op === "<" || op === ":<") return actual < expected;
+  if (op === ">=") return actual >= expected;
+  if (op === "<=") return actual <= expected;
+  return actual === expected;
+}
+
+function matchFieldToken(lead, token) {
+  const parsed = parseFieldToken(token);
+  if (!parsed) return null;
+  const value = parsed.rawValue;
+  const textOps = [":", "="];
+  const typeValue = (lead.type || "").toLowerCase();
+  const txValue = (lead.transaction_type || "vente").toLowerCase();
+
+  if (["ville", "city"].includes(parsed.field)) {
+    return (lead.city || "").toLowerCase().includes(value);
+  }
+  if (["cp", "postcode", "codepostal"].includes(parsed.field)) {
+    return (lead.postcode || "").toLowerCase().includes(value);
+  }
+  if (["nom", "owner", "proprietaire", "proprio"].includes(parsed.field)) {
+    return (lead.owner || "").toLowerCase().includes(value);
+  }
+  if (["type"].includes(parsed.field)) {
+    if (!textOps.includes(parsed.op)) return false;
+    return typeValue.includes(value);
+  }
+  if (["transaction", "tx", "vente", "location"].includes(parsed.field)) {
+    if (!textOps.includes(parsed.op)) return false;
+    if (parsed.field === "vente") return txValue === "vente";
+    if (parsed.field === "location") return txValue === "location";
+    return txValue.includes(value);
+  }
+  if (["source", "portail"].includes(parsed.field)) {
+    return (lead.source || "").toLowerCase().includes(value);
+  }
+  if (["m2", "surface", "surface_m2"].includes(parsed.field)) {
+    return matchNumericField(Number(lead.surface || 0), parsed.op, parseNumberValue(value));
+  }
+  if (["prix", "price"].includes(parsed.field)) {
+    return matchNumericField(Number(lead.price || 0), parsed.op, parseNumberValue(value));
+  }
+  if (["score", "mandat", "mandate"].includes(parsed.field)) {
+    return matchNumericField(Number(lead.mandate_score || 0), parsed.op, parseNumberValue(value));
+  }
+  return null;
+}
+
+function leadMatchesSearchQuery(lead, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const haystack = getLeadSearchText(lead);
+  return tokens.every((token) => {
+    const fieldMatch = matchFieldToken(lead, token);
+    if (fieldMatch !== null) return fieldMatch;
+    return haystack.includes(token);
+  });
 }
 
 function renderView(view = state.currentView) {
@@ -5353,6 +5469,7 @@ function renderLeads() {
         <div class="lead-card-body">
           <div class="property-title">${escapeHtml(lead.property_title || lead.address)}</div>
           <div class="property-meta">${escapeHtml(lead.mandate_score_reason || "")}</div>
+          ${leadQuickFactsHtml(lead)}
           <div class="property-meta">${escapeHtml(lead.property_detail || lead.property)} · ${formatPrice(lead)} ${getTransactionBadge(lead)} ${renderDvfBadge(lead)}</div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${getTypeBadge(lead)} ${getStatusBadge(lead.status)} <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(lead.mandate_score || 0))}</span></div>
         </div>
@@ -6456,8 +6573,13 @@ function buildDrawerBodyHtml(lead) {
       <div class="detail-row" data-drawer-field="owner"><span class="label">Contact</span><span class="value drawer-live-value">${escapeHtml(lead.owner)}</span></div>
       <div class="detail-row" data-drawer-field="price"><span class="label">Prix</span><span class="value drawer-live-value">${formatPrice(lead)} ${getTransactionBadge(lead)}</span></div>
       <div class="detail-row" data-drawer-field="surface"><span class="label">Surface</span><span class="value drawer-live-value">${lead.surface ? lead.surface + " m²" : "—"}</span></div>
+      <div class="detail-row"><span class="label">Adresse</span><span class="value">${escapeHtml(lead.address || "—")}</span></div>
+      <div class="detail-row"><span class="label">Ville</span><span class="value">${escapeHtml([lead.postcode, lead.city].filter(Boolean).join(" ") || "—")}</span></div>
+      <div class="detail-row"><span class="label">Source URL</span><span class="value drawer-link-inline">${lead.source_url ? `<a href="${escapeAttr(lead.source_url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a>` : "—"}</span></div>
       <div class="detail-row"><span class="label">En ligne</span><span class="value">${daysTxt}</span></div>
       <div class="detail-row"><span class="label">Portail</span><span class="value">${escapeHtml(lead.source)}</span></div>
+      <div class="detail-row"><span class="label">Détecté le</span><span class="value">${escapeHtml(formatDate(lead.created_at) || "—")}</span></div>
+      <div class="detail-row"><span class="label">Màj crawl</span><span class="value">${escapeHtml(formatDate(lead.updated_at) || "—")}</span></div>
       <div class="detail-row" data-drawer-field="score"><span class="label">Complétude données</span><span class="value drawer-live-value"><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}/100</span></span></div>
       <div class="detail-row" data-drawer-field="pipeline"><span class="label">Pipeline</span><span class="value drawer-live-value">${getStatusBadge(lead.pipeline || lead.status)}</span></div>
     </div>`;

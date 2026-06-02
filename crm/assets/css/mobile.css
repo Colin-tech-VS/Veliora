@@ -411,15 +411,16 @@
   .drawer-actions,
   .drawer-actions-stack {
     padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 0.5rem;
   }
 
   .drawer-actions .btn,
   .drawer-pipeline-btns .btn {
-    width: 100%;
+    width: auto;
     justify-content: center;
-    min-height: 44px;
+    min-height: 40px;
   }
 
   .drawer-pipeline-btns {
@@ -506,10 +507,10 @@
   /* Crawl dock / loader */
   .crawl-dock {
     bottom: calc(4.25rem + env(safe-area-inset-bottom));
-    left: 0.65rem;
     right: 0.65rem;
+    left: auto;
     width: auto;
-    max-width: none;
+    max-width: min(300px, calc(100vw - 1.3rem));
   }
 
   .script-panel {
@@ -1116,9 +1117,10 @@
   display: none;
   position: fixed;
   bottom: 1.25rem;
-  left: 1.25rem;
+  right: 1.25rem;
+  left: auto;
   z-index: 160;
-  width: min(360px, calc(100vw - 2rem));
+  width: min(332px, calc(100vw - 2rem));
   background: var(--navy-900);
   color: #fff;
   border-radius: var(--radius-lg);
@@ -1127,6 +1129,20 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.crawl-dock-compact {
+  position: absolute;
+  top: 0.45rem;
+  right: 2.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
 }
 
 .crawl-dock-close {
@@ -1147,6 +1163,29 @@
 
 .crawl-dock.open {
   display: block;
+}
+
+.crawl-dock.compact {
+  width: 220px;
+  padding: 0.65rem 0.75rem;
+  padding-top: 1.75rem;
+}
+
+.crawl-dock.compact .crawl-dock-scene,
+.crawl-dock.compact .crawl-dock-tip,
+.crawl-dock.compact .crawl-dock-stats,
+.crawl-dock.compact .crawl-dock-bar,
+.crawl-dock.compact .crawl-dock-meta {
+  display: none;
+}
+
+.crawl-dock.compact .crawl-dock-title {
+  font-size: 0.82rem;
+  margin-bottom: 0.15rem;
+}
+
+.crawl-dock.compact .crawl-dock-step {
+  margin-bottom: 0.2rem;
 }
 
 .crawl-dock-scene {
