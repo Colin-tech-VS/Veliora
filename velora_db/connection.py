@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from velora_db.config import backend_name, database_url, is_postgres, sqlite_path
 
@@ -22,6 +24,54 @@ logger = logging.getLogger(__name__)
 
 _pg_pool = None
 _pg_pool_failed = False
+
+# Cache de résolution IPv4 par hôte — getaddrinfo n'est appelé qu'une fois.
+_ipv4_cache: dict[str, str] = {}
+
+
+def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
+    """Renvoie {"hostaddr": "1.2.3.4"} si l'hôte du DATABASE_URL résout en IPv4.
+
+    Scalingo (et beaucoup d'hébergeurs) n'ont pas de connectivité IPv6
+    sortante. Supabase publie des DNS qui renvoient IPv6 en premier ;
+    psycopg essaie IPv6 et plante avec "Network is unreachable" sans
+    fallback IPv4. On force la résolution IPv4 via socket.getaddrinfo
+    et on passe l'IP directement à psycopg via `hostaddr` (le `host`
+    d'origine reste utilisé pour la vérification TLS / SNI).
+
+    Renvoie un dict vide si on ne peut pas résoudre — psycopg essaiera
+    son flot normal.
+    """
+    if not url:
+        return {}
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return {}
+    host = parsed.hostname
+    if not host:
+        return {}
+    cached = _ipv4_cache.get(host)
+    if cached:
+        return {"hostaddr": cached}
+    try:
+        port = parsed.port or 5432
+        infos = socket.getaddrinfo(
+            host, port, family=socket.AF_INET, type=socket.SOCK_STREAM
+        )
+    except socket.gaierror as exc:
+        logger.warning(
+            "Résolution IPv4 impossible pour %s : %s (laisse psycopg gérer)",
+            host,
+            exc,
+        )
+        return {}
+    if not infos:
+        return {}
+    ipv4 = infos[0][4][0]
+    _ipv4_cache[host] = ipv4
+    logger.info("DB host %s résolu en IPv4 %s (contournement IPv6 Scalingo)", host, ipv4)
+    return {"hostaddr": ipv4}
 
 
 class DbCursor:
@@ -142,13 +192,16 @@ def _get_postgres_pool():
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "40"))
+        # `hostaddr` injecté pour court-circuiter la résolution DNS IPv6 sur
+        # les hébergeurs sans IPv6 sortant (Scalingo, Heroku, certains conteneurs).
+        ipv4_kwargs = _resolve_ipv4_hostaddr(url)
         _pg_pool = ConnectionPool(
             url,
             min_size=0,
             max_size=pool_max,
             timeout=pool_timeout,
             max_waiting=pool_waiting,
-            kwargs={"row_factory": dict_row},
+            kwargs={"row_factory": dict_row, **ipv4_kwargs},
             open=True,
         )
         logger.info(
@@ -196,7 +249,8 @@ def _postgres_connection() -> DbConnection:
     url = database_url()
     if not url:
         raise RuntimeError("DATABASE_URL manquant pour Supabase")
-    raw = psycopg.connect(url, row_factory=dict_row, autocommit=False)
+    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
+    raw = psycopg.connect(url, row_factory=dict_row, autocommit=False, **ipv4_kwargs)
     return DbConnection(raw, postgres=True)
 
 
@@ -351,7 +405,8 @@ def init_postgres_schema() -> None:
 
     url = database_url()
     statements = _split_sql_script(sql)
-    with psycopg.connect(url, row_factory=dict_row) as conn:
+    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
+    with psycopg.connect(url, row_factory=dict_row, **ipv4_kwargs) as conn:
         with conn.cursor() as cur:
             for stmt in statements:
                 cur.execute(stmt)
