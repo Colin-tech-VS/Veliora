@@ -101,6 +101,7 @@ class CrawlerEngine:
         self._agency_id: str | None = None
         self._crawl_city: str | None = None
         self._dvf_queue: DvfParallelQueue | None = None
+        self._address_queue = None  # AddressMatchQueue | None
         self.running = False
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -237,6 +238,14 @@ class CrawlerEngine:
         self._dvf_queue = (
             DvfParallelQueue(agency_id) if DVF_PARALLEL_DURING_CRAWL else None
         )
+        from crawler.config import ADDRESS_MATCH_DURING_CRAWL
+
+        if ADDRESS_MATCH_DURING_CRAWL:
+            from crawler.address_match import AddressMatchQueue
+
+            self._address_queue = AddressMatchQueue(agency_id)
+        else:
+            self._address_queue = None
         profile_label = {
             "quality": "qualité max",
             "balanced": "équilibré (défaut)",
@@ -293,6 +302,12 @@ class CrawlerEngine:
             if self._dvf_queue and self._dvf_queue.stats["submitted"] > self._dvf_queue.stats["completed"]:
                 self._dvf_queue.drain()
             self._dvf_queue = None
+            if (
+                self._address_queue
+                and self._address_queue.stats["submitted"] > self._address_queue.stats["completed"]
+            ):
+                self._address_queue.drain()
+            self._address_queue = None
             self._agency_id = None
             from crawler.proxy_manager import end_crawl_session, reset_block_rotation_counter
 
@@ -322,6 +337,17 @@ class CrawlerEngine:
             self._dvf_queue.drain()
             dvf_line = self._dvf_queue.summary_line()
 
+        addr_line = ""
+        if self._address_queue:
+            if job_id:
+                update_crawl_job(
+                    job_id,
+                    progress=98,
+                    message="Rapprochement d'adresses en cours (DPE / BAN / cadastre)…",
+                )
+            self._address_queue.drain()
+            addr_line = self._address_queue.summary_line()
+
         status = "completed"
         if result.errors and not result.leads_saved and not result.leads_updated:
             if result.leads_found > 0 or result.warnings:
@@ -349,6 +375,8 @@ class CrawlerEngine:
 
         if dvf_line:
             msg = f"{msg} · {dvf_line}"
+        if addr_line:
+            msg = f"{msg} · {addr_line}"
 
         update_crawl_job(
             job_id,
@@ -1760,6 +1788,16 @@ class CrawlerEngine:
                     int(saved["id"]),
                     is_update=not saved.get("created"),
                 )
+            if self._address_queue:
+                try:
+                    from crawler.address_match.storage import save_lead_features
+
+                    feats = (lead.raw_extras or {}).get("listing_features")
+                    if feats:
+                        save_lead_features(int(saved["id"]), self._agency_id or "", feats)
+                except Exception:
+                    logger.debug("save_lead_features ignoré", exc_info=True)
+                self._address_queue.submit_lead(int(saved["id"]))
             summary = f"{lead.owner} — {lead.address or 'adresse OK'}"
             verif = saved.get("verification", "")
             if saved.get("created"):

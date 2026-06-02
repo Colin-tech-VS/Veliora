@@ -137,6 +137,26 @@ CREATE TABLE IF NOT EXISTS agency_settings (
     updated_at          TIMESTAMPTZ
 );
 
+-- Rapprochement d'adresse standardisé (DPE/DVF/cadastre/BAN), tables dédiées
+-- (pas d'ALTER sur leads → pas de verrou ACCESS EXCLUSIVE).
+CREATE TABLE IF NOT EXISTS lead_address_matches (
+    lead_id          INTEGER NOT NULL,
+    agency_id        TEXT NOT NULL,
+    probable_address TEXT,
+    confidence       INTEGER NOT NULL DEFAULT 0,
+    payload          TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY (lead_id, agency_id)
+);
+
+CREATE TABLE IF NOT EXISTS lead_features (
+    lead_id    INTEGER NOT NULL,
+    agency_id  TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (lead_id, agency_id)
+);
+
 CREATE TABLE IF NOT EXISTS lead_price_history (
     id              INTEGER PRIMARY KEY,
     lead_id         INTEGER NOT NULL REFERENCES leads(id),

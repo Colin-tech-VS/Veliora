@@ -47,6 +47,19 @@ DVF_PARALLEL_WORKERS = int(os.getenv("DVF_PARALLEL_WORKERS", _default_dvf_worker
 DVF_QUEUE_DRAIN_TIMEOUT_SEC = int(os.getenv("DVF_QUEUE_DRAIN_TIMEOUT_SEC", "120"))
 DVF_RECOMPARE_HOURS = 48
 
+# Rapprochement d'adresse (DPE/BAN/DVF/cadastre) en parallèle pendant le crawl.
+# Standardisé pour TOUTES les sources : post-processing après scraping.
+ADDRESS_MATCH_DURING_CRAWL = os.getenv("ADDRESS_MATCH_DURING_CRAWL", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+_default_addr_workers = "2" if IS_SCALINGO else "3"
+ADDRESS_MATCH_WORKERS = int(os.getenv("ADDRESS_MATCH_WORKERS", _default_addr_workers))
+ADDRESS_MATCH_DRAIN_TIMEOUT_SEC = int(
+    os.getenv("ADDRESS_MATCH_DRAIN_TIMEOUT_SEC", "150")
+)
+
 # Annonces traitées par crawl (0 = pas de plafond, jusqu'à MAX_LISTING_LINKS)
 MAX_LISTINGS_PER_SCAN = 0
 
