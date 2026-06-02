@@ -4493,7 +4493,11 @@ function matchFieldToken(lead, token) {
 }
 
 function leadMatchesSearchQuery(lead, query) {
-  const q = String(query || "").trim().toLowerCase();
+  const q = String(query || "")
+    .toLowerCase()
+    .replace(/m²/g, "m2")
+    .replace(/([a-z0-9_]+)\s*([:<>]=?|=)\s+/gi, "$1$2")
+    .trim();
   if (!q) return true;
   const tokens = q.split(/\s+/).filter(Boolean);
   const haystack = getLeadSearchText(lead);
@@ -4502,6 +4506,21 @@ function leadMatchesSearchQuery(lead, query) {
     if (fieldMatch !== null) return fieldMatch;
     return haystack.includes(token);
   });
+}
+
+function formatDateShort(value) {
+  if (!value) return "";
+  try {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("fr-FR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return "";
+  }
 }
 
 function renderView(view = state.currentView) {
@@ -6578,8 +6597,8 @@ function buildDrawerBodyHtml(lead) {
       <div class="detail-row"><span class="label">Source URL</span><span class="value drawer-link-inline">${lead.source_url ? `<a href="${escapeAttr(lead.source_url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a>` : "—"}</span></div>
       <div class="detail-row"><span class="label">En ligne</span><span class="value">${daysTxt}</span></div>
       <div class="detail-row"><span class="label">Portail</span><span class="value">${escapeHtml(lead.source)}</span></div>
-      <div class="detail-row"><span class="label">Détecté le</span><span class="value">${escapeHtml(formatDate(lead.created_at) || "—")}</span></div>
-      <div class="detail-row"><span class="label">Màj crawl</span><span class="value">${escapeHtml(formatDate(lead.updated_at) || "—")}</span></div>
+      <div class="detail-row"><span class="label">Détecté le</span><span class="value">${escapeHtml(formatDateShort(lead.created_at) || "—")}</span></div>
+      <div class="detail-row"><span class="label">Màj crawl</span><span class="value">${escapeHtml(formatDateShort(lead.updated_at) || "—")}</span></div>
       <div class="detail-row" data-drawer-field="score"><span class="label">Complétude données</span><span class="value drawer-live-value"><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}/100</span></span></div>
       <div class="detail-row" data-drawer-field="pipeline"><span class="label">Pipeline</span><span class="value drawer-live-value">${getStatusBadge(lead.pipeline || lead.status)}</span></div>
     </div>`;
