@@ -131,6 +131,35 @@ def _clean_lead_location_fields(lead: LeadData) -> None:
     lead.postcode = postcode or None
 
 
+def _clean_location_values(
+    address: str | None,
+    city: str | None,
+    postcode: str | None,
+    listing_title: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    addr = (address or "").strip()
+    ct = (city or "").strip()
+    pc = (postcode or "").strip()
+    title = (listing_title or "").strip()
+
+    if addr and _looks_like_listing_title(addr):
+        addr = ""
+    if ct and (_looks_like_listing_title(ct) or any(ch.isdigit() for ch in ct)):
+        ct = ""
+    if pc and not re.fullmatch(r"\d{5}", pc):
+        m_pc = re.search(r"\b(\d{5})\b", pc)
+        pc = m_pc.group(1) if m_pc else ""
+
+    m = _CITY_FROM_TITLE_RE.search(" ".join(p for p in (addr, title, ct) if p))
+    if m:
+        if not ct:
+            ct = m.group(1).strip()
+        if not pc:
+            pc = m.group(2)
+
+    return (addr or None, ct or None, pc or None)
+
+
 def _attach_estimates(leads: list[dict], agency_id: str) -> None:
     """Rattache price_estimate / price_estimate_at depuis lead_estimates (1 requête)."""
     if not leads:
@@ -1251,6 +1280,9 @@ def save_lead(
         lead = merge_lead_for_update(existing_lead, lead, deep_refresh=deep_refresh)
 
     lead = prepare_lead_defaults(lead)
+    from crm.dvf import apply_lead_location_fields
+    apply_lead_location_fields(lead)
+    _clean_lead_location_fields(lead)
     stored_pub = existing_row.get("published_at") if existing_row else None
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
@@ -1263,6 +1295,31 @@ def save_lead(
         lead, require_verification=effective_require_verification
     )
     if require_verification and not verification.ok:
+        if existing_row:
+            listing_title_hint = (
+                (lead.raw_extras or {}).get("listing_title")
+                or existing_row.get("listing_title")
+                or None
+            )
+            clean_addr, clean_city, clean_pc = _clean_location_values(
+                existing_row.get("address"),
+                existing_row.get("city"),
+                existing_row.get("postcode"),
+                listing_title_hint,
+            )
+            if (
+                clean_addr != existing_row.get("address")
+                or clean_city != existing_row.get("city")
+                or clean_pc != existing_row.get("postcode")
+            ):
+                with get_connection() as conn:
+                    conn.execute(
+                        """UPDATE leads
+                           SET address = ?, city = ?, postcode = ?, updated_at = ?
+                           WHERE id = ? AND agency_id = ?""",
+                        (clean_addr, clean_city, clean_pc, _now(), existing_row["id"], agency_id),
+                    )
+                    conn.commit()
         return {
             "id": existing_row["id"] if existing_row else None,
             "created": False,
@@ -1327,10 +1384,7 @@ def save_lead(
         else None
     )
 
-    from crm.dvf import apply_lead_location_fields
-
-    apply_lead_location_fields(lead)
-    _clean_lead_location_fields(lead)
+    # Already normalized before verification.
     lead_city = getattr(lead, "city", None)
     lead_postcode = getattr(lead, "postcode", None)
     lead_sector = getattr(lead, "sector", None)
