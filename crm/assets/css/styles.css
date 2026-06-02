@@ -4748,6 +4748,28 @@ body:has(.crawl-dock.open) .script-dock.open {
 
 .toast svg { flex-shrink: 0; margin-top: 0.1rem; }
 
+/* Bandeau hors connexion */
+#offline-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #7c2d12;
+  background: var(--amber-100, #fef3c7);
+  border-top: 1px solid var(--amber-500, #f59e0b);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+}
+#offline-banner[hidden] { display: none; }
+#offline-banner svg { flex-shrink: 0; }
+
 /* PWA install */
 .pwa-install-banner {
   margin-bottom: 1rem;

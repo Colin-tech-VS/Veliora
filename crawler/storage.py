@@ -1451,10 +1451,12 @@ def save_lead(
                     int(new_p),
                     now=now,
                 )
-                preview["price_change_count"] = conn.execute(
+                pcc_row = conn.execute(
                     "SELECT price_change_count FROM leads WHERE id = ?",
                     (existing_row["id"],),
-                ).fetchone()["price_change_count"]
+                ).fetchone()
+                if pcc_row is not None:
+                    preview["price_change_count"] = pcc_row["price_change_count"]
                 preview = enrich_lead_scores(preview)
                 mandate_score = preview["mandate_score"]
                 mandate_reason = preview["mandate_score_reason"]
@@ -1508,7 +1510,7 @@ def save_lead(
                     resolve_published_at(lead.published_at, stored_pub),
                     lead.source,
                     source_id,
-                    lead.type,
+                    segment["listing_type"],
                     lead.agency,
                     score,
                     mandate_score,

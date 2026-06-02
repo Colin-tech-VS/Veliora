@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=57">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=58">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=35">
 </head>
 <body>
@@ -1273,10 +1273,10 @@
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=11"></script>
-  <script src="/crm/assets/js/app.js?v=74"></script>
+  <script src="/crm/assets/js/app.js?v=75"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/crm/sw.js?v=5").then((reg) => {
+      navigator.serviceWorker.register("/crm/sw.js?v=6", { scope: "/crm" }).then((reg) => {
         reg.update().catch(() => {});
       }).catch(() => {});
     }

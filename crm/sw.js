@@ -1,10 +1,11 @@
-/* Veliora CRM — PWA shell + surveillance crawl en arrière-plan */
-const CACHE = "veliora-crm-v5";
+/* Veliora CRM — PWA shell + données hors connexion + surveillance crawl */
+const CACHE = "veliora-crm-v6";
+const API_CACHE = "veliora-crm-api-v1";
+const KEEP_CACHES = [CACHE, API_CACHE];
 const SHELL = [
   "/crm",
-  "/crm/assets/css/styles.css?v=39",
-  "/crm/assets/css/mobile.css?v=33",
-  "/crm/assets/js/crawl-watch.js",
+  "/crm/manifest.webmanifest",
+  "/vitrine/favicon.svg",
 ];
 
 const WATCH_INTERVAL_MS = 2500;
@@ -137,7 +138,9 @@ self.addEventListener("activate", (e) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+        Promise.all(
+          keys.filter((k) => !KEEP_CACHES.includes(k)).map((k) => caches.delete(k)),
+        ),
       )
       .then(() => self.clients.claim()),
   );
@@ -173,24 +176,86 @@ self.addEventListener("notificationclick", (e) => {
   );
 });
 
+/* Endpoints API non rejouables hors connexion : polling crawl, flux live,
+   images, exports et fichiers — on ne les met pas en cache (churn / binaire). */
+function isCacheableApi(pathname) {
+  if (pathname.includes("/crawler/")) return false;
+  if (
+    pathname.endsWith("/image") ||
+    pathname.includes("/export") ||
+    pathname.includes("/live-frame") ||
+    pathname.includes("/dossier-files")
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/* Données CRM en lecture : réseau d'abord, repli sur la dernière copie connue.
+   Permet de consulter leads / clients / mandats / sources hors connexion. */
+async function apiNetworkFirst(request, pathname) {
+  try {
+    const res = await fetch(request);
+    if (res.ok && isCacheableApi(pathname)) {
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const clone = res.clone();
+        caches.open(API_CACHE).then((c) => c.put(request, clone)).catch(() => {});
+      }
+    }
+    return res;
+  } catch (err) {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        offline: true,
+        error: "Hors connexion — données indisponibles pour le moment.",
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Veliora-Offline": "1",
+        },
+      },
+    );
+  }
+}
+
+/* Coquille de l'app : réseau d'abord (pour récupérer les mises à jour),
+   repli sur le cache puis sur /crm si tout échoue. */
+async function shellNetworkFirst(request) {
+  try {
+    const res = await fetch(request);
+    if (res.ok) {
+      const clone = res.clone();
+      caches.open(CACHE).then((c) => c.put(request, clone)).catch(() => {});
+    }
+    return res;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    const shell = await caches.match("/crm");
+    if (shell) return shell;
+    return new Response("Hors connexion", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+}
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith("/api/")) return;
+
+  if (url.pathname.startsWith("/api/")) {
+    e.respondWith(apiNetworkFirst(e.request, url.pathname));
+    return;
+  }
   if (isVitrinePath(url.pathname)) return;
   if (!url.pathname.startsWith("/crm")) return;
 
-  e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, clone));
-        }
-        return res;
-      })
-      .catch(() =>
-        caches.match(e.request).then((r) => r || caches.match("/crm")),
-      ),
-  );
+  e.respondWith(shellNetworkFirst(e.request));
 });

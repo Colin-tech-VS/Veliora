@@ -179,6 +179,19 @@ def _aid() -> str:
     return agency_id
 
 
+def _rescore_after_client_change(agency_id: str) -> None:
+    """Recalcule les scores des leads en arrière-plan après modif des profils
+    acheteurs/locataires (la demande compatible alimente le Score Mandat)."""
+    if not agency_id:
+        return
+    try:
+        from crm.scoring.batch import schedule_agency_rescore
+
+        schedule_agency_rescore(agency_id)
+    except Exception:
+        logging.exception("rescore après modification client")
+
+
 def _sources_payload():
     from crawler.storage import invalidate_sources_cache
 
@@ -496,7 +509,12 @@ def pwa_manifest():
 @app.route("/crm/sw.js")
 @app.route("/sw.js")
 def service_worker():
-    return send_from_directory(CRM_DIR, "sw.js", mimetype="application/javascript")
+    resp = send_from_directory(CRM_DIR, "sw.js", mimetype="application/javascript")
+    # Autorise un scope plus large que /crm/ pour contrôler aussi la page /crm
+    # (sans slash) — sinon l'interception réseau hors connexion ne s'applique pas.
+    resp.headers["Service-Worker-Allowed"] = "/crm"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 def _with_asset_cache(resp):
@@ -2324,6 +2342,8 @@ def api_clients_import():
         result = import_clients_from_rows(
             agency_id, rows, default_segment=default_segment
         )
+        if result.get("imported") or result.get("created") or result.get("updated"):
+            _rescore_after_client_change(agency_id)
         return jsonify({"ok": True, **result})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -2345,12 +2365,14 @@ def api_property_client_detail(client_id):
         return jsonify({"ok": True, "client": client})
     if request.method == "DELETE":
         if delete_property_client(client_id, agency_id):
+            _rescore_after_client_change(agency_id)
             return jsonify({"ok": True})
         return jsonify({"error": "Fiche introuvable"}), 404
     data = request.get_json(silent=True) or {}
     client = update_property_client(client_id, agency_id, data)
     if not client:
         return jsonify({"error": "Fiche introuvable"}), 404
+    _rescore_after_client_change(agency_id)
     return jsonify({"ok": True, "client": client})
 
 

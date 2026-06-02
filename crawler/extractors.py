@@ -632,10 +632,10 @@ def detect_transaction_type(soup: BeautifulSoup, page_url: str = "") -> Transact
     for sel in ("h1", ".item-title", "[data-qa-id*='title']", "title"):
         el = main.select_one(sel)
         if el:
-            tx = _transaction_from_text(el.get_text(" ", strip=True))
-            if RENT_HINT_RE.search(el.get_text(" ", strip=True)):
+            el_text = el.get_text(" ", strip=True)
+            if RENT_HINT_RE.search(el_text):
                 return "location"
-            if SALE_HINT_RE.search(el.get_text(" ", strip=True)):
+            if SALE_HINT_RE.search(el_text):
                 return "vente"
 
     crumbs = " ".join(

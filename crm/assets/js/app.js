@@ -1605,6 +1605,7 @@ async function init() {
   setupPlaybook();
   setupOnboarding();
   setupAccountMenu();
+  setupOfflineIndicator();
   window.addEventListener("resize", () => {
     applyMobileLeadsLayout();
     renderLeads();
@@ -7215,6 +7216,51 @@ function showWrongServerBanner(staleServer = false) {
 function hideWrongServerBanner() {
   const el = document.getElementById("server-warning-banner");
   if (el) el.hidden = true;
+}
+
+let _offlineToastShown = false;
+
+/** Bandeau hors connexion : signale que le CRM affiche les dernières données
+ *  mises en cache par le service worker (consultation possible sans réseau). */
+function setupOfflineIndicator() {
+  let banner = document.getElementById("offline-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "offline-banner";
+    banner.setAttribute("role", "status");
+    banner.setAttribute("aria-live", "polite");
+    banner.hidden = true;
+    banner.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" ' +
+      'viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">' +
+      '<path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0119 12.55M5 12.55a10.94 10.94 0 ' +
+      '015.17-2.39M10.71 5.05A16 16 0 0122.58 9M1.42 9a15.91 15.91 0 014.7-2.88M8.53 ' +
+      '16.11a6 6 0 016.95 0M12 20h.01"/></svg>' +
+      "<span>Mode hors connexion — données en cache (modifications indisponibles)</span>";
+    document.body.appendChild(banner);
+  }
+
+  const sync = () => {
+    const offline = navigator.onLine === false;
+    banner.hidden = !offline;
+    document.body.classList.toggle("is-offline", offline);
+    if (offline && !_offlineToastShown) {
+      _offlineToastShown = true;
+      try {
+        showToast("Connexion perdue — consultation des dernières données en cache.", "warning", 5000);
+      } catch {}
+    }
+    if (!offline && _offlineToastShown) {
+      _offlineToastShown = false;
+      try {
+        showToast("Connexion rétablie.", "success", 2500);
+      } catch {}
+    }
+  };
+
+  window.addEventListener("online", sync);
+  window.addEventListener("offline", sync);
+  sync();
 }
 
 function showToast(message, type = "info", duration = 4000) {
