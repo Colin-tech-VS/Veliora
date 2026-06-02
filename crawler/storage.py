@@ -926,10 +926,12 @@ def cancel_crawl_job(job_id: str, agency_id: str) -> bool:
         ).fetchone()
         if not row or row["status"] not in ("pending", "running"):
             return False
+        # Le message est passé en paramètre — sinon l'apostrophe française de
+        # « l'utilisateur » casse la syntaxe SQL sur Postgres (et plante en prod).
         conn.execute(
             """UPDATE crawl_jobs SET status = 'failed',
-               message = 'Annulé par l'utilisateur', finished_at = ? WHERE id = ? AND agency_id = ?""",
-            (_now(), job_id, agency_id),
+               message = ?, finished_at = ? WHERE id = ? AND agency_id = ?""",
+            ("Annulé par l'utilisateur", _now(), job_id, agency_id),
         )
         conn.commit()
     return True
