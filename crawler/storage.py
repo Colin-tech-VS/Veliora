@@ -43,6 +43,15 @@ _sources_cache: dict[str, tuple[float, list[dict]]] = {}
 _SETTINGS_CACHE_TTL_SEC = float(os.getenv("AGENCY_SETTINGS_CACHE_TTL", "90"))
 _settings_cache: dict[str, tuple[float, dict]] = {}
 
+_LISTING_TITLE_HINT_RE = re.compile(
+    r"\b(acheter|achat|vente|vendre|location|louer|appartement|maison|terrain|immobilier|pi[eè]ce|m2|m²)\b",
+    re.IGNORECASE,
+)
+_CITY_FROM_TITLE_RE = re.compile(
+    r"\b(?:à|a)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,50}?)\s*\((\d{5})\)",
+    re.IGNORECASE,
+)
+
 
 def invalidate_agency_settings_cache(agency_id: str | None = None) -> None:
     if agency_id:
@@ -77,6 +86,49 @@ def _compute_property_fingerprint(
     if surf_bucket < 5 or price_bucket < 1000:
         return None
     return f"{pc}_{surf_bucket}_{price_bucket}"
+
+
+def _looks_like_listing_title(text: str | None) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _LISTING_TITLE_HINT_RE.search(t):
+        return True
+    # Cas typique : "Acheter appartement à X (75000)" stocké en adresse/ville.
+    if _CITY_FROM_TITLE_RE.search(t):
+        return True
+    return False
+
+
+def _clean_lead_location_fields(lead: LeadData) -> None:
+    """Évite que titre d'annonce/nav soit persisté en adresse/ville/CP."""
+    from crawler.hub_detection import is_hub_listing_address
+
+    raw_title = ((lead.raw_extras or {}).get("listing_title") or "").strip()
+    addr = (lead.address or "").strip()
+    city = (lead.city or "").strip()
+    postcode = (lead.postcode or "").strip()
+
+    if addr and (is_hub_listing_address(addr) or _looks_like_listing_title(addr)):
+        addr = ""
+    if city and (_looks_like_listing_title(city) or any(ch.isdigit() for ch in city)):
+        city = ""
+    if postcode and not re.fullmatch(r"\d{5}", postcode):
+        m_pc = re.search(r"\b(\d{5})\b", postcode)
+        postcode = m_pc.group(1) if m_pc else ""
+
+    # Si ville/CP absents, tente extraction sûre depuis adresse ou titre.
+    loc_text = addr or raw_title
+    m = _CITY_FROM_TITLE_RE.search(loc_text or "")
+    if m:
+        if not city:
+            city = m.group(1).strip()
+        if not postcode:
+            postcode = m.group(2)
+
+    lead.address = addr or None
+    lead.city = city or None
+    lead.postcode = postcode or None
 
 
 def _attach_estimates(leads: list[dict], agency_id: str) -> None:
@@ -1278,6 +1330,7 @@ def save_lead(
     from crm.dvf import apply_lead_location_fields
 
     apply_lead_location_fields(lead)
+    _clean_lead_location_fields(lead)
     lead_city = getattr(lead, "city", None)
     lead_postcode = getattr(lead, "postcode", None)
     lead_sector = getattr(lead, "sector", None)
