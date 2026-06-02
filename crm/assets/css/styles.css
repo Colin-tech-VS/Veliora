@@ -6435,11 +6435,13 @@ body:has(.crawl-dock.open) .script-dock.open {
 #client-editor-modal .modal-card {
   max-width: 760px;
   padding: 1.1rem 1.2rem 1.2rem;
+  max-height: min(94vh, 880px);
+  overflow-y: auto;
 }
 
 .client-editor-form {
-  max-height: min(76vh, 720px);
-  overflow-y: auto;
+  /* Plus de scroll interne : le modal-card gère le défilement global,
+     sinon le panneau « Annonces compatibles » disparaît sous le pli sur mobile. */
   padding-right: 0.25rem;
 }
 
@@ -6488,6 +6490,95 @@ body:has(.crawl-dock.open) .script-dock.open {
   white-space: pre-wrap;
 }
 
+.client-matches {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+.client-matches-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+.client-matches-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.client-matches-count {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.client-matches-hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.client-matches-list {
+  display: grid;
+  gap: 0.55rem;
+  max-height: 38vh;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+.client-matches-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.client-match-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-surface, #fff);
+  display: grid;
+  gap: 0.35rem;
+}
+.client-match-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.client-match-head strong {
+  font-size: 0.9rem;
+  color: var(--v-ink, var(--text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+.client-match-score {
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(196, 92, 38, 0.12);
+  color: #b2532b;
+  flex-shrink: 0;
+}
+.client-match-score.high { background: rgba(34, 139, 70, 0.15); color: #1e8a4a; }
+.client-match-score.mid  { background: rgba(196, 92, 38, 0.15); color: #b2532b; }
+.client-match-score.low  { background: rgba(120, 113, 108, 0.18); color: #57534e; }
+.client-match-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.client-match-tags {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.client-match-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 900px) {
   #client-editor-modal .modal-card {
     max-width: 96vw;
@@ -6506,6 +6597,12 @@ body:has(.crawl-dock.open) .script-dock.open {
   }
   .client-editor-cities {
     grid-column: auto;
+  }
+  .client-matches-list {
+    max-height: 50vh;
+  }
+  .client-match-actions .btn {
+    flex: 1;
   }
 }
 

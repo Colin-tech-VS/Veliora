@@ -290,6 +290,82 @@ function openClientEditor(client, defaultSegment) {
   document.getElementById("client-notes").value = client?.notes || "";
 
   modal?.classList.add("open");
+  renderClientMatchesPanel(client);
+}
+
+async function renderClientMatchesPanel(client) {
+  const section = document.getElementById("client-matches");
+  const list = document.getElementById("client-matches-list");
+  const countEl = document.getElementById("client-matches-count");
+  if (!section || !list) return;
+  // Fiche jamais sauvegardée : on attend l'enregistrement pour proposer le matching.
+  if (!client?.id) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  list.innerHTML = `<p class="client-matches-empty">Recherche d'annonces compatibles…</p>`;
+  if (countEl) countEl.textContent = "—";
+
+  const esc = clientDeps?.escapeHtml || ((s) => String(s));
+  try {
+    const data = await clientDeps.api(`/clients/${client.id}/matches`);
+    if (!data?.ok) {
+      list.innerHTML = `<p class="client-matches-empty">${esc(data?.error || "Matching indisponible.")}</p>`;
+      return;
+    }
+    const counts = data.counts || {};
+    const seg = data.expected_transaction === "location" ? "location" : "vente";
+    const segLabel = seg === "location" ? "à louer" : "à vendre";
+    if (countEl) {
+      const tot = counts.total || 0;
+      countEl.textContent = tot
+        ? `${tot} annonce${tot > 1 ? "s" : ""} ${segLabel}${counts.in_budget ? ` · ${counts.in_budget} dans le budget` : ""}`
+        : `0 annonce ${segLabel}`;
+    }
+    const items = data.top_matches || [];
+    if (!items.length) {
+      list.innerHTML = `<p class="client-matches-empty">Aucune annonce ${segLabel} compatible aujourd'hui. Lancez un crawl ou élargissez les critères (villes, surface, budget) pour ouvrir le matching.</p>`;
+      return;
+    }
+    list.innerHTML = items
+      .map((m) => {
+        const price = m.price
+          ? `${Number(m.price).toLocaleString("fr-FR")} €${m.transaction_type === "location" ? " /mois" : ""}`
+          : "Prix non communiqué";
+        const surf = m.surface ? ` · ${m.surface} m²` : "";
+        const cityLine = [m.address || m.city, m.postcode].filter(Boolean).join(" ");
+        const reasons = (m.reasons || [])
+          .slice(0, 3)
+          .map((r) => `<span class="match-tag">${esc(r)}</span>`)
+          .join("");
+        const url = m.source_url ? `<a class="btn btn-ghost btn-sm" href="${esc(m.source_url)}" target="_blank" rel="noopener noreferrer">Voir l'annonce</a>` : "";
+        const scoreCls = m.score >= 75 ? "high" : m.score >= 55 ? "mid" : "low";
+        return `<article class="client-match-row" data-lead-id="${esc(m.lead_id)}">
+            <div class="client-match-head">
+              <strong>${esc(m.title || "Annonce")}</strong>
+              <span class="client-match-score ${scoreCls}">${m.score}%</span>
+            </div>
+            <div class="client-match-meta">${esc(cityLine || "—")} · ${esc(price)}${surf}</div>
+            ${reasons ? `<div class="client-match-tags">${reasons}</div>` : ""}
+            <div class="client-match-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-action="open-lead" data-lead-id="${esc(m.lead_id)}">Ouvrir la fiche</button>
+              ${url}
+            </div>
+          </article>`;
+      })
+      .join("");
+    list.querySelectorAll('[data-action="open-lead"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = parseInt(btn.dataset.leadId, 10);
+        if (!id) return;
+        closeClientEditor();
+        if (typeof window.openDrawer === "function") window.openDrawer(id);
+      });
+    });
+  } catch (err) {
+    list.innerHTML = `<p class="client-matches-empty">${esc(err.message || "Matching indisponible.")}</p>`;
+  }
 }
 
 function closeClientEditor() {

@@ -2354,6 +2354,24 @@ def api_property_client_detail(client_id):
     return jsonify({"ok": True, "client": client})
 
 
+@app.route("/api/clients/<client_id>/matches")
+def api_property_client_matches(client_id):
+    """Annonces du portefeuille compatibles avec un acheteur/locataire donné."""
+    from crm.mandates.storage import get_property_client
+    from crm.matching.service import build_client_matches
+
+    agency_id = _aid()
+    client = get_property_client(client_id, agency_id)
+    if not client:
+        return jsonify({"error": "Fiche introuvable"}), 404
+    try:
+        leads = get_leads(agency_id)
+        return jsonify(build_client_matches(client, leads))
+    except Exception as exc:
+        logging.exception("GET /api/clients/%s/matches", client_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.route("/api/crawler/crawl-url", methods=["POST"])
 def api_crawler_crawl_url():
     data = request.get_json(silent=True) or {}

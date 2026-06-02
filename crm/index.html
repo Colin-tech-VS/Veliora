@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=56">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=57">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=35">
 </head>
 <body>
@@ -1201,6 +1201,14 @@
           <button type="button" class="btn btn-danger-outline" id="client-btn-delete" hidden>Supprimer</button>
         </div>
       </form>
+      <section class="client-matches" id="client-matches" hidden>
+        <div class="client-matches-head">
+          <h3>Annonces compatibles</h3>
+          <span class="client-matches-count" id="client-matches-count">—</span>
+        </div>
+        <p class="client-matches-hint">Annonces du portefeuille qui correspondent aux critères de cette fiche. Cliquez pour ouvrir l'annonce et lancer un appel/SMS.</p>
+        <div class="client-matches-list" id="client-matches-list" aria-live="polite"></div>
+      </section>
     </div>
   </div>
 
@@ -1259,12 +1267,12 @@
 
   <script src="/crm/assets/js/data.js?v=2"></script>
   <script src="/crm/assets/js/logos.js"></script>
-  <script src="/crm/assets/js/clients.js?v=28"></script>
+  <script src="/crm/assets/js/clients.js?v=29"></script>
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
-  <script src="/crm/assets/js/map.js?v=10"></script>
+  <script src="/crm/assets/js/map.js?v=11"></script>
   <script src="/crm/assets/js/app.js?v=74"></script>
   <script>
     if ("serviceWorker" in navigator) {

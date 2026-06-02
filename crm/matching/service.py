@@ -246,3 +246,73 @@ def build_agency_match_index(leads: list[dict], clients: list[dict]) -> dict[int
             "counts": summary["counts"],
         }
     return index
+
+
+def build_client_matches(
+    client: dict,
+    leads: list[dict],
+    *,
+    top_n: int = 12,
+    min_score: int = 45,
+) -> dict:
+    """Liste les annonces du portefeuille compatibles avec un acheteur/locataire donné.
+
+    Réutilise `score_client_for_lead` (symétrique côté critères) pour éviter de
+    dupliquer la logique. La transaction du client (segment) doit correspondre
+    à celle de l'annonce — sinon le budget n'est pas comparable et la fiche
+    n'est pas remontée comme « compatible ».
+    """
+    segment = (client.get("segment") or "acheteur").lower()
+    expected_tx = _SEGMENT_TX.get(segment, "vente")
+
+    matches: list[dict] = []
+    for lead in leads or []:
+        # On exclut les annonces retirées / archivées : l'agent ne pourra rien en faire.
+        status = (lead.get("status") or "").lower()
+        if status == "retire":
+            continue
+        # Transaction doit matcher : un acheteur ne s'intéresse pas aux locations et vice-versa.
+        lead_tx = (lead.get("transaction_type") or "vente").lower()
+        if lead_tx != expected_tx:
+            continue
+
+        scored = score_client_for_lead(lead, client)
+        if not scored or scored["score"] < min_score:
+            continue
+
+        matches.append({
+            "lead_id": lead.get("id"),
+            "score": scored["score"],
+            "in_budget": scored.get("in_budget"),
+            "reasons": scored.get("reasons", []),
+            "title": lead.get("listing_title") or lead.get("address") or "Annonce",
+            "address": lead.get("address") or "",
+            "city": lead.get("city") or "",
+            "postcode": lead.get("postcode") or "",
+            "price": lead.get("price"),
+            "transaction_type": lead_tx,
+            "price_period": lead.get("price_period"),
+            "surface": lead.get("surface"),
+            "rooms": lead.get("rooms"),
+            "mandate_score": lead.get("mandate_score") or 0,
+            "listing_type": lead.get("listing_type") or lead.get("type"),
+            "source_url": lead.get("source_url"),
+            "image_url": lead.get("listing_image_url"),
+            "published_at": lead.get("published_at"),
+        })
+
+    matches.sort(key=lambda m: (m["score"], m.get("mandate_score") or 0), reverse=True)
+
+    in_budget = sum(1 for m in matches if m.get("in_budget") is True)
+    return {
+        "ok": True,
+        "client_id": client.get("id"),
+        "segment": segment,
+        "expected_transaction": expected_tx,
+        "counts": {
+            "total": len(matches),
+            "in_budget": in_budget,
+            "strong": sum(1 for m in matches if m["score"] >= 65),
+        },
+        "top_matches": matches[:top_n],
+    }

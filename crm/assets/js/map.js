@@ -830,53 +830,131 @@
   }
 
   function geoErrorMessage(err) {
-    return err.code === 1
-      ? "Autorisez la géolocalisation dans le navigateur"
-      : err.code === 3
-        ? "Position GPS trop lente — réessayez à l'extérieur"
-        : "Impossible d'obtenir votre position";
+    if (!err) return "Impossible d'obtenir votre position";
+    if (err.code === 1) {
+      // PERMISSION_DENIED — couvre aussi le cas « permission OS refusée » sous Windows.
+      return "Géolocalisation refusée. Vérifiez : Windows > Paramètres > Confidentialité > Localisation activée, et l'icône cadenas du navigateur (autoriser la localisation pour ce site).";
+    }
+    if (err.code === 2) {
+      // POSITION_UNAVAILABLE — capteurs OS indisponibles (cas fréquent sur PC fixe sans Wi-Fi/Bluetooth).
+      return "Position GPS indisponible — sur PC, activez le Wi-Fi (sert au positionnement) ou branchez-vous en mobile partagé. Sur Windows : Paramètres > Confidentialité > Localisation.";
+    }
+    if (err.code === 3) {
+      return "Position GPS trop lente — réessayez à l'extérieur ou activez le Wi-Fi pour accélérer la triangulation.";
+    }
+    return err.message || "Impossible d'obtenir votre position";
+  }
+
+  function isSecureContextForGeo() {
+    // Chrome et la plupart des navigateurs bloquent la géoloc en contexte non sécurisé
+    // (sauf localhost / 127.0.0.1).
+    if (window.isSecureContext) return true;
+    const h = location.hostname || "";
+    return h === "localhost" || h === "127.0.0.1" || h.endsWith(".localhost");
+  }
+
+  /**
+   * Pré-vérifie l'état de permission via Permissions API.
+   * Retourne "granted" | "prompt" | "denied" | "unknown".
+   * Permet d'afficher un message clair avant même d'appeler getCurrentPosition,
+   * qui sur certains PC reste bloqué silencieusement quand la perm est refusée.
+   */
+  async function checkGeoPermission() {
+    if (!navigator.permissions?.query) return "unknown";
+    try {
+      const status = await navigator.permissions.query({ name: "geolocation" });
+      return status.state || "unknown";
+    } catch {
+      return "unknown";
+    }
   }
 
   /** Recentre une fois sur la position (sans activer le mode live). */
   function locateUser({ quiet = false, recenter = true } = {}) {
     const { showToast } = deps();
+
+    if (!isSecureContextForGeo()) {
+      const msg =
+        "Géolocalisation bloquée : le navigateur l'interdit hors HTTPS. Ouvrez Veliora via http://localhost:8000 ou en HTTPS.";
+      if (!quiet) showToast(msg, "warning", 9000);
+      return Promise.reject(new Error("insecure_context"));
+    }
+
     if (!navigator.geolocation) {
-      if (!quiet) showToast("Géolocalisation non disponible", "warning");
+      if (!quiet) showToast("Géolocalisation non disponible sur ce navigateur", "warning");
       return Promise.reject(new Error("geolocation_unavailable"));
     }
-    return new Promise((resolve, reject) => {
-      const onOk = (pos) => {
-        applyUserPosition(pos, { recenter });
-        if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
-        resolve(pos);
-      };
-      const onFail = (err) => {
+
+    return checkGeoPermission().then((perm) => {
+      if (perm === "denied") {
+        const msg = geoErrorMessage({ code: 1 });
+        if (!quiet) showToast(msg, "warning", 9000);
+        return Promise.reject(new Error("permission_denied"));
+      }
+
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const settle = (fn) => (val) => {
+          if (settled) return;
+          settled = true;
+          fn(val);
+        };
+
+        const onOk = settle((pos) => {
+          applyUserPosition(pos, { recenter });
+          if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
+          resolve(pos);
+        });
+
+        // Fallback basse précision (réseau / IP) — plus rapide et tolérant.
+        const lowAccuracy = (origErr) => {
+          navigator.geolocation.getCurrentPosition(
+            settle((pos2) => {
+              applyUserPosition(pos2, { recenter });
+              if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
+              resolve(pos2);
+            }),
+            settle((err2) => {
+              if (!quiet) showToast(geoErrorMessage(err2 || origErr), "warning", 9000);
+              reject(err2 || origErr);
+            }),
+            { enableHighAccuracy: false, timeout: 12000, maximumAge: 180000 },
+          );
+        };
+
+        // Sur PC sans GPS, enableHighAccuracy=true peut rester bloqué jusqu'au timeout :
+        // on coupe court à 8s puis on bascule en basse précision automatiquement.
+        const hiAccuracyTimer = setTimeout(() => {
+          if (!settled) lowAccuracy({ code: 3, message: "Timeout haute précision" });
+        }, 8500);
+
         navigator.geolocation.getCurrentPosition(
-          (pos2) => {
-            applyUserPosition(pos2, { recenter });
-            if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
-            resolve(pos2);
-          },
-          (err2) => {
-            if (!quiet) showToast(geoErrorMessage(err2 || err), "warning");
-            reject(err2 || err);
-          },
-          { enableHighAccuracy: false, timeout: 22000, maximumAge: 180000 },
+          (pos) => { clearTimeout(hiAccuracyTimer); onOk(pos); },
+          (err) => { clearTimeout(hiAccuracyTimer); lowAccuracy(err); },
+          { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 },
         );
-      };
-      navigator.geolocation.getCurrentPosition(onOk, onFail, {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 60000,
       });
     });
   }
 
   /** Active le détecteur live : suivi GPS continu + cercle + liste de proximité. */
-  function enableAroundMe() {
+  async function enableAroundMe() {
     const { showToast } = deps();
+    if (!isSecureContextForGeo()) {
+      showToast(
+        "Géolocalisation bloquée : ouvrez Veliora sur http://localhost:8000 ou en HTTPS.",
+        "warning",
+        9000,
+      );
+      return;
+    }
     if (!navigator.geolocation) {
       showToast("Géolocalisation non disponible sur cet appareil", "warning");
+      return;
+    }
+    const perm = await checkGeoPermission();
+    if (perm === "denied") {
+      showToast(geoErrorMessage({ code: 1 }), "warning", 9000);
       return;
     }
     state.aroundMe = true;
@@ -884,6 +962,15 @@
     state.firstFix = false;
     syncAroundUi();
     showToast("Détecteur activé — recherche de votre position…", "info", 3500);
+
+    // Premier fix robuste : on tente d'abord locateUser (avec fallback basse précision),
+    // puis on attache un watchPosition pour le suivi continu. Évite que le détecteur
+    // reste « En attente de votre position GPS… » indéfiniment sur PC fixe.
+    locateUser({ quiet: true, recenter: true }).catch(() => {
+      // Erreur déjà signalée à l'utilisateur par locateUser ; on continue le watch
+      // qui pourra réussir si l'OS finit par fournir une position.
+    });
+
     if (state.watchId != null) navigator.geolocation.clearWatch(state.watchId);
     state.watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -892,8 +979,11 @@
         applyUserPosition(pos, { recenter: first });
       },
       (err) => {
-        showToast(geoErrorMessage(err), "warning");
-        if (err.code === 1) disableAroundMe();
+        if (err.code === 1) {
+          showToast(geoErrorMessage(err), "warning", 9000);
+          disableAroundMe();
+        }
+        // Les erreurs 2/3 sur watch sont fréquentes et transitoires : on ne spamme pas.
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 5000 },
     );
