@@ -2515,8 +2515,135 @@ function setupViewToggle() {
   });
 }
 
+let leadsRefreshAllModalBound = false;
+let leadsRefreshAllResolver = null;
+const leadsRefreshBatchState = {
+  batchId: null,
+  timer: null,
+  seen: new Set(),
+};
+
+function closeLeadsRefreshAllModal(confirmed = false) {
+  document.getElementById("leads-refresh-all-modal")?.classList.remove("open");
+  if (leadsRefreshAllResolver) {
+    leadsRefreshAllResolver(Boolean(confirmed));
+    leadsRefreshAllResolver = null;
+  }
+}
+
+function openLeadsRefreshAllModal(activeCount) {
+  const modal = document.getElementById("leads-refresh-all-modal");
+  const txt = document.getElementById("leads-refresh-all-text");
+  if (!modal) return Promise.resolve(false);
+  if (txt) {
+    txt.textContent = `Recrawler annonce par annonce les ${activeCount} prospect(s) actifs ?`;
+  }
+  modal.classList.add("open");
+  return new Promise((resolve) => {
+    leadsRefreshAllResolver = resolve;
+  });
+}
+
+function setupLeadsRefreshAllModal() {
+  if (leadsRefreshAllModalBound) return;
+  leadsRefreshAllModalBound = true;
+  document
+    .getElementById("leads-refresh-all-cancel")
+    ?.addEventListener("click", () => closeLeadsRefreshAllModal(false));
+  document
+    .getElementById("leads-refresh-all-confirm")
+    ?.addEventListener("click", () => closeLeadsRefreshAllModal(true));
+  document.getElementById("leads-refresh-all-modal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "leads-refresh-all-modal") closeLeadsRefreshAllModal(false);
+  });
+  document
+    .getElementById("leads-refresh-progress-close")
+    ?.addEventListener("click", closeLeadsRefreshProgressModal);
+  document.getElementById("leads-refresh-progress-modal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "leads-refresh-progress-modal") closeLeadsRefreshProgressModal();
+  });
+}
+
+function openLeadsRefreshProgressModal() {
+  document.getElementById("leads-refresh-progress-modal")?.classList.add("open");
+}
+
+function closeLeadsRefreshProgressModal() {
+  document.getElementById("leads-refresh-progress-modal")?.classList.remove("open");
+}
+
+function stopLeadsRefreshProgressPoll() {
+  if (leadsRefreshBatchState.timer) {
+    clearTimeout(leadsRefreshBatchState.timer);
+    leadsRefreshBatchState.timer = null;
+  }
+}
+
+function pushLeadsRefreshProgressFeed(lines = []) {
+  const feed = document.getElementById("leads-refresh-progress-feed");
+  if (!feed) return;
+  lines.forEach((line) => {
+    if (!line || leadsRefreshBatchState.seen.has(line)) return;
+    leadsRefreshBatchState.seen.add(line);
+    const li = document.createElement("li");
+    li.textContent = line;
+    feed.appendChild(li);
+  });
+  while (feed.children.length > 10) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function renderLeadsRefreshProgress(status) {
+  const pct = Math.max(0, Math.min(100, Number(status.progress_pct || 0)));
+  const total = Number(status.total || 0);
+  const completed = Number(status.completed || 0);
+  const failed = Number(status.failed || 0);
+  const current = status.current_lead_id ? ` · Prospect #${status.current_lead_id}` : "";
+  const stepEl = document.getElementById("leads-refresh-progress-step");
+  const fillEl = document.getElementById("leads-refresh-progress-fill");
+  const metaEl = document.getElementById("leads-refresh-progress-meta");
+  if (stepEl) {
+    stepEl.textContent =
+      status.status === "completed"
+        ? "Recrawl global terminé"
+        : `Recrawl en cours${current}`;
+  }
+  if (fillEl) fillEl.style.width = `${pct}%`;
+  if (metaEl) {
+    metaEl.textContent = `${completed} / ${total} prospect(s) traité(s)${
+      failed ? ` · ${failed} en erreur` : ""
+    }`;
+  }
+  pushLeadsRefreshProgressFeed(status.logs || []);
+}
+
+async function pollLeadsRefreshAllBatch(batchId) {
+  leadsRefreshBatchState.batchId = batchId;
+  stopLeadsRefreshProgressPoll();
+  openLeadsRefreshProgressModal();
+  const tick = async () => {
+    try {
+      const status = await api(`/leads/refresh-all/${batchId}/status`);
+      renderLeadsRefreshProgress(status);
+      if (status.status === "completed") {
+        stopLeadsRefreshProgressPoll();
+        showToast("Recrawl global terminé", "success", 5000);
+        await refreshAppData();
+        return;
+      }
+      leadsRefreshBatchState.timer = setTimeout(tick, 2500);
+    } catch (err) {
+      stopLeadsRefreshProgressPoll();
+      showToast(err.message || "Suivi du recrawl indisponible", "warning");
+    }
+  };
+  tick();
+}
+
 function setupLeadsActions() {
+  setupLeadsRefreshAllModal();
   document.getElementById("leads-refresh-all-btn")?.addEventListener("click", async () => {
+    const refreshBtn = document.getElementById("leads-refresh-all-btn");
     const activeCount = LEADS.filter((l) => (l.status || "nouveau") !== "retire").length;
     if (!activeCount) {
       showToast("Aucun prospect actif à recrawler", "warning");
@@ -2526,19 +2653,35 @@ function setupLeadsActions() {
       showToast("Un crawl est déjà en cours", "warning");
       return;
     }
-    const ok = confirm(
-      `Recrawler annonce par annonce les ${activeCount} prospects actifs (sans crawl par ville) ?`,
-    );
+    const ok = await openLeadsRefreshAllModal(activeCount);
     if (!ok) return;
     try {
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = "Recrawl en cours…";
+      }
+      showToast("Lancement du recrawl global…", "info", 2500);
       const res = await api("/leads/refresh-all", { method: "POST" });
       const queued = Number(res.queued || 0);
       const skipped = Number(res.skipped_no_url || 0);
       const failed = Number(res.failed || 0);
+      const batchId = res.batch_id || null;
       if (!queued) {
         showToast("Aucun prospect recrawlable (URL d'annonce manquante)", "warning");
         return;
       }
+      leadsRefreshBatchState.seen.clear();
+      const feed = document.getElementById("leads-refresh-progress-feed");
+      if (feed) feed.innerHTML = "";
+      renderLeadsRefreshProgress({
+        progress_pct: 0,
+        total: queued,
+        completed: 0,
+        failed: 0,
+        status: "running",
+        logs: ["Batch recrawl lancé…"],
+      });
+      if (batchId) pollLeadsRefreshAllBatch(batchId);
       showToast(
         `Recrawl lancé: ${queued} prospect(s) en file${skipped ? ` · ${skipped} sans URL` : ""}${failed ? ` · ${failed} en erreur` : ""}`,
         "success",
@@ -2546,6 +2689,11 @@ function setupLeadsActions() {
       );
     } catch (err) {
       showToast(err.message || "Recrawl global indisponible", "error");
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Recrawler tous les prospects";
+      }
     }
   });
 
@@ -2702,6 +2850,8 @@ function setupDrawer() {
       closeDrawer();
       closeCrawlUrlModal();
       closeAddSourceModal();
+      closeLeadsRefreshAllModal(false);
+      closeLeadsRefreshProgressModal();
     }
   });
 

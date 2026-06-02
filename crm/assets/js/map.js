@@ -38,6 +38,7 @@
     firstFix: false,
     mapsReady: false,
     loading: false,
+    aroundScanLoading: false,
     lastError: null,
   };
 
@@ -589,6 +590,64 @@
     return apiFn(`/map${q}`, { timeoutMs: geocode ? 45000 : 25000 });
   }
 
+  async function reverseCityFromPosition(lat, lng) {
+    const { api: apiFn } = deps();
+    if (!apiFn) throw new Error("API indisponible");
+    const res = await apiFn("/map/reverse-city", {
+      method: "POST",
+      body: { lat, lng },
+      timeoutMs: 15000,
+    });
+    if (!res?.ok || !res.city) {
+      throw new Error(res?.error || "Ville introuvable depuis la position GPS");
+    }
+    return res;
+  }
+
+  async function scanAroundMe() {
+    const { api: apiFn, showToast } = deps();
+    if (!apiFn) {
+      showToast("API indisponible", "warning");
+      return;
+    }
+    if (state.aroundScanLoading) return;
+    if (!state.userPos) {
+      locateUser();
+      showToast("Position GPS requise avant le scan local", "info");
+      return;
+    }
+    state.aroundScanLoading = true;
+    const btn = document.getElementById("map-btn-scan-around");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Scan en cours…";
+    }
+    try {
+      const geo = await reverseCityFromPosition(state.userPos.lat, state.userPos.lng);
+      const city = geo.city;
+      const scanRes = await apiFn("/crawler/scan", {
+        method: "POST",
+        body: { city },
+        timeoutMs: 20000,
+      });
+      if (scanRes?.error) throw new Error(scanRes.error);
+      showToast(
+        `Scan local lancé sur ${city}. Les nouvelles annonces autour de vous vont remonter automatiquement.`,
+        "success",
+        7000,
+      );
+      setTimeout(() => enter(false), 2000);
+    } catch (err) {
+      showToast(err?.message || "Impossible de lancer le scan local", "warning");
+    } finally {
+      state.aroundScanLoading = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Scanner autour";
+      }
+    }
+  }
+
   function placeUserMarker() {
     if (!state.userPos || !state.map) return;
     if (state.userMarker) {
@@ -995,6 +1054,7 @@
     document.getElementById("map-btn-locate")?.addEventListener("click", locateUser);
     document.getElementById("map-btn-agency")?.addEventListener("click", centerOnAgency);
     document.getElementById("map-btn-refresh")?.addEventListener("click", () => enter(true));
+    document.getElementById("map-btn-scan-around")?.addEventListener("click", scanAroundMe);
     document.getElementById("map-btn-around")?.addEventListener("click", () => {
       if (!state.aroundMe) {
         enableAroundMe();

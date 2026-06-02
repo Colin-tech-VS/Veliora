@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -62,6 +64,26 @@ CRM_INDEX = CRM_DIR / "index.html"
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 _db_init_lock = threading.Lock()
+_refresh_all_batches: dict[str, dict] = {}
+_refresh_all_lock = threading.Lock()
+
+
+def _refresh_all_batch_snapshot(batch_id: str) -> dict | None:
+    with _refresh_all_lock:
+        b = _refresh_all_batches.get(batch_id)
+        if not b:
+            return None
+        # Copie shallow + copie de la liste logs pour éviter les courses.
+        out = {**b}
+        out["logs"] = list(b.get("logs") or [])
+        return out
+
+
+def _append_refresh_log(batch: dict, message: str) -> None:
+    logs = batch.setdefault("logs", [])
+    logs.append(message)
+    if len(logs) > 18:
+        del logs[: len(logs) - 18]
 
 
 @app.before_request
@@ -1095,12 +1117,30 @@ def api_refresh_lead_body():
 
 @app.route("/api/leads/refresh-all", methods=["POST"])
 def api_refresh_all_leads():
-    """Enfile un recrawl annonce-par-annonce pour tous les prospects actifs."""
+    """Lance un recrawl séquentiel annonce-par-annonce pour tous les prospects actifs."""
     agency_id = _aid()
+    with _refresh_all_lock:
+        running = next(
+            (
+                b
+                for b in _refresh_all_batches.values()
+                if b.get("agency_id") == agency_id and b.get("status") == "running"
+            ),
+            None,
+        )
+    if running:
+        return jsonify({
+            "ok": True,
+            "already_running": True,
+            "batch_id": running["id"],
+            "queued": running.get("total", 0),
+            "skipped_no_url": running.get("skipped_no_url", 0),
+            "failed": running.get("failed", 0),
+        })
+
     leads = get_leads(agency_id)
-    queued = 0
+    queued_ids: list[int] = []
     skipped_no_url = 0
-    failed = 0
     for row in leads:
         if (row.get("status") or "nouveau") == "retire":
             continue
@@ -1108,16 +1148,105 @@ def api_refresh_all_leads():
             skipped_no_url += 1
             continue
         try:
-            engine.refresh_lead(int(row["id"]), agency_id=agency_id)
-            queued += 1
-        except Exception:
-            failed += 1
-            logging.exception("refresh_all enqueue failed for lead %s", row.get("id"))
+            queued_ids.append(int(row["id"]))
+        except (TypeError, ValueError):
+            continue
+
+    batch_id = uuid.uuid4().hex
+    batch = {
+        "id": batch_id,
+        "agency_id": agency_id,
+        "status": "running",
+        "total": len(queued_ids),
+        "completed": 0,
+        "failed": 0,
+        "skipped_no_url": skipped_no_url,
+        "current_lead_id": None,
+        "current_job_id": None,
+        "started_at": time.time(),
+        "ended_at": None,
+        "logs": [],
+    }
+    with _refresh_all_lock:
+        _refresh_all_batches[batch_id] = batch
+
+    def _worker():
+        try:
+            for lead_id in queued_ids:
+                with _refresh_all_lock:
+                    batch["current_lead_id"] = lead_id
+                    batch["current_job_id"] = None
+                _append_refresh_log(batch, f"Recrawl prospect #{lead_id}…")
+                try:
+                    job = engine.refresh_lead(lead_id, agency_id=agency_id)
+                except Exception:
+                    with _refresh_all_lock:
+                        batch["failed"] += 1
+                    _append_refresh_log(batch, f"Prospect #{lead_id} : échec lancement")
+                    logging.exception("refresh_all launch failed for lead %s", lead_id)
+                    continue
+                job_id = (job or {}).get("id")
+                with _refresh_all_lock:
+                    batch["current_job_id"] = job_id
+                # Attente de fin du job en cours (le moteur n'autorise qu'un job actif).
+                terminal = None
+                for _ in range(180):  # ~6 min max par annonce
+                    if not job_id:
+                        break
+                    j = get_crawl_job(job_id, agency_id)
+                    if not j:
+                        break
+                    st = (j.get("status") or "").lower()
+                    if st in ("completed", "failed", "cancelled"):
+                        terminal = st
+                        break
+                    time.sleep(2)
+                with _refresh_all_lock:
+                    batch["completed"] += 1
+                    if terminal in ("failed", "cancelled"):
+                        batch["failed"] += 1
+                if terminal in ("failed", "cancelled"):
+                    _append_refresh_log(batch, f"Prospect #{lead_id} : échec")
+                else:
+                    _append_refresh_log(batch, f"Prospect #{lead_id} : terminé")
+        finally:
+            with _refresh_all_lock:
+                batch["status"] = "completed"
+                batch["current_lead_id"] = None
+                batch["current_job_id"] = None
+                batch["ended_at"] = time.time()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
     return jsonify({
         "ok": True,
-        "queued": queued,
+        "batch_id": batch_id,
+        "queued": len(queued_ids),
         "skipped_no_url": skipped_no_url,
-        "failed": failed,
+        "failed": 0,
+    })
+
+
+@app.route("/api/leads/refresh-all/<batch_id>/status", methods=["GET"])
+def api_refresh_all_leads_status(batch_id: str):
+    batch = _refresh_all_batch_snapshot(batch_id)
+    if not batch or batch.get("agency_id") != _aid():
+        return jsonify({"ok": False, "error": "Batch introuvable"}), 404
+    total = int(batch.get("total") or 0)
+    completed = int(batch.get("completed") or 0)
+    pct = int(round((completed / total) * 100)) if total > 0 else 100
+    return jsonify({
+        "ok": True,
+        "id": batch["id"],
+        "status": batch.get("status") or "running",
+        "total": total,
+        "completed": completed,
+        "failed": int(batch.get("failed") or 0),
+        "skipped_no_url": int(batch.get("skipped_no_url") or 0),
+        "current_lead_id": batch.get("current_lead_id"),
+        "current_job_id": batch.get("current_job_id"),
+        "progress_pct": pct,
+        "logs": batch.get("logs") or [],
     })
 
 
@@ -1775,6 +1904,24 @@ def api_map():
         return jsonify({"ok": False, "error": str(exc), "code": "database_busy"}), 503
     except Exception as exc:
         logging.exception("GET /api/map")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/map/reverse-city", methods=["POST"])
+def api_map_reverse_city():
+    from crm.maps.service import reverse_geocode_city
+
+    data = request.get_json(silent=True) or {}
+    try:
+        lat = float(data.get("lat"))
+        lng = float(data.get("lng"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Coordonnées invalides"}), 400
+    try:
+        result = reverse_geocode_city(lat, lng)
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logging.exception("POST /api/map/reverse-city")
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 

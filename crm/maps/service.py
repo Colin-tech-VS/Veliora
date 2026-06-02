@@ -283,6 +283,27 @@ def _reverse_geocode_ban(lat: float, lng: float) -> str | None:
     return label or None
 
 
+def reverse_geocode_city(lat: float, lng: float) -> dict[str, str | None]:
+    params = urllib.parse.urlencode(
+        {"lat": f"{lat:.6f}", "lon": f"{lng:.6f}", "limit": 1}
+    )
+    url = f"https://api-adresse.data.gouv.fr/reverse/?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Veliora-CRM/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return {"city": None, "postcode": None, "label": None}
+    feats = payload.get("features") or []
+    if not feats:
+        return {"city": None, "postcode": None, "label": None}
+    props = feats[0].get("properties") or {}
+    city = (props.get("city") or props.get("name") or "").strip() or None
+    postcode = (props.get("postcode") or "").strip() or None
+    label = (props.get("label") or "").strip() or None
+    return {"city": city, "postcode": postcode, "label": label}
+
+
 def _geocode_google(query: str, api_key: str) -> tuple[float, float] | None:
     params = urllib.parse.urlencode(
         {"address": query, "key": api_key, "region": "fr", "language": "fr"}

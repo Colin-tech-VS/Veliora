@@ -692,6 +692,44 @@
           </div>
         </div>
 
+        <div class="modal-overlay" id="leads-refresh-all-modal" role="dialog" aria-labelledby="leads-refresh-all-title" aria-modal="true">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 id="leads-refresh-all-title">Recrawler tous les prospects</h3>
+            </div>
+            <div class="modal-body">
+              <p id="leads-refresh-all-text" class="refresh-all-confirm-text">
+                Confirmer le recrawl global des prospects actifs ?
+              </p>
+              <p class="form-hint refresh-all-confirm-hint">
+                Veliora va relancer un recrawl annonce-par-annonce (sans crawl national).
+              </p>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="leads-refresh-all-cancel">Annuler</button>
+                <button type="button" class="btn btn-primary" id="leads-refresh-all-confirm">Lancer le recrawl</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-overlay" id="leads-refresh-progress-modal" role="dialog" aria-labelledby="leads-refresh-progress-title" aria-modal="true">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 id="leads-refresh-progress-title">Recrawl global en cours</h3>
+            </div>
+            <div class="modal-body">
+              <p id="leads-refresh-progress-step" class="refresh-all-confirm-text">Préparation du recrawl…</p>
+              <div class="lead-refresh-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="lead-refresh-bar-fill" id="leads-refresh-progress-fill" style="width:0%"></div>
+              </div>
+              <p id="leads-refresh-progress-meta" class="form-hint refresh-all-confirm-hint">0 / 0 prospect traité</p>
+              <ul id="leads-refresh-progress-feed" class="lead-refresh-feed"></ul>
+              <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="leads-refresh-progress-close">Fermer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Pipeline -->
         <div class="view" id="view-pipeline">
           <p class="pipeline-board-hint">Glissez-déposez les cartes entre les colonnes (comme Trello) pour faire avancer chaque dossier.</p>
@@ -732,6 +770,9 @@
                 </select>
                 <button type="button" class="btn btn-secondary btn-sm map-btn-particuliers active" id="map-btn-particuliers" title="Filtrer les particuliers autour de moi" aria-pressed="true">
                   Particuliers
+                </button>
+                <button type="button" class="btn btn-primary btn-sm" id="map-btn-scan-around" title="Lancer un crawl local autour de ma position">
+                  Scanner autour
                 </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="map-btn-locate" title="Recentrer sur ma position">
                   Ma position
