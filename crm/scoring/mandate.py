@@ -198,7 +198,7 @@ def compute_mandate_score(
         )
         tags.append("dvf_sous_marche")
         positive.append({"key": "dvf", "label": "Léger sous marché DVF", "detail": ""})
-    elif dvf_v == "aligne_marche":
+    elif dvf_v == "marche":
         pts = apply_weight(4, "dvf_aligne", w)
         contributions.append(ScoreContribution("dvf_aligne", "Prix aligné marché", pts, ""))
     elif dvf_v == "sur_marche":

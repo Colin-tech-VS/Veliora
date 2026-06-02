@@ -699,6 +699,8 @@ def compare_listing_to_dvf(
 
     listing_m2 = price / surface
     median = stats["median_m2"]
+    if not median:
+        return {**stats, "available": False, "listing_m2": round(listing_m2, 0)}
     delta_pct = round((listing_m2 - median) / median * 100, 1)
 
     if delta_pct <= -12:

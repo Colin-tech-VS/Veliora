@@ -1004,7 +1004,10 @@ def api_dvf_compare_lead(lead_id):
 @app.route("/api/dvf/compare-all", methods=["POST"])
 def api_dvf_compare_all():
     data = request.get_json(silent=True) or {}
-    limit = min(int(data.get("limit") or 25), 50)
+    try:
+        limit = min(int(data.get("limit") or 25), 50)
+    except (TypeError, ValueError):
+        limit = 25
     try:
         result = compare_leads_dvf_batch(_aid(), limit=limit)
     except Exception as exc:
@@ -1977,11 +1980,15 @@ def api_mandates_list():
 
     agency_id = _aid()
     if request.method == "GET":
+        try:
+            lead_id = int(request.args["lead_id"]) if request.args.get("lead_id") else None
+        except (TypeError, ValueError):
+            return jsonify({"error": "lead_id doit être un entier"}), 400
         mandates = list_seller_mandates(
             agency_id,
             mandate_type=request.args.get("type") or None,
             status=request.args.get("status") or None,
-            lead_id=int(request.args["lead_id"]) if request.args.get("lead_id") else None,
+            lead_id=lead_id,
         )
         return jsonify({"ok": True, "mandates": mandates})
     data = request.get_json(silent=True) or {}

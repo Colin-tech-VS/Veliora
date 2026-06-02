@@ -247,7 +247,7 @@ def build_ai_analysis(lead: dict) -> dict[str, Any]:
             f"Les ventes DVF récentes ({place}) placent ce bien au-dessus de la "
             f"médiane locale — un angle « estimation objective » peut ouvrir la discussion."
         )
-    elif dvf_v == "aligne":
+    elif dvf_v == "marche":
         paragraphs.append(
             f"Les ventes DVF récentes ({place}) indiquent un prix aligné sur le "
             f"marché — misez sur la visibilité et l'accompagnement plutôt que sur le prix."
@@ -931,14 +931,14 @@ def _dvf_observation_sentence(lead: dict) -> str | None:
             f"votre prix affiché semble environ {_bold(f'{pct} %')} en dessous de cette médiane."
         )
 
-    if verdict in ("surmarche", "leger_surmarche") and delta_f is not None and delta_f > 0:
+    if verdict == "sur_marche" and delta_f is not None and delta_f > 0:
         pct = round(delta_f)
         return (
             f"Les ventes récentes ({_bold('DVF')}) situent la médiane à environ {_bold(f'{med_s} €/m²')} ; "
             f"votre annonce est environ {_bold(f'{pct} %')} au-dessus de ce niveau."
         )
 
-    if verdict == "aligne":
+    if verdict == "marche":
         return (
             f"Les ventes récentes du quartier ({_bold('DVF')}) tournent autour de "
             f"{_bold(f'{med_s} €/m²')}, proche de votre prix affiché."
