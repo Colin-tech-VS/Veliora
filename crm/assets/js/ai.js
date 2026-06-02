@@ -21,12 +21,15 @@
   const CHAT_REQUEST_TIMEOUT_MS = 95000;
 
   function deps() {
+    const globalEscapeHtml = (typeof window !== "undefined" && typeof window.escapeHtml === "function")
+      ? window.escapeHtml
+      : null;
     return {
       api: typeof api === "function" ? api : null,
       API: typeof API === "string" ? API : "/api",
       getAuthHeaders: typeof getAuthHeaders === "function" ? getAuthHeaders : () => ({}),
       showToast: typeof showToast === "function" ? showToast : () => {},
-      escapeHtml: typeof escapeHtml === "function" ? escapeHtml : (s) => String(s ?? ""),
+      escapeHtml: globalEscapeHtml || ((s) => String(s ?? "")),
       openDrawer: typeof openDrawer === "function" ? openDrawer : null,
     };
   }
