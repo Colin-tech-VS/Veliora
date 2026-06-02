@@ -914,6 +914,42 @@ def api_lead_matches(lead_id):
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+@app.route("/api/leads/<int:lead_id>/address", methods=["GET", "POST"])
+def api_lead_address(lead_id):
+    """Adresse probable estimée + score de confiance + candidats justifiés.
+
+    GET  : renvoie le dernier rapprochement persisté (ou 404 si jamais calculé).
+    POST : (re)calcule à la demande en croisant DPE / BAN / DVF / cadastre.
+    """
+    agency_id = _aid()
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return jsonify({"error": "Prospect introuvable"}), 404
+
+    from crawler.address_match.storage import get_address_match
+
+    if request.method == "GET":
+        resolution, updated_at = get_address_match(lead_id, agency_id)
+        if not resolution:
+            return jsonify({
+                "ok": False,
+                "reason": "Aucun rapprochement calculé — lancez un POST pour estimer.",
+                "lead_id": lead_id,
+            }), 404
+        return jsonify({"ok": True, "updated_at": updated_at, **resolution})
+
+    try:
+        from crawler.address_match.queue import resolve_and_store_lead_address
+
+        resolution = resolve_and_store_lead_address(lead_id, agency_id)
+    except Exception as exc:
+        logging.exception("POST /api/leads/%s/address", lead_id)
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    if resolution.get("error"):
+        return jsonify({"ok": False, **resolution}), 502
+    return jsonify(resolution)
+
+
 @app.route("/api/dvf/compare/<int:lead_id>", methods=["POST"])
 def api_dvf_compare_lead(lead_id):
     try:

@@ -95,6 +95,32 @@ CREATE TABLE IF NOT EXISTS lead_estimates (
     PRIMARY KEY (lead_id, agency_id)
 );
 
+-- Rapprochement d'adresse (DPE/DVF/cadastre/BAN) : table dédiée, même logique
+-- anti-verrou que lead_estimates. Le détail (candidats + raisons) vit en JSON ;
+-- probable_address / confidence sont dénormalisés pour tri & filtre rapides.
+CREATE TABLE IF NOT EXISTS lead_address_matches (
+    lead_id          INTEGER NOT NULL,
+    agency_id        TEXT NOT NULL,
+    probable_address TEXT,
+    confidence       INTEGER NOT NULL DEFAULT 0,
+    payload          TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY (lead_id, agency_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_address_matches_agency
+    ON lead_address_matches(agency_id, confidence DESC);
+
+-- Caractéristiques structurées extraites de l'annonce (DPE, pièces, année,
+-- équipements…), alimentées par tous les crawlers et consommées par le matching.
+CREATE TABLE IF NOT EXISTS lead_features (
+    lead_id    INTEGER NOT NULL,
+    agency_id  TEXT NOT NULL,
+    payload    TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (lead_id, agency_id)
+);
+
 -- Crawl jobs
 CREATE TABLE IF NOT EXISTS crawl_jobs (
     id              TEXT PRIMARY KEY,

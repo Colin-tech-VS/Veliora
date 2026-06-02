@@ -105,7 +105,13 @@ class BaseAdapter(ABC):
         from crawler.listing_facts import verify_and_apply_listing_facts
 
         verify_and_apply_listing_facts(lead, soup, url)
-        return enrich_core_listing_fields(html, url, lead)
+        lead = enrich_core_listing_fields(html, url, lead)
+        # Caractéristiques structurées standardisées (héritées par tous les
+        # adaptateurs) — alimentent le rapprochement d'adresse en post-processing.
+        from crawler.address_match.features import apply_features_to_lead
+
+        apply_features_to_lead(lead, soup, url, html=html)
+        return lead
 
     def enhance_listing(self, html: str, url: str, lead: LeadData) -> LeadData:
         return lead
@@ -354,6 +360,9 @@ class GenericAdapter(BaseAdapter):
         lead = generic_extract(html, url, source=source)
         soup = BeautifulSoup(html, "lxml")
         verify_and_apply_listing_facts(lead, soup, url)
+        from crawler.address_match.features import apply_features_to_lead
+
+        apply_features_to_lead(lead, soup, url, html=html)
         return lead
 
 
