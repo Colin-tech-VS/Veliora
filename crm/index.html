@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=59">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=60">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=35">
 </head>
 <body>
@@ -195,6 +195,48 @@
               <p class="onboarding-spot-hint">↓ Bloc « Opportunités du marché » juste en dessous</p>
             </div>
           </aside>
+
+          <section class="crm-howto" id="crm-howto" aria-label="Comment Veliora fonctionne">
+            <button type="button" class="crm-howto-close" id="crm-howto-close" title="Masquer ce guide" aria-label="Fermer">×</button>
+            <div class="crm-howto-head">
+              <span class="crm-howto-kicker">Comment Veliora fonctionne</span>
+              <h2>4 étapes du portail au mandat signé</h2>
+            </div>
+            <ol class="crm-howto-steps">
+              <li class="crm-howto-step" data-step="crawler">
+                <span class="crm-howto-num">1</span>
+                <div class="crm-howto-step-body">
+                  <strong>Configurer le crawler</strong>
+                  <p>Choisis tes portails et ta ville cible. Veliora va scanner LeBonCoin, SeLoger, PAP, BienIci, etc. à ta place.</p>
+                  <button type="button" class="crm-howto-link" data-howto-goto="crawler">Ouvrir Crawler →</button>
+                </div>
+              </li>
+              <li class="crm-howto-step" data-step="leads">
+                <span class="crm-howto-num">2</span>
+                <div class="crm-howto-step-body">
+                  <strong>Lire le Score Mandat™</strong>
+                  <p>Chaque annonce est notée /100 selon ancienneté, baisses de prix, DVF, joignabilité. Les plus chaudes remontent en tête.</p>
+                  <button type="button" class="crm-howto-link" data-howto-goto="leads">Voir mes prospects →</button>
+                </div>
+              </li>
+              <li class="crm-howto-step" data-step="playbook">
+                <span class="crm-howto-num">3</span>
+                <div class="crm-howto-step-body">
+                  <strong>Appeler avec le script</strong>
+                  <p>Pour chaque vendeur, Veliora génère un script d'appel personnalisé, un SMS, un email et le bon créneau pour appeler.</p>
+                  <button type="button" class="crm-howto-link" data-howto-goto="playbook">Scripts d'appel →</button>
+                </div>
+              </li>
+              <li class="crm-howto-step" data-step="mandates">
+                <span class="crm-howto-num">4</span>
+                <div class="crm-howto-step-body">
+                  <strong>Signer le mandat</strong>
+                  <p>Mandat de vente ou location pré-rempli, à imprimer ou à envoyer à signer. Suivi pipeline du premier contact à la signature.</p>
+                  <button type="button" class="crm-howto-link" data-howto-goto="mandates">Mandats →</button>
+                </div>
+              </li>
+            </ol>
+          </section>
 
           <section class="crm-dashboard-hero" id="crm-dashboard-hero" aria-label="Score Mandat et opportunités du marché">
             <div class="crm-hero-copy">
@@ -1345,8 +1387,8 @@
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
-  <script src="/crm/assets/js/app.js?v=76"></script>
-  <script src="/crm/assets/js/ai.js?v=3"></script>
+  <script src="/crm/assets/js/app.js?v=77"></script>
+  <script src="/crm/assets/js/ai.js?v=4"></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/crm/sw.js?v=6", { scope: "/crm" }).then((reg) => {

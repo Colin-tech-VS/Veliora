@@ -539,9 +539,17 @@
           label.innerHTML = `Aucun modèle installé — <code>ollama pull ${escapeHtml(model)}</code>`;
         }
       }
-    } catch {
+    } catch (err) {
       if (dot) dot.dataset.state = "off";
-      if (label) label.textContent = "Statut IA inconnu";
+      if (label) {
+        const msg = (err && err.message) ? err.message : "inconnu";
+        // On affiche directement la raison réelle pour ne pas laisser l'agent
+        // deviner — typiquement « Route API introuvable » signifie que
+        // Scalingo doit redéployer avec le code multi-provider.
+        label.innerHTML = /route api introuvable|404/i.test(msg)
+          ? "Endpoint IA absent — Scalingo doit redéployer (push main + manual deploy)"
+          : `Statut IA indisponible : ${escapeHtml(msg)}`;
+      }
     }
   }
 

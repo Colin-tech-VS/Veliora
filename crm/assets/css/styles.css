@@ -772,6 +772,127 @@ body {
 .score-pill.mandate.low { background: rgba(148, 163, 184, 0.2); color: #64748b; }
 
 /* ─── Dashboard : Score Mandat + opportunités marché ─── */
+/* ── « Comment Veliora fonctionne » — guide pédagogique dashboard ─────── */
+.crm-howto {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.1rem 1.4rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+.crm-howto[hidden] { display: none; }
+.crm-howto-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.7rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
+}
+.crm-howto-close:hover {
+  background: var(--bg-muted);
+  color: var(--v-clay);
+}
+.crm-howto-head { margin-bottom: 0.95rem; }
+.crm-howto-kicker {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-primary);
+  margin-bottom: 0.25rem;
+}
+.crm-howto-head h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  letter-spacing: -0.01em;
+}
+.crm-howto-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.crm-howto-step {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.85rem 0.85rem 0.95rem;
+  background: var(--bg-app);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out);
+}
+.crm-howto-step:hover {
+  border-color: var(--brand-primary);
+  transform: translateY(-1px);
+}
+.crm-howto-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-primary);
+  color: #fff;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+.crm-howto-step-body { min-width: 0; }
+.crm-howto-step-body strong {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  margin-bottom: 0.2rem;
+}
+.crm-howto-step-body p {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.crm-howto-link {
+  background: none;
+  border: none;
+  color: var(--brand-primary);
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.crm-howto-link:hover {
+  color: var(--brand-primary-dark);
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .crm-howto-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .crm-howto-steps { grid-template-columns: 1fr; }
+}
+
 .crm-dashboard-hero {
   display: grid;
   grid-template-columns: 1fr minmax(260px, 340px);
@@ -7638,30 +7759,17 @@ body:has(.crawl-dock.open) .script-dock.open {
    Assistant IA — design intégré (laiton + ardoise) avec animations
    ────────────────────────────────────────────────────────────────── */
 
-.nav-item-ai {
-  position: relative;
-}
-.nav-item-ai::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(135deg, rgba(196, 165, 116, 0.18), rgba(74, 107, 101, 0.18));
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out);
-}
-.nav-item-ai:hover::after,
-.nav-item-ai.active::after { opacity: 1; }
+.nav-item-ai { position: relative; }
 .nav-badge-ai {
-  background: linear-gradient(135deg, var(--brand-accent), var(--v-brass-light));
-  color: var(--brand-text);
-  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-sidebar);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  font-size: 0.62rem;
   border-radius: 999px;
-  padding: 0.15rem 0.45rem;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 #view-ai.view {
@@ -7706,17 +7814,10 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 
 .ai-brand-glow {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--v-brass-light) 0%, var(--v-brass) 70%);
-  box-shadow: 0 0 12px rgba(196, 165, 116, 0.7);
-  animation: aiPulse 2.4s ease-in-out infinite;
-}
-
-@keyframes aiPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.18); opacity: 0.85; }
+  background: var(--brand-secondary);
 }
 
 .ai-conversations {
@@ -7858,16 +7959,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   box-shadow: 0 6px 32px rgba(30, 51, 64, 0.08);
 }
 
-.ai-chat::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(900px 360px at 12% -10%, rgba(196, 165, 116, 0.18), transparent 70%),
-    radial-gradient(700px 320px at 110% 110%, rgba(74, 107, 101, 0.12), transparent 70%);
-  opacity: 0.9;
-}
+/* Plus de halos radiaux : on garde un fond uni, plus sobre / plus pro. */
 
 .ai-chat-head {
   position: relative;
@@ -7875,24 +7967,21 @@ body:has(.crawl-dock.open) .script-dock.open {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.1rem 1.4rem 0.9rem;
+  padding: 1rem 1.4rem;
   border-bottom: 1px solid var(--v-border-warm);
-  background: linear-gradient(135deg, #ffffff 0%, var(--v-cream) 100%);
+  background: #fff;
 }
 .ai-chat-head-text h1 {
   margin: 0;
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 1.6rem;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--v-ink);
 }
 .ai-chat-head-accent {
-  background: linear-gradient(135deg, var(--v-brass) 0%, var(--v-clay) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  font-style: italic;
+  color: var(--brand-primary);
+  font-weight: 700;
 }
 .ai-chat-head-text p {
   margin: 0.15rem 0 0;
@@ -7948,37 +8037,22 @@ body:has(.crawl-dock.open) .script-dock.open {
   margin: auto 0;
 }
 .ai-welcome h2 {
-  font-family: 'Cormorant Garamond', serif;
-  font-size: 1.9rem;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 1.4rem;
+  font-weight: 700;
   margin: 0 0 0.5rem;
   color: var(--v-ink);
+  letter-spacing: -0.01em;
 }
 .ai-welcome p {
   margin: 0 auto 1.4rem;
-  max-width: 540px;
-  font-size: 0.95rem;
+  max-width: 560px;
+  font-size: 0.92rem;
   color: var(--text-secondary);
   line-height: 1.55;
 }
-.ai-welcome-glow {
-  position: absolute;
-  top: -30px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 220px;
-  height: 220px;
-  border-radius: 50%;
-  pointer-events: none;
-  background: radial-gradient(circle, rgba(196, 165, 116, 0.45) 0%, transparent 70%);
-  filter: blur(40px);
-  animation: aiHalo 6s ease-in-out infinite alternate;
-  z-index: 0;
-}
-@keyframes aiHalo {
-  0%   { transform: translateX(-50%) translateY(0); opacity: 0.7; }
-  100% { transform: translateX(-50%) translateY(-12px); opacity: 1; }
-}
+/* Halo flottant supprimé : on reste sobre. */
+.ai-welcome-glow { display: none; }
 .ai-suggestions {
   position: relative;
   display: flex;
@@ -8045,29 +8119,29 @@ body:has(.crawl-dock.open) .script-dock.open {
   align-items: flex-start;
 }
 .ai-msg-avatar {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+  background: var(--brand-primary);
   color: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(31, 78, 216, 0.35);
   position: relative;
 }
 .ai-msg-avatar svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 .ai-msg-assistant.ai-msg-streaming .ai-msg-avatar::after {
   content: "";
   position: absolute;
-  inset: -3px;
+  inset: -2px;
   border-radius: 50%;
-  border: 2px solid rgba(196, 165, 116, 0.5);
-  animation: aiSpin 1.4s linear infinite;
+  border: 1.5px solid rgba(31, 78, 216, 0.35);
+  border-top-color: transparent;
+  animation: aiSpin 1.2s linear infinite;
 }
 @keyframes aiSpin {
   to { transform: rotate(360deg); }
@@ -8249,13 +8323,14 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 .ai-composer-clear:hover { background: var(--v-sand); color: var(--v-clay); }
 .ai-composer-send {
-  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+  background: var(--brand-primary);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(31, 78, 216, 0.35);
+  box-shadow: 0 2px 6px rgba(31, 78, 216, 0.18);
 }
 .ai-composer-send:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.04);
-  box-shadow: 0 10px 22px rgba(245, 158, 11, 0.45);
+  background: var(--brand-primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(31, 78, 216, 0.28);
 }
 .ai-composer-send:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 .ai-composer-send.loading svg { display: none; }

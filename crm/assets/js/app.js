@@ -1608,6 +1608,7 @@ async function init() {
   setupRadar();
   setupPlaybook();
   setupOnboarding();
+  setupHowto();
   setupAccountMenu();
   setupOfflineIndicator();
   window.addEventListener("resize", () => {
@@ -7568,6 +7569,31 @@ async function markOnboardingStep3Seen() {
   } catch {
     /* ignore */
   }
+}
+
+const HOWTO_DISMISS_KEY = "veliora_howto_dismissed_v1";
+
+function setupHowto() {
+  const panel = document.getElementById("crm-howto");
+  if (!panel) return;
+  // Masquer définitivement si l'utilisateur a déjà cliqué sur la croix.
+  if (localStorage.getItem(HOWTO_DISMISS_KEY) === "1") {
+    panel.hidden = true;
+  }
+  document.getElementById("crm-howto-close")?.addEventListener("click", () => {
+    panel.hidden = true;
+    try {
+      localStorage.setItem(HOWTO_DISMISS_KEY, "1");
+    } catch {
+      /* localStorage indisponible — pas grave */
+    }
+  });
+  panel.querySelectorAll("[data-howto-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const view = btn.dataset.howtoGoto;
+      if (view) switchView(view);
+    });
+  });
 }
 
 function setupOnboarding() {
