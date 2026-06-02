@@ -1093,6 +1093,34 @@ def api_refresh_lead_body():
     return _api_refresh_lead_impl(lead_id)
 
 
+@app.route("/api/leads/refresh-all", methods=["POST"])
+def api_refresh_all_leads():
+    """Enfile un recrawl annonce-par-annonce pour tous les prospects actifs."""
+    agency_id = _aid()
+    leads = get_leads(agency_id)
+    queued = 0
+    skipped_no_url = 0
+    failed = 0
+    for row in leads:
+        if (row.get("status") or "nouveau") == "retire":
+            continue
+        if not (row.get("source_url") or "").strip():
+            skipped_no_url += 1
+            continue
+        try:
+            engine.refresh_lead(int(row["id"]), agency_id=agency_id)
+            queued += 1
+        except Exception:
+            failed += 1
+            logging.exception("refresh_all enqueue failed for lead %s", row.get("id"))
+    return jsonify({
+        "ok": True,
+        "queued": queued,
+        "skipped_no_url": skipped_no_url,
+        "failed": failed,
+    })
+
+
 @app.route("/api/leads/delete-all", methods=["POST"])
 def api_delete_all_leads():
     data = request.get_json(silent=True) or {}

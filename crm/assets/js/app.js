@@ -2527,10 +2527,26 @@ function setupLeadsActions() {
       return;
     }
     const ok = confirm(
-      `Relancer un crawl global pour mettre à jour les ${activeCount} prospects actifs ?`,
+      `Recrawler annonce par annonce les ${activeCount} prospects actifs (sans crawl par ville) ?`,
     );
     if (!ok) return;
-    await runManualScan();
+    try {
+      const res = await api("/leads/refresh-all", { method: "POST" });
+      const queued = Number(res.queued || 0);
+      const skipped = Number(res.skipped_no_url || 0);
+      const failed = Number(res.failed || 0);
+      if (!queued) {
+        showToast("Aucun prospect recrawlable (URL d'annonce manquante)", "warning");
+        return;
+      }
+      showToast(
+        `Recrawl lancé: ${queued} prospect(s) en file${skipped ? ` · ${skipped} sans URL` : ""}${failed ? ` · ${failed} en erreur` : ""}`,
+        "success",
+        6500,
+      );
+    } catch (err) {
+      showToast(err.message || "Recrawl global indisponible", "error");
+    }
   });
 
   document.getElementById("leads-delete-all-btn")?.addEventListener("click", async () => {
