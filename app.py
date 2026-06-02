@@ -273,6 +273,31 @@ def handle_not_found(e):
     return f"Not Found — {request.path}.{hint}", 404
 
 
+@app.errorhandler(405)
+def handle_method_not_allowed(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": f"Méthode {request.method} non autorisée sur {request.path}."}), 405
+    return "Method Not Allowed", 405
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    """Garantit une réponse JSON sur /api/* même en cas d'exception non gérée.
+
+    Sans ce filet, Flask renvoie une page HTML d'erreur 500 et le front
+    plante sur `r.json()` (« Unexpected token '<' »).
+    """
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(e, HTTPException):
+        # Laisse les handlers dédiés (404/405) et erreurs HTTP normales gérer.
+        return e
+    logging.exception("Erreur serveur non gérée sur %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Erreur serveur inattendue. Réessayez dans un instant."}), 500
+    raise e
+
+
 def _static_mimetype(filename: str) -> str | None:
     if filename.endswith(".svg"):
         return "image/svg+xml"
