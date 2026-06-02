@@ -838,7 +838,20 @@
 
   .drawer-portal-actions .btn {
     width: 100%;
-    min-height: 44px;
+    min-height: 40px;
+  }
+
+  .drawer-actions-primary {
+    width: 100%;
+  }
+
+  .drawer-actions-secondary {
+    width: 100%;
+  }
+
+  .drawer-actions-secondary .btn {
+    width: 100%;
+    min-height: 40px;
   }
 
   /* Modales & formulaires */

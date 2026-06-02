@@ -2711,6 +2711,17 @@ function setupDrawer() {
       openMandateFromLead(lead, "location");
       return;
     }
+    if (e.target.closest("#drawer-actions-toggle")) {
+      e.preventDefault();
+      const wrap = document.getElementById("drawer-actions-secondary");
+      const btn = document.getElementById("drawer-actions-toggle");
+      const isOpen = wrap?.classList.toggle("open");
+      if (btn) {
+        btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        btn.textContent = isOpen ? "Moins d'actions" : "Plus d'actions";
+      }
+      return;
+    }
     if (e.target.closest("#drawer-journey-mandat")) {
       e.preventDefault();
       openMandateFromLead(lead, lead.transaction_type === "location" ? "location" : "vente");
@@ -6774,6 +6785,13 @@ function openDrawer(id) {
   updateDrawerPipelineButtons(lead);
   requestAnimationFrame(() => {
     updateDrawerChrome(lead);
+    const actionsWrap = document.getElementById("drawer-actions-secondary");
+    const actionsToggle = document.getElementById("drawer-actions-toggle");
+    actionsWrap?.classList.remove("open");
+    if (actionsToggle) {
+      actionsToggle.setAttribute("aria-expanded", "false");
+      actionsToggle.textContent = "Plus d'actions";
+    }
     const body = document.getElementById("drawer-body");
     if (body) body.scrollTop = 0;
   });

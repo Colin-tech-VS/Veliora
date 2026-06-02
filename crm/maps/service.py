@@ -264,6 +264,25 @@ def _geocode_nominatim(query: str) -> tuple[float, float] | None:
     return lat, lng
 
 
+def _reverse_geocode_ban(lat: float, lng: float) -> str | None:
+    params = urllib.parse.urlencode(
+        {"lat": f"{lat:.6f}", "lon": f"{lng:.6f}", "limit": 1}
+    )
+    url = f"https://api-adresse.data.gouv.fr/reverse/?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Veliora-CRM/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    feats = payload.get("features") or []
+    if not feats:
+        return None
+    props = feats[0].get("properties") or {}
+    label = (props.get("label") or "").strip()
+    return label or None
+
+
 def _geocode_google(query: str, api_key: str) -> tuple[float, float] | None:
     params = urllib.parse.urlencode(
         {"address": query, "key": api_key, "region": "fr", "language": "fr"}
@@ -336,6 +355,48 @@ def _save_lead_coords(lead_id: int, agency_id: str, lat: float, lng: float) -> N
         conn.commit()
 
 
+def _approx_address_label(postcode: str | None, city: str | None) -> str:
+    pc = (postcode or "").strip()
+    ct = (city or "").strip()
+    tail = " ".join(p for p in (pc, ct) if p)
+    return f"{tail} (approx.)" if tail else ""
+
+
+def _save_lead_approx_address(
+    lead_id: int,
+    agency_id: str,
+    approx_address: str,
+) -> None:
+    if not approx_address:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE leads
+               SET address = ?, updated_at = ?
+             WHERE id = ? AND agency_id = ?
+               AND (
+                 address IS NULL OR TRIM(address) = ''
+                 OR LOWER(TRIM(address)) IN ('—', '-', 'n/a', 'non renseigné')
+               )
+            """,
+            (approx_address, _now(), lead_id, agency_id),
+        )
+        conn.commit()
+
+
+def _best_approx_address(
+    lat: float,
+    lng: float,
+    postcode: str | None,
+    city: str | None,
+) -> str:
+    reverse_label = _reverse_geocode_ban(lat, lng)
+    if reverse_label:
+        return f"{reverse_label} (approx.)"
+    return _approx_address_label(postcode, city)
+
+
 def build_agency_map_point(agency_id: str) -> dict | None:
     from crm.mandates.storage import get_agency_legal_profile
     from crawler.storage import get_agency_name
@@ -401,9 +462,10 @@ def build_map_payload(agency_id: str) -> dict:
             """
             SELECT id, address, city, postcode, latitude, longitude,
                    listing_title, price, mandate_score, score,
-                   pipeline, transaction_type, surface, phone, email, type
+                   pipeline, transaction_type, surface, phone, email, type, status
             FROM leads
             WHERE agency_id = ?
+              AND COALESCE(status, 'nouveau') != 'retire'
             ORDER BY mandate_score DESC, score DESC
             """,
             (agency_id,),
@@ -425,12 +487,14 @@ def build_map_payload(agency_id: str) -> dict:
             # Ni adresse, ni ville, ni CP exploitables → impossible à placer.
             no_location += 1
             continue
-
         coords = _lead_coords_from_row(row)
         if not coords:
             needs_background_geocode.append((int(row["id"]), line))
             pending += 1
             continue
+        approx_address = _best_approx_address(coords[0], coords[1], postcode, city)
+        if (not address or str(address).strip() in _ADDRESS_BAD) and approx_address:
+            _save_lead_approx_address(int(row["id"]), agency_id, approx_address)
 
         from crawler.hub_detection import parse_property_label
 
@@ -460,7 +524,7 @@ def build_map_payload(agency_id: str) -> dict:
                 "lat": coords[0],
                 "lng": coords[1],
                 "title": str(title)[:120],
-                "address": (address or "").strip() if address not in _ADDRESS_BAD else line,
+                "address": (address or "").strip() if address not in _ADDRESS_BAD else approx_address or line,
                 "location_precision": "precise" if address and address not in _ADDRESS_BAD else "approx",
                 "price": int(row["price"] or 0),
                 "mandate_score": mscore,
@@ -538,6 +602,8 @@ def schedule_map_geocode_batch(
                     coords = geocode_query(line)
                     if coords:
                         _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
+                        approx = _best_approx_address(coords[0], coords[1], None, None)
+                        _save_lead_approx_address(lead_id, agency_id, approx)
                     # Throttle léger : BAN (FR) n'a pas la limite 1 req/s de Nominatim.
                     time.sleep(0.12)
                 except Exception:
@@ -611,6 +677,8 @@ def schedule_lead_geocode(
             coords = geocode_query(line)
             if coords:
                 _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
+                approx = _best_approx_address(coords[0], coords[1], postcode, city)
+                _save_lead_approx_address(lead_id, agency_id, approx)
         except Exception:
             logger.exception("schedule_lead_geocode %s", lead_id)
 

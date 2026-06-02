@@ -1007,6 +1007,26 @@ body {
   align-items: stretch;
   gap: 0.55rem;
 }
+
+.drawer-actions-primary {
+  display: flex;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.drawer-actions-primary .btn {
+  flex: 1 1 0;
+}
+
+.drawer-actions-secondary {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.drawer-actions-secondary.open {
+  display: flex;
+}
 .drawer-pipeline-btns { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.25rem; }
 
 .dvf-badge {

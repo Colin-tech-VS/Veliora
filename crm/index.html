@@ -857,15 +857,20 @@
         </button>
       </div>
       <div class="drawer-pipeline-btns" id="drawer-pipeline-btns"></div>
-      <button type="button" class="btn btn-secondary" id="drawer-dvf-compare-btn">
-        Comparatif DVF
-      </button>
-      <button type="button" class="btn btn-secondary" id="drawer-call-script-btn">
-        Script d'appel
-      </button>
-      <button type="button" class="btn btn-secondary" id="drawer-mandate-vente">Créer mandat vente</button>
-      <button type="button" class="btn btn-secondary" id="drawer-mandate-location">Créer mandat location</button>
-      <a class="btn btn-primary" id="drawer-phone-btn" href="#">Appeler</a>
+      <div class="drawer-actions-primary">
+        <a class="btn btn-primary" id="drawer-phone-btn" href="#">Appeler</a>
+        <button type="button" class="btn btn-secondary" id="drawer-actions-toggle" aria-expanded="false">Plus d'actions</button>
+      </div>
+      <div class="drawer-actions-secondary" id="drawer-actions-secondary">
+        <button type="button" class="btn btn-secondary" id="drawer-dvf-compare-btn">
+          Comparatif DVF
+        </button>
+        <button type="button" class="btn btn-secondary" id="drawer-call-script-btn">
+          Script d'appel
+        </button>
+        <button type="button" class="btn btn-secondary" id="drawer-mandate-vente">Créer mandat vente</button>
+        <button type="button" class="btn btn-secondary" id="drawer-mandate-location">Créer mandat location</button>
+      </div>
       <button type="button" class="btn btn-danger-outline" id="drawer-delete-lead-btn">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
         Supprimer
