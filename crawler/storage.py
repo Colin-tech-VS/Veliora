@@ -51,6 +51,9 @@ _CITY_FROM_TITLE_RE = re.compile(
     r"\b(?:à|a)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,50}?)\s*\((\d{5})\)",
     re.IGNORECASE,
 )
+_CITY_CP_PAREN_RE = re.compile(r"^\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,80})\s*\((\d{5})\)\s*$")
+_CITY_CP_PREFIX_RE = re.compile(r"^\s*(\d{5})\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,80})\s*$")
+_CITY_CP_SUFFIX_RE = re.compile(r"^\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ' -]{1,80})\s+(\d{5})\s*$")
 
 
 def invalidate_agency_settings_cache(agency_id: str | None = None) -> None:
@@ -158,6 +161,47 @@ def _clean_location_values(
             pc = m.group(2)
 
     return (addr or None, ct or None, pc or None)
+
+
+def _canonicalize_city_postcode_values(
+    city: str | None,
+    postcode: str | None,
+) -> tuple[str | None, str | None]:
+    ct = (city or "").strip()
+    pc = (postcode or "").strip()
+
+    def _extract(text: str) -> tuple[str, str] | None:
+        if not text:
+            return None
+        m = _CITY_CP_PAREN_RE.match(text)
+        if m:
+            return m.group(1).strip(), m.group(2)
+        m = _CITY_CP_PREFIX_RE.match(text)
+        if m:
+            return m.group(2).strip(), m.group(1)
+        m = _CITY_CP_SUFFIX_RE.match(text)
+        if m:
+            return m.group(1).strip(), m.group(2)
+        return None
+
+    parsed_city = _extract(ct)
+    if parsed_city:
+        ct, parsed_pc = parsed_city
+        if not pc:
+            pc = parsed_pc
+    else:
+        parsed_pc_field = _extract(pc)
+        if parsed_pc_field:
+            parsed_ct, parsed_pc = parsed_pc_field
+            if not ct:
+                ct = parsed_ct
+            pc = parsed_pc
+
+    if pc and not re.fullmatch(r"\d{5}", pc):
+        m_pc = re.search(r"\b(\d{5})\b", pc)
+        pc = m_pc.group(1) if m_pc else ""
+
+    return (ct or None, pc or None)
 
 
 def _attach_estimates(leads: list[dict], agency_id: str) -> None:
@@ -1283,6 +1327,10 @@ def save_lead(
     from crm.dvf import apply_lead_location_fields
     apply_lead_location_fields(lead)
     _clean_lead_location_fields(lead)
+    lead.city, lead.postcode = _canonicalize_city_postcode_values(
+        getattr(lead, "city", None),
+        getattr(lead, "postcode", None),
+    )
     stored_pub = existing_row.get("published_at") if existing_row else None
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
@@ -1307,6 +1355,7 @@ def save_lead(
                 existing_row.get("postcode"),
                 listing_title_hint,
             )
+            clean_city, clean_pc = _canonicalize_city_postcode_values(clean_city, clean_pc)
             if (
                 clean_addr != existing_row.get("address")
                 or clean_city != existing_row.get("city")

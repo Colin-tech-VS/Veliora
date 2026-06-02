@@ -4423,7 +4423,7 @@ function getFilteredLeads() {
 
   if (state.leadsCityFilter) {
     const cityQ = state.leadsCityFilter;
-    leads = leads.filter((l) => (l.city || "").toLowerCase() === cityQ);
+    leads = leads.filter((l) => leadCityFilterKey(l) === cityQ);
   }
 
   if (state.searchQuery && !isUrl(state.searchQuery)) {
@@ -4437,16 +4437,34 @@ function populateLeadsCityFilterOptions() {
   const select = document.getElementById("leads-city-filter");
   if (!select) return;
   const selected = state.leadsCityFilter || "";
-  const cities = [...new Set(
-    LEADS.map((l) => (l.city || "").trim())
-      .filter(Boolean)
-      .map((c) => c.toLowerCase()),
-  )].sort((a, b) => a.localeCompare(b, "fr"));
-  select.innerHTML = `<option value="">Toutes les villes</option>${cities
-    .map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`)
+  const cityMap = new Map();
+  LEADS.forEach((lead) => {
+    const key = leadCityFilterKey(lead);
+    const label = leadCityDisplay(lead);
+    if (!key || !label) return;
+    if (!cityMap.has(key)) cityMap.set(key, label);
+  });
+  const entries = [...cityMap.entries()].sort((a, b) => a[1].localeCompare(b[1], "fr"));
+  select.innerHTML = `<option value="">Toutes les villes</option>${entries
+    .map(([k, label]) => `<option value="${escapeAttr(k)}">${escapeHtml(label)}</option>`)
     .join("")}`;
-  select.value = selected && cities.includes(selected) ? selected : "";
-  if (selected && !cities.includes(selected)) state.leadsCityFilter = "";
+  const keys = entries.map(([k]) => k);
+  select.value = selected && keys.includes(selected) ? selected : "";
+  if (selected && !keys.includes(selected)) state.leadsCityFilter = "";
+}
+
+function leadCityDisplay(lead) {
+  const city = String(lead?.city || "").trim();
+  const postcode = String(lead?.postcode || "").trim();
+  if (city && postcode) return `${city} (${postcode})`;
+  return city || postcode || "";
+}
+
+function leadCityFilterKey(lead) {
+  const city = String(lead?.city || "").trim().toLowerCase();
+  const postcode = String(lead?.postcode || "").trim();
+  if (!city && !postcode) return "";
+  return `${city}||${postcode}`;
 }
 
 function getLeadSearchText(lead) {
@@ -6643,7 +6661,7 @@ function buildDrawerBodyHtml(lead) {
       <div class="detail-row" data-drawer-field="price"><span class="label">Prix</span><span class="value drawer-live-value">${formatPrice(lead)} ${getTransactionBadge(lead)}</span></div>
       <div class="detail-row" data-drawer-field="surface"><span class="label">Surface</span><span class="value drawer-live-value">${lead.surface ? lead.surface + " m²" : "—"}</span></div>
       <div class="detail-row"><span class="label">Adresse</span><span class="value">${escapeHtml(lead.address || "—")}</span></div>
-      <div class="detail-row"><span class="label">Ville</span><span class="value">${escapeHtml([lead.postcode, lead.city].filter(Boolean).join(" ") || "—")}</span></div>
+      <div class="detail-row"><span class="label">Ville</span><span class="value">${escapeHtml(leadCityDisplay(lead) || "—")}</span></div>
       <div class="detail-row"><span class="label">Source URL</span><span class="value drawer-link-inline">${lead.source_url ? `<a href="${escapeAttr(lead.source_url)}" target="_blank" rel="noopener noreferrer">Ouvrir</a>` : "—"}</span></div>
       <div class="detail-row"><span class="label">En ligne</span><span class="value">${daysTxt}</span></div>
       <div class="detail-row"><span class="label">Portail</span><span class="value">${escapeHtml(lead.source)}</span></div>
