@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import threading
 import time
 import uuid
@@ -2204,6 +2205,81 @@ def api_property_clients():
         return jsonify({"ok": True, "client": client}), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/clients/seed-demo", methods=["POST"])
+def api_property_clients_seed_demo():
+    from crm.mandates.storage import create_property_client
+
+    agency_id = _aid()
+    data = request.get_json(silent=True) or {}
+    try:
+        count = int(data.get("count") or 50)
+    except (TypeError, ValueError):
+        count = 50
+    count = max(1, min(count, 200))
+    cities = data.get("cities") or ["Chaville", "Lorient"]
+    cities = [str(c).strip() for c in cities if str(c).strip()] or ["Chaville", "Lorient"]
+
+    first_names = [
+        "Emma", "Lucas", "Lea", "Hugo", "Chloe", "Nathan", "Sarah", "Louis", "Manon",
+        "Jules", "Camille", "Noah", "Ines", "Tom", "Mila", "Mathis", "Louise", "Leo",
+        "Anna", "Theo", "Nina", "Maxime", "Elsa", "Gabriel", "Jade",
+    ]
+    last_names = [
+        "Martin", "Bernard", "Petit", "Robert", "Richard", "Durand", "Dubois", "Moreau",
+        "Laurent", "Simon", "Michel", "Lefebvre", "Garcia", "David", "Roux", "Fournier",
+        "Girard", "Andre", "Mercier", "Dupont", "Lambert", "Bonnet", "Francois", "Martinez",
+    ]
+    property_types = ["Appartement", "Maison", "Studio", "T2", "T3", "Loft"]
+    notes_pool = [
+        "Proche transports",
+        "Souhaite balcon/terrasse",
+        "Recherche quartier calme",
+        "Parking souhaité",
+        "Prêt à visiter rapidement",
+        "Flexible sur secteur",
+    ]
+
+    created = 0
+    for i in range(count):
+        segment = "acheteur" if i % 2 == 0 else "locataire"
+        fn = random.choice(first_names)
+        ln = random.choice(last_names)
+        city = cities[i % len(cities)]
+        rooms_min = random.choice([1, 2, 3, 4])
+        surface_min = random.choice([28, 35, 42, 55, 68, 82])
+        if segment == "acheteur":
+            budget_min = random.choice([120000, 150000, 180000, 220000, 260000, 320000])
+            budget_max = budget_min + random.choice([40000, 70000, 100000, 150000])
+        else:
+            budget_min = random.choice([550, 650, 750, 850, 1000])
+            budget_max = budget_min + random.choice([150, 250, 350, 450])
+        suffix = str(int(time.time()))[-6:]
+        email = f"{fn.lower()}.{ln.lower()}.{i}.{suffix}@veliora-demo.local"
+        phone = "06" + f"{random.randint(10000000, 99999999)}"
+        payload = {
+            "segment": segment,
+            "first_name": fn,
+            "last_name": ln,
+            "phone": phone,
+            "email": email,
+            "budget_min": budget_min,
+            "budget_max": budget_max,
+            "property_type": random.choice(property_types),
+            "rooms_min": rooms_min,
+            "surface_min": surface_min,
+            "cities": [city],
+            "status": "actif",
+            "notes": random.choice(notes_pool),
+        }
+        try:
+            create_property_client(agency_id, payload)
+            created += 1
+        except Exception:
+            logging.exception("seed-demo client failed")
+    _rescore_after_client_change(agency_id)
+    return jsonify({"ok": True, "created": created, "requested": count, "cities": cities})
 
 
 @app.route("/api/clients/import/template")

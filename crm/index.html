@@ -724,6 +724,7 @@
               <p id="leads-refresh-progress-meta" class="form-hint refresh-all-confirm-hint">0 / 0 prospect traité</p>
               <ul id="leads-refresh-progress-feed" class="lead-refresh-feed"></ul>
               <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="leads-refresh-progress-background">Arrière-plan</button>
                 <button type="button" class="btn btn-secondary" id="leads-refresh-progress-close">Fermer</button>
               </div>
             </div>
@@ -848,6 +849,7 @@
             <div class="clients-actions">
               <button type="button" class="btn btn-secondary btn-sm" id="btn-client-template">Modèle CSV</button>
               <button type="button" class="btn btn-secondary btn-sm" id="btn-client-import">Importer CSV / Excel</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btn-client-seed-demo">Générer 50 profils test</button>
               <button type="button" class="btn btn-primary btn-sm" id="btn-new-client-acheteur">+ Acheteur</button>
               <button type="button" class="btn btn-primary btn-sm" id="btn-new-client-locataire">+ Locataire</button>
             </div>
@@ -1160,41 +1162,44 @@
     <div class="modal-card">
       <button type="button" class="modal-close" id="client-editor-close" aria-label="Fermer">×</button>
       <h2 id="client-editor-title">Nouvelle fiche</h2>
-      <form id="client-editor-form">
-        <label class="form-field">
-          <span>Segment</span>
-          <select id="client-segment" required>
-            <option value="acheteur">Acheteur</option>
-            <option value="locataire">Locataire</option>
-          </select>
-        </label>
-        <div class="form-row-2">
+      <form id="client-editor-form" class="client-editor-form">
+        <p class="form-hint client-editor-hint">
+          Renseignez les critères prioritaires pour améliorer le matching annonces ↔ clients.
+        </p>
+        <div class="client-editor-grid">
+          <label class="form-field">
+            <span>Segment</span>
+            <select id="client-segment" required>
+              <option value="acheteur">Acheteur</option>
+              <option value="locataire">Locataire</option>
+            </select>
+          </label>
+          <label class="form-field"><span>Statut</span>
+            <select id="client-status">
+              <option value="actif">Actif</option>
+              <option value="en_veille">En veille</option>
+              <option value="archive">Archivé</option>
+            </select>
+          </label>
+          <label class="form-field"><span>Type de bien</span><input type="text" id="client-property-type" placeholder="Appartement, maison, studio"></label>
+
           <label class="form-field"><span>Prénom</span><input type="text" id="client-first-name"></label>
           <label class="form-field"><span>Nom</span><input type="text" id="client-last-name"></label>
-        </div>
-        <label class="form-field"><span>Téléphone</span><input type="tel" id="client-phone"></label>
-        <label class="form-field"><span>Email</span><input type="email" id="client-email"></label>
-        <div class="form-row-2">
-          <label class="form-field"><span>Budget min (€)</span><input type="number" id="client-budget-min" min="0"></label>
-          <label class="form-field"><span>Budget max (€)</span><input type="number" id="client-budget-max" min="0"></label>
-        </div>
-        <label class="form-field"><span>Type de bien</span><input type="text" id="client-property-type" placeholder="Appartement, maison…"></label>
-        <div class="form-row-2">
+          <label class="form-field"><span>Téléphone</span><input type="tel" id="client-phone"></label>
+
+          <label class="form-field"><span>Email</span><input type="email" id="client-email"></label>
           <label class="form-field"><span>Pièces min</span><input type="number" id="client-rooms-min" min="0"></label>
           <label class="form-field"><span>Surface min (m²)</span><input type="number" id="client-surface-min" min="0" step="0.1"></label>
+
+          <label class="form-field"><span>Budget min (€)</span><input type="number" id="client-budget-min" min="0"></label>
+          <label class="form-field"><span>Budget max (€)</span><input type="number" id="client-budget-max" min="0"></label>
+          <label class="form-field client-editor-cities"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Chaville, Lorient"></label>
         </div>
-        <label class="form-field"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Lyon, Villeurbanne"></label>
-        <label class="form-field">
-          <span>Statut</span>
-          <select id="client-status">
-            <option value="actif">Actif</option>
-            <option value="en_veille">En veille</option>
-            <option value="archive">Archivé</option>
-          </select>
-        </label>
-        <label class="form-field"><span>Notes</span><textarea id="client-notes" rows="3"></textarea></label>
-        <button type="submit" class="btn btn-primary btn-block">Enregistrer</button>
-        <button type="button" class="btn btn-danger-outline btn-block" id="client-btn-delete" hidden>Supprimer</button>
+        <label class="form-field"><span>Détails / contraintes</span><textarea id="client-notes" rows="2" placeholder="Ex: proche gare, balcon, étage élevé, cave..."></textarea></label>
+        <div class="client-editor-actions">
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+          <button type="button" class="btn btn-danger-outline" id="client-btn-delete" hidden>Supprimer</button>
+        </div>
       </form>
     </div>
   </div>

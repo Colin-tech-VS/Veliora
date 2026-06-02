@@ -6431,6 +6431,45 @@ body:has(.crawl-dock.open) .script-dock.open {
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }
+
+#client-editor-modal .modal-card {
+  max-width: 760px;
+  padding: 1.1rem 1.2rem 1.2rem;
+}
+
+.client-editor-form {
+  max-height: min(76vh, 720px);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.client-editor-hint {
+  margin-bottom: 0.65rem;
+}
+
+.client-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem 0.7rem;
+}
+
+.client-editor-grid .form-field {
+  margin-bottom: 0.15rem;
+}
+
+.client-editor-cities {
+  grid-column: span 3;
+}
+
+.client-editor-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.client-editor-actions .btn {
+  flex: 1;
+}
 .form-field textarea {
   width: 100%;
   min-height: 4rem;
@@ -6447,6 +6486,27 @@ body:has(.crawl-dock.open) .script-dock.open {
   font-size: 0.85rem;
   color: var(--text-muted);
   white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  #client-editor-modal .modal-card {
+    max-width: 96vw;
+  }
+  .client-editor-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .client-editor-cities {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .client-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .client-editor-cities {
+    grid-column: auto;
+  }
 }
 
 /* Mobile layout : voir mobile.css (ne pas masquer .sidebar ici) */

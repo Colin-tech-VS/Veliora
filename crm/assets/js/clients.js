@@ -73,6 +73,7 @@ function setupClientsUi() {
     const fin = document.getElementById("client-import-modal-file");
     if (fin) fin.value = "";
   });
+  document.getElementById("btn-client-seed-demo")?.addEventListener("click", seedDemoClients);
 
   document.getElementById("client-import-close")?.addEventListener("click", () => {
     document.getElementById("client-import-modal")?.classList.remove("open");
@@ -372,6 +373,31 @@ async function deleteClientEditor() {
     renderClientsGrid();
   } catch (err) {
     clientDeps.showToast(err.message, "error");
+  }
+}
+
+async function seedDemoClients() {
+  if (
+    !confirm(
+      "Créer 50 profils de test (acheteurs + locataires) sur Chaville et Lorient ?",
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await clientDeps.api("/clients/seed-demo", {
+      method: "POST",
+      body: JSON.stringify({ count: 50, cities: ["Chaville", "Lorient"] }),
+    });
+    await loadClients();
+    renderClientsGrid();
+    clientDeps.showToast(
+      `${res.created || 0} profil(s) test créés sur Chaville/Lorient`,
+      "success",
+      5500,
+    );
+  } catch (err) {
+    clientDeps.showToast(err.message || "Génération de profils impossible", "error");
   }
 }
 

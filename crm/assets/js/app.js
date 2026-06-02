@@ -2521,7 +2521,16 @@ const leadsRefreshBatchState = {
   batchId: null,
   timer: null,
   seen: new Set(),
+  phraseTimer: null,
+  phraseIdx: 0,
 };
+const LEADS_REFRESH_LIVE_PHRASES = [
+  "Connexion au portail immobilier…",
+  "Analyse des fiches en direct…",
+  "Extraction prix / surface / contact…",
+  "Nettoyage adresse + ville (format unique)…",
+  "Synchronisation des prospects en base…",
+];
 
 function closeLeadsRefreshAllModal(confirmed = false) {
   document.getElementById("leads-refresh-all-modal")?.classList.remove("open");
@@ -2559,6 +2568,12 @@ function setupLeadsRefreshAllModal() {
   document
     .getElementById("leads-refresh-progress-close")
     ?.addEventListener("click", closeLeadsRefreshProgressModal);
+  document
+    .getElementById("leads-refresh-progress-background")
+    ?.addEventListener("click", () => {
+      closeLeadsRefreshProgressModal();
+      showToast("Recrawl en arrière-plan — suivi live dans le dock", "info", 3500);
+    });
   document.getElementById("leads-refresh-progress-modal")?.addEventListener("click", (e) => {
     if (e.target?.id === "leads-refresh-progress-modal") closeLeadsRefreshProgressModal();
   });
@@ -2572,11 +2587,48 @@ function closeLeadsRefreshProgressModal() {
   document.getElementById("leads-refresh-progress-modal")?.classList.remove("open");
 }
 
+function showLeadsRefreshDock() {
+  document.getElementById("crawl-dock-title").textContent = "Recrawl prospects (global)";
+  document.getElementById("crawl-dock")?.classList.add("open");
+}
+
+function hideLeadsRefreshDock() {
+  if (!crawlState.active && !leadRefreshState.busy) {
+    document.getElementById("crawl-dock")?.classList.remove("open");
+  }
+}
+
+function setLeadsRefreshPhrase(text) {
+  if (!text) return;
+  const step = document.getElementById("leads-refresh-progress-step");
+  if (step) step.textContent = text;
+  const dockStep = document.getElementById("crawl-dock-step");
+  if (dockStep) dockStep.textContent = text;
+}
+
+function startLeadsRefreshPhraseLoop() {
+  if (leadsRefreshBatchState.phraseTimer) return;
+  leadsRefreshBatchState.phraseIdx = 0;
+  setLeadsRefreshPhrase(LEADS_REFRESH_LIVE_PHRASES[0]);
+  leadsRefreshBatchState.phraseTimer = setInterval(() => {
+    leadsRefreshBatchState.phraseIdx =
+      (leadsRefreshBatchState.phraseIdx + 1) % LEADS_REFRESH_LIVE_PHRASES.length;
+    setLeadsRefreshPhrase(LEADS_REFRESH_LIVE_PHRASES[leadsRefreshBatchState.phraseIdx]);
+  }, 2600);
+}
+
+function stopLeadsRefreshPhraseLoop() {
+  if (!leadsRefreshBatchState.phraseTimer) return;
+  clearInterval(leadsRefreshBatchState.phraseTimer);
+  leadsRefreshBatchState.phraseTimer = null;
+}
+
 function stopLeadsRefreshProgressPoll() {
   if (leadsRefreshBatchState.timer) {
     clearTimeout(leadsRefreshBatchState.timer);
     leadsRefreshBatchState.timer = null;
   }
+  stopLeadsRefreshPhraseLoop();
 }
 
 function pushLeadsRefreshProgressFeed(lines = []) {
@@ -2614,6 +2666,16 @@ function renderLeadsRefreshProgress(status) {
       failed ? ` · ${failed} en erreur` : ""
     }`;
   }
+  document.getElementById("crawl-dock-title").textContent = "Recrawl prospects (global)";
+  const dockFill = document.getElementById("crawl-dock-fill");
+  const dockPct = document.getElementById("crawl-dock-pct");
+  const dockRight = document.getElementById("crawl-dock-eta-right");
+  if (dockFill) dockFill.style.width = `${pct}%`;
+  if (dockPct) dockPct.textContent = `${pct}%`;
+  if (dockRight) dockRight.textContent = `${completed}/${total}`;
+  setCrawlStat("cds-analyzed", completed);
+  setCrawlStat("cds-verified", Math.max(0, completed - failed));
+  setCrawlStat("cds-new", failed);
   pushLeadsRefreshProgressFeed(status.logs || []);
 }
 
@@ -2621,12 +2683,16 @@ async function pollLeadsRefreshAllBatch(batchId) {
   leadsRefreshBatchState.batchId = batchId;
   stopLeadsRefreshProgressPoll();
   openLeadsRefreshProgressModal();
+  showLeadsRefreshDock();
+  startLeadsRefreshPhraseLoop();
   const tick = async () => {
     try {
       const status = await api(`/leads/refresh-all/${batchId}/status`);
       renderLeadsRefreshProgress(status);
       if (status.status === "completed") {
         stopLeadsRefreshProgressPoll();
+        setLeadsRefreshPhrase("Recrawl global terminé");
+        hideLeadsRefreshDock();
         showToast("Recrawl global terminé", "success", 5000);
         await refreshAppData();
         return;
