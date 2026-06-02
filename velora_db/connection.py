@@ -121,7 +121,24 @@ def _get_postgres_pool():
         if not url:
             _pg_pool_failed = True
             return None
-        default_pool_max = "6" if os.getenv("SCALINGO_APP", "").strip() else "8"
+        # Détection du mode pooler Supabase :
+        #   - port 5432 = session mode (limite stricte ~15 connexions sur free tier)
+        #   - port 6543 = transaction mode (centaines de connexions OK)
+        # En session mode on serre la ceinture pour ne PAS saturer le pooler.
+        is_session_mode = ":5432" in url and "pooler" in url
+        if is_session_mode:
+            logger.warning(
+                "DATABASE_URL pointe sur le pooler Supabase en mode session "
+                "(port 5432) — limité à ~15 connexions. Passez sur le port "
+                "6543 (transaction mode) pour scaler proprement."
+            )
+        scalingo = bool(os.getenv("SCALINGO_APP", "").strip())
+        if is_session_mode:
+            default_pool_max = "3"
+        elif scalingo:
+            default_pool_max = "6"
+        else:
+            default_pool_max = "8"
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "40"))
