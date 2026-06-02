@@ -622,7 +622,15 @@ function computeLiveRadarCounts(leads = LEADS) {
 
 function liveRadarPriorities(leads = LEADS, limit = 20) {
   return [...activeLeads(leads)]
-    .sort((a, b) => (b.mandate_score || b.score || 0) - (a.mandate_score || a.score || 0))
+    .sort((a, b) => {
+      const pa = signatureProbability(a);
+      const pb = signatureProbability(b);
+      if (pb !== pa) return pb - pa;
+      const sa = a.mandate_score || a.score || 0;
+      const sb = b.mandate_score || b.score || 0;
+      if (sb !== sa) return sb - sa;
+      return (b.days_on_market || 0) - (a.days_on_market || 0);
+    })
     .slice(0, limit);
 }
 
@@ -4791,9 +4799,12 @@ function renderRadarBriefing() {
 
   const featuredEl = document.getElementById("radar-hero-featured");
   if (featuredEl) {
-    const top = list[0];
+    const top =
+      list.find((l) => signatureProbability(l) >= 10) ||
+      list[0];
     if (top) {
       const ms = top.mandate_score || 0;
+      const sp = signatureProbability(top);
       featuredEl.hidden = false;
       featuredEl.innerHTML = `
         <div class="crm-hero-featured-inner" data-id="${top.id}" role="button" tabindex="0">
@@ -4801,7 +4812,7 @@ function renderRadarBriefing() {
           <div class="crm-hero-featured-score">${renderMandatePill(top, { large: true })}</div>
           <p class="crm-hero-featured-reco">${escapeHtml(mandateCallRecommendation(ms))}</p>
           <p class="crm-hero-featured-title">${escapeHtml(top.property_title || top.address || top.owner)}</p>
-          <p class="crm-hero-featured-reason">${escapeHtml(top.mandate_score_reason || "")}</p>
+          <p class="crm-hero-featured-reason">${escapeHtml(top.mandate_score_reason || "")}${sp < 10 ? " · Opportunité faible actuellement" : ""}</p>
           <span class="btn btn-primary btn-sm">Ouvrir la fiche</span>
         </div>`;
       const inner = featuredEl.querySelector(".crm-hero-featured-inner");
