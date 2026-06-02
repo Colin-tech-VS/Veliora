@@ -503,30 +503,40 @@
     try {
       const res = await deps().api("/ai/health");
       state.health = res;
+      const provider = res.provider || "ollama";
+      const providerLabel = res.label || (provider === "ollama" ? "Ollama" : provider);
+      const model = res.configured_model || "";
+
       if (!res.reachable) {
         if (dot) dot.dataset.state = "off";
         if (label) {
-          // En prod, le base_url ressemble à https://ollama.xxx — message dédié
-          // pour rappeler que le VPS doit tourner. Sinon, hint local.
-          const isRemote = (res.base_url || "").startsWith("https://");
-          label.innerHTML = isRemote
-            ? `VPS Ollama injoignable (<code>${escapeHtml(res.base_url)}</code>) — voir <code>OLLAMA_DEPLOY.md</code>`
-            : `Ollama local non démarré — <code>ollama serve</code>`;
+          if (provider === "ollama") {
+            const isRemote = (res.base_url || "").startsWith("https://");
+            label.innerHTML = isRemote
+              ? `Ollama injoignable (<code>${escapeHtml(res.base_url)}</code>) — voir <code>ORACLE_CLOUD.md</code>`
+              : `Ollama local non démarré — <code>ollama serve</code>`;
+          } else if (res.error && /AI_API_KEY/.test(res.error)) {
+            label.innerHTML = `${escapeHtml(providerLabel)} — clé manquante. ${res.key_url ? `<a href="${escapeHtml(res.key_url)}" target="_blank" rel="noopener">Créer ma clé</a>` : ""}`;
+          } else {
+            label.textContent = res.error || `${providerLabel} injoignable`;
+          }
         }
         return;
       }
       if (res.needs_auth) {
         if (dot) dot.dataset.state = "warn";
-        if (label) label.textContent = "Clé OLLAMA_API_KEY refusée par le VPS";
+        if (label) {
+          label.innerHTML = `${escapeHtml(providerLabel)} : clé API refusée. ${res.key_url ? `<a href="${escapeHtml(res.key_url)}" target="_blank" rel="noopener">Générer une nouvelle clé</a>` : ""}`;
+        }
         return;
       }
-      const ok = res.has_primary_model || res.has_fallback_model;
+      const ok = (provider !== "ollama") || res.has_primary_model || res.has_fallback_model;
       if (dot) dot.dataset.state = ok ? "on" : "warn";
       if (label) {
         if (ok) {
-          label.textContent = `Prêt · ${res.configured_model}`;
+          label.textContent = `${providerLabel} · ${model}`;
         } else {
-          label.innerHTML = `Aucun modèle — <code>docker compose exec ollama ollama pull ${escapeHtml(res.configured_model)}</code>`;
+          label.innerHTML = `Aucun modèle installé — <code>ollama pull ${escapeHtml(model)}</code>`;
         }
       }
     } catch {

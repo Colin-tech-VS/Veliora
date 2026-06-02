@@ -1,9 +1,26 @@
-"""Paramètres de l'assistant IA (Ollama local)."""
+"""Paramètres de l'assistant IA — multi-providers (Ollama + APIs hébergées)."""
 
 from __future__ import annotations
 
 import os
 
+# === Sélection du fournisseur d'IA ===========================================
+# Valeurs supportées : ollama (défaut, local ou auto-hébergé), groq, openai,
+# mistral, openrouter, anthropic. Pour les APIs hébergées, il suffit d'ajouter
+# AI_API_KEY=<clé> — le reste est auto-configuré.
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "ollama").strip().lower()
+
+# Clé d'API du fournisseur hébergé choisi (groq, openai, mistral, openrouter…).
+# Inutile pour Ollama (qui utilise OLLAMA_API_KEY si reverse-proxy auth).
+AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
+
+# Modèle préféré du fournisseur (laisse vide pour le défaut sain de chaque provider).
+AI_MODEL = os.getenv("AI_MODEL", "").strip()
+
+# Override manuel de la base URL (utile pour OpenRouter custom, proxies privés, etc.).
+AI_BASE_URL = os.getenv("AI_BASE_URL", "").strip().rstrip("/")
+
+# === Ollama ==================================================================
 # URL Ollama : par défaut le démon local (`ollama serve`).
 # En prod : pointer vers ton VPS Ollama (ex. `https://ollama.veliora.fr`).
 # Configurable via env OLLAMA_BASE_URL.

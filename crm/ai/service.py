@@ -8,7 +8,7 @@ from typing import Generator
 
 from crm.ai.config import MAX_HISTORY_MESSAGES
 from crm.ai.context import build_system_prompt, trim_messages_for_model
-from crm.ai.ollama import OllamaError, chat_stream
+from crm.ai.providers import AIProviderError, get_provider
 from crm.ai.storage import (
     append_message,
     create_conversation,
@@ -81,14 +81,15 @@ def stream_assistant_reply(
 
     full_text_parts: list[str] = []
     try:
-        for chunk in chat_stream(messages_for_model):
+        provider = get_provider()
+        for chunk in provider.chat_stream(messages_for_model):
             piece = (chunk.get("message") or {}).get("content") or ""
             if piece:
                 full_text_parts.append(piece)
                 yield {"type": "token", "delta": piece}
             if chunk.get("done"):
                 break
-    except OllamaError as exc:
+    except AIProviderError as exc:
         msg = str(exc)
         yield {"type": "error", "error": msg}
         # On enregistre quand même un message assistant marqué error pour le debug
@@ -101,7 +102,7 @@ def stream_assistant_reply(
         )
         return
     except Exception as exc:
-        logger.exception("ollama stream failed")
+        logger.exception("provider stream failed")
         yield {"type": "error", "error": f"Erreur IA inattendue : {exc}"}
         return
 

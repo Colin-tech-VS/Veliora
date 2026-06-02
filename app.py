@@ -2403,9 +2403,12 @@ def api_property_client_matches(client_id):
 
 @app.route("/api/ai/health")
 def api_ai_health():
-    from crm.ai.ollama import health
+    from crm.ai.providers import get_provider, AIProviderError
 
-    return jsonify(health())
+    try:
+        return jsonify(get_provider().health())
+    except AIProviderError as exc:
+        return jsonify({"ok": False, "reachable": False, "error": str(exc)}), 200
 
 
 @app.route("/api/ai/conversations", methods=["GET", "POST"])
