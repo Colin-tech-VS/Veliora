@@ -18,6 +18,7 @@
     health: null,
     healthTimer: null,
   };
+  const CHAT_REQUEST_TIMEOUT_MS = 95000;
 
   function deps() {
     return {
@@ -265,7 +266,15 @@
       message: userText,
       conversation_id: state.conversationId || undefined,
     };
+    let timeoutId = null;
     try {
+      timeoutId = setTimeout(() => {
+        try {
+          state.abortCtl?.abort("timeout");
+        } catch {
+          /* noop */
+        }
+      }, CHAT_REQUEST_TIMEOUT_MS);
       const res = await fetch(`${deps().API}/ai/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...deps().getAuthHeaders() },
@@ -337,11 +346,18 @@
       await refreshConversationsList();
     } catch (err) {
       if (err.name === "AbortError") {
-        showErrorMessage(node, "Interrompu");
+        const timedOut = state.abortCtl?.signal?.reason === "timeout";
+        showErrorMessage(
+          node,
+          timedOut
+            ? "Le fournisseur IA met trop de temps a repondre. Reessaie dans quelques secondes."
+            : "Interrompu",
+        );
       } else {
         showErrorMessage(node, err.message || "Erreur réseau");
       }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       state.sending = false;
       state.abortCtl = null;
       updateSendButton();
