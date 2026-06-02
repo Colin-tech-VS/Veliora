@@ -98,8 +98,9 @@ class DvfParallelQueue:
         s = self.stats
         if s["submitted"] == 0:
             return ""
-        return (
-            f"DVF : {s['ok']} comparatif(s) OK"
-            f"{f', {s['unavailable']} sans données' if s['unavailable'] else ''}"
-            f"{f', {s['errors']} erreur(s)' if s['errors'] else ''}"
-        )
+        line = f"DVF : {s['ok']} comparatif(s) OK"
+        if s["unavailable"]:
+            line += f", {s['unavailable']} sans données"
+        if s["errors"]:
+            line += f", {s['errors']} erreur(s)"
+        return line

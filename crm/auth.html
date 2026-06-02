@@ -130,14 +130,28 @@
       checkoutBanner.className = "auth-checkout-banner " + (type || "");
     }
 
+    // Parse JSON sans planter si le serveur renvoie du HTML (app non démarrée,
+    // erreur proxy/CDN…). Évite « Unexpected token '<' » et donne un message clair.
+    async function parseJson(r) {
+      const text = await r.text();
+      try {
+        return text ? JSON.parse(text) : {};
+      } catch (_) {
+        if (r.status >= 500) {
+          throw new Error("Serveur indisponible — réessayez dans un instant.");
+        }
+        throw new Error("Réponse inattendue du serveur. Réessayez dans un instant.");
+      }
+    }
+
     async function loadBillingConfig() {
       try {
         const [billR, pubR] = await Promise.all([
           fetch(API + "/billing/config"),
           fetch("/api/public/config"),
         ]);
-        const d = await billR.json();
-        const pub = pubR.ok ? await pubR.json() : {};
+        const d = await parseJson(billR);
+        const pub = pubR.ok ? await parseJson(pubR) : {};
         if (d.ok !== false) {
           billingConfig = { ...billingConfig, ...d };
           const ht = pub.subscription_amount_ht || d.amount_eur || 500;
@@ -164,7 +178,7 @@
         method: "POST",
         headers: authHeaders(),
       });
-      const d = await r.json();
+      const d = await parseJson(r);
       if (!r.ok) throw new Error(d.error || "Impossible de démarrer le paiement");
       if (d.checkout_url) {
         window.location.href = d.checkout_url;
@@ -178,7 +192,7 @@
         method: "POST",
         headers: authHeaders(),
       });
-      const d = await r.json();
+      const d = await parseJson(r);
       if (!r.ok) throw new Error(d.error || "Portail indisponible");
       window.location.href = d.portal_url;
     }
@@ -189,7 +203,7 @@
         headers: authHeaders(),
         body: JSON.stringify({ session_id: sessionId }),
       });
-      const d = await r.json();
+      const d = await parseJson(r);
       if (!r.ok) throw new Error(d.error || "Vérification paiement échouée");
       return d;
     }
@@ -205,7 +219,7 @@
           signal: ctrl.signal,
         });
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await parseJson(r);
         if (d.billing?.active || !d.billing?.requires_payment) {
           window.location.href = nextUrl;
         } else {
@@ -232,7 +246,7 @@
         if (sessionId) await verifyCheckoutSession(sessionId);
         const me = await fetch(API + "/auth/me", {
           headers: { Authorization: "Bearer " + localStorage.getItem(AUTH_TOKEN_KEY) },
-        }).then((r) => r.json());
+        }).then(parseJson);
         if (me.billing?.active) {
           showBanner("Paiement confirmé — bienvenue sur Veliora !", "ok");
           setTimeout(() => { window.location.href = nextUrl; }, 1200);
@@ -284,7 +298,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: document.getElementById("forgot-email").value }),
         });
-        const d = await r.json();
+        const d = await parseJson(r);
         if (!r.ok) throw new Error(d.error || "Erreur");
         toast(d.message || "Email envoyé si le compte existe", true);
         tabs[0].click();
@@ -308,7 +322,7 @@
             password: document.getElementById("reset-password").value,
           }),
         });
-        const d = await r.json();
+        const d = await parseJson(r);
         if (!r.ok) throw new Error(d.error || "Erreur");
         toast(d.message || "Mot de passe mis à jour", true);
         tabs[0].click();
@@ -373,13 +387,13 @@
             password: document.getElementById("login-password").value,
           }),
         });
-        const d = await r.json();
+        const d = await parseJson(r);
         if (!r.ok) throw new Error(d.error || "Erreur");
         saveSession(d);
         setBtnLoading(btn, true, "Vérification du compte…");
         const me = await fetch(API + "/auth/me", {
           headers: { Authorization: "Bearer " + d.token },
-        }).then((res) => res.json());
+        }).then(parseJson);
         if (me.billing?.requires_payment && !me.billing?.active) {
           showBanner("Abonnement requis — redirection vers le paiement…", "");
           setBtnLoading(btn, true, "Redirection Stripe…");
@@ -421,7 +435,7 @@
             last_name: document.getElementById("reg-last").value,
           }),
         });
-        const d = await r.json();
+        const d = await parseJson(r);
         if (!r.ok) throw new Error(d.error || "Erreur");
         saveSession(d);
         if (billingConfig.require_payment && billingConfig.enabled) {
