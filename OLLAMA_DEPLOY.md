@@ -5,6 +5,20 @@ pour l'assistant IA. **Ollama doit tourner sur une machine séparée** de
 Scalingo : un dyno Scalingo n'a ni la RAM, ni le disque, ni le GPU nécessaires
 pour servir un modèle 7B.
 
+> ## 🆓 Tu veux du 24/7 totalement gratuit ?
+>
+> Va lire **[ORACLE_CLOUD.md](ORACLE_CLOUD.md)** — guide pas-à-pas pour
+> déployer Ollama sur l'offre **Oracle Cloud Always Free** (VM ARM 24 Go RAM,
+> gratuite à vie, 24/7). C'est l'option recommandée si tu débutes.
+>
+> Si tu veux juste tester sans avoir besoin de 24/7 → voir
+> [infra/ollama/home-tunnel/HOME_TUNNEL.md](infra/ollama/home-tunnel/HOME_TUNNEL.md)
+> (ton PC + tunnel Cloudflare gratuit, marche tant que le PC est allumé).
+>
+> Le reste de ce document décrit le déploiement sur **VPS payant** (Hetzner,
+> OVH…) qui reste pertinent quand tu auras plusieurs agences ou que tu veux
+> un GPU.
+
 Ce guide explique comment monter un serveur Ollama dédié, le sécuriser, et
 brancher l'application Veliora dessus.
 

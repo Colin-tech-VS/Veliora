@@ -23,6 +23,10 @@
 
 services:
   ollama:
+    # Image multi-arch officielle (amd64 + arm64) — fonctionne sur :
+    #   - VPS x86 classique (Hetzner CX/CCX, OVH, Scaleway…)
+    #   - VM ARM Oracle Cloud Ampere A1 (free tier)
+    #   - Raspberry Pi 5 (arm64)
     image: ollama/ollama:latest
     container_name: veliora-ollama
     restart: unless-stopped
