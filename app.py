@@ -64,6 +64,40 @@ CRM_INDEX = CRM_DIR / "index.html"
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+def _log_ai_startup() -> None:
+    """Trace la configuration IA au boot — visible direct dans `scalingo logs`.
+
+    Aide à diagnostiquer en prod : si l'agent voit « Statut IA inconnu » sur
+    l'UI, un coup d'œil aux logs Scalingo dit immédiatement quel provider
+    tourne, quel modèle, et si la clé est définie (sans la divulguer).
+    """
+    try:
+        from crm.ai.config import AI_API_KEY, AI_MODEL, AI_PROVIDER, OLLAMA_BASE_URL
+
+        masked_key = (
+            f"{AI_API_KEY[:6]}…{AI_API_KEY[-4:]}" if AI_API_KEY else "(vide)"
+        )
+        if AI_PROVIDER == "ollama":
+            logging.info(
+                "Veliora IA : provider=ollama base_url=%s model=%s",
+                OLLAMA_BASE_URL,
+                AI_MODEL or "qwen2.5:7b-instruct",
+            )
+        else:
+            logging.info(
+                "Veliora IA : provider=%s model=%s key=%s",
+                AI_PROVIDER,
+                AI_MODEL or "(défaut provider)",
+                masked_key,
+            )
+    except Exception as exc:
+        logging.warning("Impossible de logger la config IA : %s", exc)
+
+
+_log_ai_startup()
+
 _db_init_lock = threading.Lock()
 _refresh_all_batches: dict[str, dict] = {}
 _refresh_all_lock = threading.Lock()

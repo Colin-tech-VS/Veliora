@@ -7,6 +7,11 @@ une seule classe paramétrée par `name`.
 Format de chunk renvoyé en sortie : strictement le même que la classe
 Ollama (`{"message": {"content": "..."}, "done": bool}`) pour ne pas
 toucher au reste de la stack (service.py / app.py / ai.js).
+
+Implémentation : on utilise `requests` (déjà en dépendance) plutôt que
+`urllib` parce que `requests.iter_lines(decode_unicode=True)` gère
+proprement le streaming chunked HTTP, le buffering et l'encodage — c'est
+beaucoup plus fiable pour SSE.
 """
 
 from __future__ import annotations
@@ -14,14 +19,13 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Generator
-from urllib import error as urlerror
-from urllib import request as urlrequest
+
+import requests
 
 from crm.ai.config import (
     AI_API_KEY,
     AI_BASE_URL,
     AI_MODEL,
-    OLLAMA_CONTEXT_TOKENS,
     OLLAMA_NUM_PREDICT,
     OLLAMA_STREAM_TIMEOUT,
     OLLAMA_TEMPERATURE,
@@ -53,7 +57,6 @@ _PROVIDERS: dict[str, dict[str, str]] = {
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
-        # Modèle gratuit par défaut sur OpenRouter
         "default_model": "meta-llama/llama-3.3-70b-instruct:free",
         "key_url": "https://openrouter.ai/keys",
         "label": "OpenRouter",
@@ -78,19 +81,16 @@ class OpenAICompatProvider(AIProvider):
         self._label = meta["label"]
         self._key_url = meta["key_url"]
 
-    # ── Helpers HTTP ────────────────────────────────────────────────────
-    def _headers(self) -> dict[str, str]:
+    def _ensure_key(self) -> None:
         if not AI_API_KEY:
             raise AIProviderError(
                 f"{self._label} : variable d'environnement AI_API_KEY manquante. "
                 f"Génère une clé sur {self._key_url} puis "
                 f"`scalingo env-set AI_API_KEY=<clé>`."
             )
-        return {
-            "Authorization": f"Bearer {AI_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        }
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {AI_API_KEY}"}
 
     # ── Health ───────────────────────────────────────────────────────────
     def health(self) -> dict[str, Any]:
@@ -102,6 +102,7 @@ class OpenAICompatProvider(AIProvider):
                 "provider": self.name,
                 "base_url": self._base_url,
                 "configured_model": self._default_model,
+                "label": self._label,
                 "error": (
                     f"AI_API_KEY manquante pour {self._label}. "
                     f"Crée une clé sur {self._key_url}."
@@ -110,36 +111,52 @@ class OpenAICompatProvider(AIProvider):
                 "models": [],
             }
         try:
-            req = urlrequest.Request(
+            resp = requests.get(
                 f"{self._base_url}/models",
-                method="GET",
-                headers={"Authorization": f"Bearer {AI_API_KEY}"},
+                headers=self._auth_headers(),
+                timeout=10,
             )
-            with urlrequest.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8") or "{}")
-        except urlerror.HTTPError as exc:
-            return {
-                "ok": False,
-                "reachable": True,
-                "provider": self.name,
-                "base_url": self._base_url,
-                "configured_model": self._default_model,
-                "error": f"{self._label} HTTP {exc.code} ({exc.reason}) — clé valide ?",
-                "needs_auth": exc.code in (401, 403),
-                "key_url": self._key_url,
-                "models": [],
-            }
-        except (urlerror.URLError, TimeoutError, OSError) as exc:
+        except requests.RequestException as exc:
             return {
                 "ok": False,
                 "reachable": False,
                 "provider": self.name,
                 "base_url": self._base_url,
                 "configured_model": self._default_model,
+                "label": self._label,
                 "error": f"{self._label} injoignable : {exc}",
                 "key_url": self._key_url,
                 "models": [],
             }
+        if resp.status_code in (401, 403):
+            return {
+                "ok": False,
+                "reachable": True,
+                "provider": self.name,
+                "base_url": self._base_url,
+                "configured_model": self._default_model,
+                "label": self._label,
+                "error": f"{self._label} HTTP {resp.status_code} — clé valide ?",
+                "needs_auth": True,
+                "key_url": self._key_url,
+                "models": [],
+            }
+        if not resp.ok:
+            return {
+                "ok": False,
+                "reachable": True,
+                "provider": self.name,
+                "base_url": self._base_url,
+                "configured_model": self._default_model,
+                "label": self._label,
+                "error": f"{self._label} HTTP {resp.status_code} : {resp.text[:200]}",
+                "key_url": self._key_url,
+                "models": [],
+            }
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {}
         items = data.get("data") if isinstance(data, dict) else None
         models = [m.get("id") for m in (items or []) if isinstance(m, dict) and m.get("id")]
         return {
@@ -149,7 +166,7 @@ class OpenAICompatProvider(AIProvider):
             "base_url": self._base_url,
             "configured_model": self._default_model,
             "label": self._label,
-            "models": models[:30],  # cap pour pas saturer l'UI
+            "models": models[:30],
             "has_primary_model": (self._default_model in models) if models else True,
         }
 
@@ -162,6 +179,7 @@ class OpenAICompatProvider(AIProvider):
         temperature: float | None = None,
         num_predict: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
+        self._ensure_key()
         chosen = (model or self._default_model).strip()
         payload = {
             "model": chosen,
@@ -174,54 +192,66 @@ class OpenAICompatProvider(AIProvider):
                 num_predict if num_predict is not None else OLLAMA_NUM_PREDICT
             ),
         }
-        # OpenAI/Groq utilisent max_tokens ; pas de num_ctx (géré côté serveur).
-        # On laisse passer le contexte tel quel : les providers acceptent jusqu'à
-        # 128k tokens pour les modèles récents — bien plus que notre besoin.
-        _ = OLLAMA_CONTEXT_TOKENS  # silencieusement ignoré ici
 
-        data = json.dumps(payload).encode("utf-8")
         try:
-            req = urlrequest.Request(
+            resp = requests.post(
                 f"{self._base_url}/chat/completions",
-                data=data,
-                method="POST",
-                headers=self._headers(),
+                headers={
+                    **self._auth_headers(),
+                    "Content-Type": "application/json",
+                    "Accept": "text/event-stream",
+                },
+                json=payload,
+                stream=True,
+                timeout=OLLAMA_STREAM_TIMEOUT,
             )
-        except AIProviderError:
-            raise
+        except requests.RequestException as exc:
+            raise AIProviderError(
+                f"{self._label} injoignable sur {self._base_url} : {exc}"
+            ) from exc
 
-        try:
-            with urlrequest.urlopen(req, timeout=OLLAMA_STREAM_TIMEOUT) as resp:
-                yield from self._iter_sse(resp)
-        except urlerror.HTTPError as exc:
-            body_txt = ""
+        if resp.status_code in (401, 403):
             try:
-                body_txt = exc.read().decode("utf-8")[:500]
+                resp.close()
             except Exception:
                 pass
-            if exc.code in (401, 403):
-                raise AIProviderError(
-                    f"{self._label} refuse la requête (HTTP {exc.code}). "
-                    f"Clé AI_API_KEY invalide ou révoquée. "
-                    f"Crée une nouvelle clé sur {self._key_url}."
-                ) from exc
-            if exc.code == 429:
-                raise AIProviderError(
-                    f"{self._label} : quota atteint. Réessayez dans quelques minutes "
-                    "ou changez de modèle."
-                ) from exc
             raise AIProviderError(
-                f"{self._label} HTTP {exc.code} ({chosen}) : {body_txt or exc.reason}"
-            ) from exc
-        except urlerror.URLError as exc:
+                f"{self._label} refuse la requête (HTTP {resp.status_code}). "
+                f"Clé AI_API_KEY invalide ou révoquée. "
+                f"Crée une nouvelle clé sur {self._key_url}."
+            )
+        if resp.status_code == 429:
+            body = ""
+            try:
+                body = resp.text[:200]
+            finally:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
             raise AIProviderError(
-                f"{self._label} injoignable sur {self._base_url}. Vérifiez la "
-                f"connexion réseau du dyno."
-            ) from exc
-        except TimeoutError as exc:
+                f"{self._label} : quota atteint (HTTP 429). {body or 'Réessayez dans quelques minutes.'}"
+            )
+        if not resp.ok:
+            body = ""
+            try:
+                body = resp.text[:300]
+            finally:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
             raise AIProviderError(
-                f"{self._label} : délai dépassé sur le streaming."
-            ) from exc
+                f"{self._label} HTTP {resp.status_code} ({chosen}) : {body or 'erreur inconnue'}"
+            )
+
+        try:
+            yield from self._iter_sse(resp)
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     @staticmethod
     def _iter_sse(resp) -> Generator[dict[str, Any], None, None]:
@@ -231,27 +261,32 @@ class OpenAICompatProvider(AIProvider):
             data: {"choices": [{"delta": {"content": "..."}}]}\\n\\n
             data: [DONE]\\n\\n
         """
-        for raw_line in resp:
-            if not raw_line:
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if raw_line is None:
                 continue
-            line = raw_line.decode("utf-8", errors="ignore").strip()
-            if not line or not line.startswith("data:"):
+            line = (raw_line or "").strip()
+            if not line:
+                continue
+            if not line.startswith("data:"):
+                # Certains providers (OpenRouter, Together) intercalent des
+                # commentaires SSE qui commencent par `: ` — on les ignore.
                 continue
             payload = line[5:].strip()
             if payload == "[DONE]":
                 yield {"message": {"content": ""}, "done": True}
-                break
+                return
             try:
                 obj = json.loads(payload)
             except json.JSONDecodeError:
-                logger.warning("OpenAI-compat chunk illisible: %r", payload[:120])
+                logger.warning("SSE chunk illisible: %r", payload[:160])
                 continue
             choices = obj.get("choices") or []
             if not choices:
+                # Certains chunks ne contiennent que des `usage` ou metadata.
                 continue
             delta = (choices[0] or {}).get("delta") or {}
             piece = delta.get("content") or ""
             finish = choices[0].get("finish_reason")
             yield {"message": {"content": piece}, "done": bool(finish)}
             if finish:
-                break
+                return

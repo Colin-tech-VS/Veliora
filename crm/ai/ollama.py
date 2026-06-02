@@ -1,12 +1,12 @@
-"""Client HTTP minimal pour Ollama (chat streaming + health)."""
+"""Client HTTP minimal pour Ollama (chat streaming + health) basé sur `requests`."""
 
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any, Generator
-from urllib import error as urlerror
-from urllib import request as urlrequest
+
+import requests
 
 from crm.ai.config import (
     OLLAMA_API_KEY,
@@ -27,12 +27,7 @@ class OllamaError(RuntimeError):
 
 
 def _auth_headers() -> dict[str, str]:
-    """Headers HTTP avec Bearer token si configuré.
-
-    Ollama lui-même n'a pas d'auth — on s'appuie sur un reverse-proxy
-    (Caddy / Nginx) qui valide `Authorization: Bearer …` avant de laisser
-    passer la requête. En local on n'envoie rien.
-    """
+    """Headers HTTP avec Bearer token si le reverse-proxy en exige un."""
     if OLLAMA_API_KEY:
         return {"Authorization": f"Bearer {OLLAMA_API_KEY}"}
     return {}
@@ -41,24 +36,12 @@ def _auth_headers() -> dict[str, str]:
 def health() -> dict[str, Any]:
     """Renvoie l'état du démon Ollama et la liste des modèles installés."""
     try:
-        req = urlrequest.Request(
+        resp = requests.get(
             f"{OLLAMA_BASE_URL}/api/tags",
-            method="GET",
             headers=_auth_headers(),
+            timeout=5,
         )
-        with urlrequest.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8") or "{}")
-    except urlerror.HTTPError as exc:
-        return {
-            "ok": False,
-            "reachable": True,
-            "base_url": OLLAMA_BASE_URL,
-            "error": f"HTTP {exc.code} ({exc.reason}) — clé OLLAMA_API_KEY correcte ?",
-            "configured_model": OLLAMA_MODEL,
-            "models": [],
-            "needs_auth": exc.code in (401, 403),
-        }
-    except (urlerror.URLError, TimeoutError, OSError) as exc:
+    except requests.RequestException as exc:
         return {
             "ok": False,
             "reachable": False,
@@ -67,6 +50,29 @@ def health() -> dict[str, Any]:
             "configured_model": OLLAMA_MODEL,
             "models": [],
         }
+    if resp.status_code in (401, 403):
+        return {
+            "ok": False,
+            "reachable": True,
+            "base_url": OLLAMA_BASE_URL,
+            "error": f"HTTP {resp.status_code} — clé OLLAMA_API_KEY correcte ?",
+            "configured_model": OLLAMA_MODEL,
+            "models": [],
+            "needs_auth": True,
+        }
+    if not resp.ok:
+        return {
+            "ok": False,
+            "reachable": True,
+            "base_url": OLLAMA_BASE_URL,
+            "error": f"HTTP {resp.status_code} : {resp.text[:200]}",
+            "configured_model": OLLAMA_MODEL,
+            "models": [],
+        }
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {}
     models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
     has_primary = OLLAMA_MODEL in models
     has_fallback = OLLAMA_FALLBACK_MODEL in models
@@ -91,7 +97,6 @@ def _pick_model(preferred: str | None = None) -> str:
             return candidate
     if installed:
         return installed[0]
-    # Aucun modèle installé : on renvoie quand même le principal pour message d'erreur clair.
     return OLLAMA_MODEL
 
 
@@ -102,12 +107,7 @@ def chat_stream(
     temperature: float | None = None,
     num_predict: int | None = None,
 ) -> Generator[dict[str, Any], None, None]:
-    """Streame les réponses Ollama ligne par ligne (NDJSON).
-
-    Chaque yield est un dict JSON : `{"message": {"content": "..."}, "done": bool, ...}`.
-    Les exceptions réseau / décodage sont converties en `OllamaError` avec un
-    message lisible — utile pour afficher quelque chose côté UI.
-    """
+    """Streame les réponses Ollama ligne par ligne (NDJSON)."""
     chosen = _pick_model(model)
     body = {
         "model": chosen,
@@ -119,55 +119,65 @@ def chat_stream(
             "num_ctx": OLLAMA_CONTEXT_TOKENS,
         },
     }
-    data = json.dumps(body).encode("utf-8")
-    headers = {"Content-Type": "application/json", **_auth_headers()}
-    req = urlrequest.Request(
-        f"{OLLAMA_BASE_URL}/api/chat",
-        data=data,
-        method="POST",
-        headers=headers,
-    )
     try:
-        with urlrequest.urlopen(req, timeout=OLLAMA_STREAM_TIMEOUT) as resp:
-            for raw_line in resp:
-                if not raw_line:
-                    continue
-                try:
-                    chunk = json.loads(raw_line.decode("utf-8"))
-                except json.JSONDecodeError:
-                    logger.warning("Ollama chunk illisible: %r", raw_line[:120])
-                    continue
-                yield chunk
-                if chunk.get("done"):
-                    break
-    except urlerror.HTTPError as exc:
-        body_txt = ""
-        try:
-            body_txt = exc.read().decode("utf-8")[:500]
-        except Exception:
-            pass
-        if exc.code in (401, 403):
-            raise OllamaError(
-                "Ollama refuse la requête (HTTP "
-                f"{exc.code}). Vérifiez la variable d'environnement "
-                "OLLAMA_API_KEY côté app et la clé attendue par votre reverse-proxy."
-            ) from exc
-        raise OllamaError(
-            f"Ollama HTTP {exc.code} ({chosen}) : {body_txt or exc.reason}"
-        ) from exc
-    except urlerror.URLError as exc:
-        # Message adapté local vs prod (URL HTTPS = on est sur un VPS distant).
+        resp = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json=body,
+            headers={**_auth_headers(), "Content-Type": "application/json"},
+            stream=True,
+            timeout=OLLAMA_STREAM_TIMEOUT,
+        )
+    except requests.RequestException as exc:
         is_remote = OLLAMA_BASE_URL.startswith("https://") or not OLLAMA_BASE_URL.startswith(
             ("http://127.", "http://localhost")
         )
         if is_remote:
             raise OllamaError(
-                f"Ollama injoignable sur {OLLAMA_BASE_URL}. Vérifiez que le VPS est "
-                "en ligne et que le reverse-proxy (Caddy/Nginx) écoute bien en HTTPS."
+                f"Ollama injoignable sur {OLLAMA_BASE_URL}. Vérifiez que le VPS "
+                "est en ligne et que le reverse-proxy écoute en HTTPS."
             ) from exc
         raise OllamaError(
             f"Ollama injoignable sur {OLLAMA_BASE_URL}. Lancez `ollama serve` puis "
             f"`ollama pull {chosen}`."
         ) from exc
-    except TimeoutError as exc:
-        raise OllamaError("Ollama : délai dépassé — modèle peut-être trop gros pour cette machine.") from exc
+
+    if resp.status_code in (401, 403):
+        try:
+            resp.close()
+        except Exception:
+            pass
+        raise OllamaError(
+            f"Ollama refuse la requête (HTTP {resp.status_code}). Vérifiez "
+            "OLLAMA_API_KEY côté app et la clé attendue par votre reverse-proxy."
+        )
+    if not resp.ok:
+        body_txt = ""
+        try:
+            body_txt = resp.text[:400]
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
+        raise OllamaError(f"Ollama HTTP {resp.status_code} ({chosen}) : {body_txt or 'erreur inconnue'}")
+
+    try:
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+            line = (raw_line or "").strip()
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("Ollama chunk illisible: %r", line[:160])
+                continue
+            yield chunk
+            if chunk.get("done"):
+                return
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass

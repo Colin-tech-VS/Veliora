@@ -272,10 +272,29 @@
         body: JSON.stringify(payload),
         signal: state.abortCtl.signal,
       });
+      if (res.status === 404) {
+        throw new Error(
+          "Endpoint /api/ai/chat introuvable — Scalingo n'a pas déployé le code multi-provider. " +
+          "Dashboard → Deploy → Manual deploy → main.",
+        );
+      }
+      if (res.status === 401) {
+        throw new Error("Session expirée — recharge la page et reconnecte-toi.");
+      }
       if (!res.ok) {
-        let txt = "";
-        try { txt = await res.text(); } catch { /* ignore */ }
-        throw new Error(`Serveur IA HTTP ${res.status} — ${txt.slice(0, 200) || "réponse vide"}`);
+        // Le backend met l'erreur en JSON quand il peut (`{error: "..."}`),
+        // sinon on remonte le texte brut.
+        let detail = "";
+        try {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const body = await res.json();
+            detail = body.error || body.detail || JSON.stringify(body).slice(0, 200);
+          } else {
+            detail = (await res.text()).slice(0, 250);
+          }
+        } catch { /* ignore */ }
+        throw new Error(`Serveur IA HTTP ${res.status} — ${detail || "réponse vide"}`);
       }
       if (!res.body || !res.body.getReader) {
         const all = await res.text();
@@ -303,7 +322,18 @@
       }
       const tail = buffer.trim();
       if (tail) handleEvent(node, tail, (delta) => { fullText += delta; });
-      finalizeAssistantNode(node, fullText);
+      // Si rien n'est sorti du tout, on affiche un message clair plutôt qu'une
+      // bulle vide qui laisse l'agent dans le flou.
+      if (!fullText.trim()) {
+        showErrorMessage(
+          node,
+          "Le fournisseur IA a fermé la connexion sans répondre. " +
+          "Vérifie que AI_PROVIDER, AI_API_KEY et AI_MODEL sont bien définis dans Scalingo " +
+          "et que Scalingo a redéployé après le dernier env-set.",
+        );
+      } else {
+        finalizeAssistantNode(node, fullText);
+      }
       await refreshConversationsList();
     } catch (err) {
       if (err.name === "AbortError") {
