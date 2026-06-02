@@ -164,7 +164,19 @@ def ensure_db():
     with _db_init_lock:
         if getattr(app, "_db_ready", False):
             return
-        init_db()
+        try:
+            init_db()
+        except Exception as exc:
+            logging.exception("Initialisation DB échouée")
+            if request.path.startswith("/api/"):
+                return jsonify(
+                    {
+                        "error": "Base de données indisponible",
+                        "code": "database_unavailable",
+                        "detail": str(exc),
+                    }
+                ), 503
+            raise
         try:
             backup_database()
         except OSError as exc:

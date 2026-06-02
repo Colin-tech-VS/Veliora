@@ -7,6 +7,8 @@ import logging
 import os
 import socket
 import sqlite3
+import time
+import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -96,6 +98,33 @@ def _dns_a_lookup(host: str, dns_server: str = "1.1.1.1") -> list[str]:
         return []
 
 
+def _dns_a_lookup_doh(host: str) -> list[str]:
+    """Fallback DNS-over-HTTPS (TCP) pour environnements bloquant l'UDP/53."""
+    urls = (
+        f"https://cloudflare-dns.com/dns-query?name={host}&type=A",
+        f"https://dns.google/resolve?name={host}&type=A",
+    )
+    headers = {"accept": "application/dns-json", "user-agent": "veliora-db/1.0"}
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                payload = resp.read().decode("utf-8", errors="ignore")
+            data = json.loads(payload)
+            answers = data.get("Answer") or []
+            addrs = [
+                entry.get("data", "")
+                for entry in answers
+                if isinstance(entry, dict) and entry.get("type") == 1
+            ]
+            addrs = [a for a in addrs if a and "." in a]
+            if addrs:
+                return addrs
+        except Exception:
+            continue
+    return []
+
+
 def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
     """Renvoie {"hostaddr": "1.2.3.4"} si l'hôte du DATABASE_URL résout en IPv4.
 
@@ -118,23 +147,31 @@ def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
     host = parsed.hostname
     if not host:
         return {}
+    manual = os.getenv("DATABASE_HOSTADDR", "").strip()
+    if manual:
+        _ipv4_cache[host] = manual
+        logger.info("DB hostaddr forcé via DATABASE_HOSTADDR=%s", manual)
+        return {"hostaddr": manual}
     cached = _ipv4_cache.get(host)
     if cached:
         return {"hostaddr": cached}
-    try:
-        # Essaye d'abord la résolution IPv4 classique.
-        addrs = socket.gethostbyname_ex(host)[2]
-        if addrs:
-            ipv4 = addrs[0]
-            _ipv4_cache[host] = ipv4
-            logger.info(
-                "DB host %s résolu en IPv4 %s (contournement IPv6 Scalingo)",
-                host,
-                ipv4,
-            )
-            return {"hostaddr": ipv4}
-    except OSError:
-        pass
+    for attempt in range(1, 4):
+        try:
+            # Essaye d'abord la résolution IPv4 classique.
+            addrs = socket.gethostbyname_ex(host)[2]
+            if addrs:
+                ipv4 = addrs[0]
+                _ipv4_cache[host] = ipv4
+                logger.info(
+                    "DB host %s résolu en IPv4 %s (contournement IPv6 Scalingo)",
+                    host,
+                    ipv4,
+                )
+                return {"hostaddr": ipv4}
+        except OSError:
+            if attempt < 3:
+                # Évite un faux négatif DNS transitoire au démarrage du conteneur.
+                time.sleep(0.2 * attempt)
 
     port = parsed.port or 5432
     try:
@@ -156,11 +193,13 @@ def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
                 exc,
             )
             public_addrs = _dns_a_lookup(host)
+            if not public_addrs:
+                public_addrs = _dns_a_lookup_doh(host)
             if public_addrs:
                 ipv4 = public_addrs[0]
                 _ipv4_cache[host] = ipv4
                 logger.info(
-                    "DB host %s résolu en IPv4 via DNS public %s",
+                    "DB host %s résolu en IPv4 via DNS fallback %s",
                     host,
                     ipv4,
                 )
