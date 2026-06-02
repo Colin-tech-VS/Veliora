@@ -2516,6 +2516,23 @@ function setupViewToggle() {
 }
 
 function setupLeadsActions() {
+  document.getElementById("leads-refresh-all-btn")?.addEventListener("click", async () => {
+    const activeCount = LEADS.filter((l) => (l.status || "nouveau") !== "retire").length;
+    if (!activeCount) {
+      showToast("Aucun prospect actif à recrawler", "warning");
+      return;
+    }
+    if (crawlState.active || leadRefreshState.busy) {
+      showToast("Un crawl est déjà en cours", "warning");
+      return;
+    }
+    const ok = confirm(
+      `Relancer un crawl global pour mettre à jour les ${activeCount} prospects actifs ?`,
+    );
+    if (!ok) return;
+    await runManualScan();
+  });
+
   document.getElementById("leads-delete-all-btn")?.addEventListener("click", async () => {
     const count = LEADS.length;
     if (!count) {
