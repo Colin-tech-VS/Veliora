@@ -74,11 +74,14 @@ def main() -> None:
     import psycopg
     from psycopg.rows import dict_row
 
+    from velora_db.connection import _resolve_ipv4_hostaddr
+
     sq = sqlite3.connect(str(db_file))
     sq.row_factory = sqlite3.Row
 
     url = os.environ["DATABASE_URL"]
-    pg = psycopg.connect(url, row_factory=dict_row)
+    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
+    pg = psycopg.connect(url, row_factory=dict_row, **ipv4_kwargs)
 
     for table in TABLES_ORDER:
         try:

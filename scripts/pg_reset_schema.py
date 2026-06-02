@@ -15,6 +15,7 @@ import sys
 import psycopg
 
 from velora_db.config import database_url
+from velora_db.connection import _resolve_ipv4_hostaddr
 
 _GUARD_TABLES = ("agencies", "agency_users", "leads", "sources", "seller_mandates")
 _FLAG_COLUMNS = ("enabled", "is_custom", "active", "used", "onboarding_completed")
@@ -29,7 +30,8 @@ def main() -> int:
         print("ERREUR: DATABASE_URL absent — rien à faire.")
         return 1
 
-    conn = psycopg.connect(url)
+    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
+    conn = psycopg.connect(url, **ipv4_kwargs)
     conn.autocommit = True
     cur = conn.cursor()
 
@@ -66,7 +68,8 @@ def main() -> int:
         ensure_mandate_tables(c2)
     print("SCHEMA RECREATED")
 
-    conn = psycopg.connect(url)
+    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
+    conn = psycopg.connect(url, **ipv4_kwargs)
     cur = conn.cursor()
     cur.execute(
         "SELECT table_name, column_name, data_type FROM information_schema.columns "

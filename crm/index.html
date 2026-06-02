@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1F4ED8">
+  <meta name="theme-color" content="#1E3A5F">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -89,7 +89,7 @@
           <div class="nav-section-label">Outils</div>
           <button class="nav-item" data-view="crawler">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
-            Crawler
+            Détection annonces
           </button>
         </div>
       </nav>
@@ -98,9 +98,9 @@
         <div class="crawler-status-mini">
           <div class="status-row">
             <span class="status-dot paused"></span>
-            <p>Crawler en pause</p>
+            <p>Détection en pause</p>
           </div>
-          <p><span class="count">0</span> annonces scannées aujourd'hui</p>
+          <p><span class="count">0</span> annonces vues aujourd'hui</p>
         </div>
       </div>
     </aside>
@@ -135,9 +135,9 @@
             <button type="button" class="header-icon-btn" id="btn-invite-collab" hidden title="Inviter un collaborateur" aria-label="Inviter">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M8.5 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6"/></svg>
             </button>
-            <button class="btn btn-secondary btn-compact" id="header-crawl-btn" type="button" onclick="switchView('crawler')" title="Alimenter le radar (sources)">
+            <button class="btn btn-secondary btn-compact" id="header-crawl-btn" type="button" onclick="switchView('crawler')" title="Alimenter le radar — détection des annonces sur les portails">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
-              <span class="btn-label">Sources</span>
+              <span class="btn-label">Portails</span>
             </button>
             <div class="header-user" role="group" aria-label="Compte">
               <div class="avatar" id="header-avatar" title="Compte">AG</div>
@@ -206,9 +206,9 @@
               <li class="crm-howto-step" data-step="crawler">
                 <span class="crm-howto-num">1</span>
                 <div class="crm-howto-step-body">
-                  <strong>Configurer le crawler</strong>
-                  <p>Choisis tes portails et ta ville cible. Veliora va scanner LeBonCoin, SeLoger, PAP, BienIci, etc. à ta place.</p>
-                  <button type="button" class="crm-howto-link" data-howto-goto="crawler">Ouvrir Crawler →</button>
+                  <strong>Choisir vos portails</strong>
+                  <p>Sélectionne ta ville cible et les sites à surveiller. Veliora va consulter LeBonCoin, SeLoger, PAP, BienIci, etc. à ta place.</p>
+                  <button type="button" class="crm-howto-link" data-howto-goto="crawler">Ouvrir mes portails →</button>
                 </div>
               </li>
               <li class="crm-howto-step" data-step="leads">
@@ -365,8 +365,8 @@
             </div>
             <div class="card">
               <div class="card-header">
-                <span class="card-title">Sources</span>
-                <button class="btn btn-ghost" onclick="switchView('crawler')">Crawler →</button>
+                <span class="card-title">Mes portails</span>
+                <button class="btn btn-ghost" onclick="switchView('crawler')">Tout voir →</button>
               </div>
               <div class="card-body">
                 <div class="source-bars" id="source-chart"></div>
@@ -522,7 +522,7 @@
             <button class="filter-chip" data-filter="location">Location <span class="count">0</span></button>
             <button class="filter-chip" data-filter="particulier">Particuliers <span class="count">0</span></button>
             <button class="filter-chip" data-filter="nouveau">Nouveaux <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="retire" title="Fiches retirées par le crawl (incohérentes)">Retirés <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="retire" title="Fiches retirées (informations incohérentes)">Retirés <span class="count">0</span></button>
             <button class="filter-chip" data-filter="price-drop">Baisses <span class="count">0</span></button>
             <button class="filter-chip" data-filter="dvf-sous-marche">Sous marché DVF <span class="count">0</span></button>
             <div class="filters-spacer"></div>
@@ -533,8 +533,8 @@
               </select>
             </label>
             <span id="leads-live-indicator" class="leads-live-badge" hidden aria-live="polite">● Mise à jour en direct</span>
-            <button type="button" class="btn btn-secondary btn-sm" id="leads-refresh-all-btn" title="Relancer un crawl global pour réactualiser tous les prospects">
-              Recrawler tous les prospects
+            <button type="button" class="btn btn-secondary btn-sm" id="leads-refresh-all-btn" title="Actualiser toutes les fiches depuis les portails">
+              Actualiser toutes les fiches
             </button>
             <button type="button" class="btn btn-secondary btn-sm" id="leads-dvf-compare-all" title="Comparer aux ventes DVF (Etalab)">
               Comparatif DVF
@@ -577,27 +577,27 @@
           </div>
         </div>
 
-        <!-- Crawler -->
+        <!-- Détection -->
         <div class="view" id="view-crawler">
           <aside class="onboarding-spot" id="onboarding-spot-1" data-onboarding-step="1" hidden>
             <div class="onboarding-spot-inner">
               <div class="onboarding-spot-head">
-                <span class="onboarding-spot-badge">Étape 1 · Sources</span>
+                <span class="onboarding-spot-badge">Étape 1 · Portails</span>
                 <span class="onboarding-spot-status" aria-hidden="true"></span>
               </div>
-              <h3 class="onboarding-spot-title">Ajoutez votre première source</h3>
-              <p class="onboarding-spot-desc">Collez l’URL d’une page de recherche immobilière (Leboncoin, PAP, SeLoger…). Veliora surveillera cette source pour détecter les opportunités mandat.</p>
+              <h3 class="onboarding-spot-title">Ajoutez votre premier portail</h3>
+              <p class="onboarding-spot-desc">Collez l’URL d’une page de recherche immobilière (Leboncoin, PAP, SeLoger…). Veliora surveillera ce portail pour détecter les opportunités mandat.</p>
               <button type="button" class="btn btn-primary btn-sm onboarding-spot-cta" id="onboarding-cta-source">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M12 4v16m8-8H4"/></svg>
-                Ajouter un site
+                Ajouter un portail
               </button>
-              <p class="onboarding-spot-hint">↓ Ou utilisez le bouton « Ajouter un site » dans la section Sources</p>
+              <p class="onboarding-spot-hint">↓ Ou utilisez le bouton « Ajouter un portail » dans la section Mes portails</p>
             </div>
           </aside>
 
           <div class="pwa-install-banner" id="pwa-install-banner" hidden>
             <div class="pwa-install-inner">
-              <p><strong>App Veliora</strong> — installez pour crawler en arrière-plan et recevoir une notification à la fin.</p>
+              <p><strong>App Veliora</strong> — installez pour suivre la détection en arrière-plan et recevoir une notification à la fin.</p>
               <button type="button" class="btn btn-primary btn-sm" id="pwa-install-btn">Installer l’app</button>
               <button type="button" class="btn btn-ghost btn-sm" id="pwa-install-dismiss">Plus tard</button>
             </div>
@@ -605,19 +605,19 @@
 
           <div class="crawler-hero">
             <div class="crawler-hero-content">
-              <h2>Surveillance automatique des annonces</h2>
-              <p>Le crawler parcourt <strong>tous vos sites</strong> (LeBonCoin, PAP, SeLoger, Bien'ici, Figaro, sites perso…) — vente, location, pagination et catégories incluses.</p>
+              <h2>Détection automatique des annonces</h2>
+              <p>Veliora consulte <strong>tous vos portails</strong> (LeBonCoin, PAP, SeLoger, Bien'ici, Figaro, sites perso…) — vente, location, pagination et catégories incluses.</p>
               <form class="custom-crawl-form" id="custom-crawl-form">
                 <div class="custom-crawl-input">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"/><path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-                  <input type="url" id="custom-crawl-url" placeholder="Lien direct d'une fiche annonce (tous sites)…" required>
+                  <input type="url" id="custom-crawl-url" placeholder="Lien direct d'une fiche annonce (tous portails)…" required>
                   <button type="submit" class="btn btn-primary">Analyser l'annonce</button>
                 </div>
-                <p class="custom-crawl-hint">Mode 2 — une fiche, Score Mandat™ et recommandation. Pour le radar continu, ajoutez des sources ci-dessous.</p>
+                <p class="custom-crawl-hint">Analyse d'une seule fiche → Score Mandat™ et recommandation immédiats. Pour la surveillance continue, ajoutez des portails ci-dessous.</p>
               </form>
               <div class="crawl-city-bar" id="crawl-city-bar">
                 <div class="crawl-city-readonly">
-                  <span class="crawl-city-readonly-label">Ville ciblée pour le crawl</span>
+                  <span class="crawl-city-readonly-label">Ville surveillée</span>
                   <p class="crawl-city-readonly-value" id="crawl-city-display" aria-live="polite">—</p>
                   <p class="crawl-city-readonly-hint" id="crawl-city-territory-hint">
                     Lecture seule ici — modifiez le territoire ou la fiche agence, puis enregistrez.
@@ -635,7 +635,7 @@
                 </button>
                 <button class="btn btn-secondary" style="background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.2);color:white" id="crawler-scan-btn">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                  Crawler tout
+                  Tout détecter
                 </button>
               </div>
               <div class="crawler-live-stats">
@@ -644,11 +644,11 @@
                   <div class="value" id="crawler-total-leads">0</div>
                 </div>
                 <div class="live-stat">
-                  <div class="label">Sources actives</div>
+                  <div class="label">Portails actifs</div>
                   <div class="value" id="crawler-active-sources">5</div>
                 </div>
                 <div class="live-stat">
-                  <div class="label">Màj aujourd'hui</div>
+                  <div class="label">Vus aujourd'hui</div>
                   <div class="value" id="crawler-found-today">0</div>
                 </div>
               </div>
@@ -661,76 +661,76 @@
                 <span class="onboarding-spot-badge">Étape 2 · Veille</span>
                 <span class="onboarding-spot-status" aria-hidden="true"></span>
               </div>
-              <h3 class="onboarding-spot-title">Lancez votre premier crawl</h3>
-              <p class="onboarding-spot-desc">Scannez vos sources pour importer les annonces. Dès qu’un prospect est détecté, le briefing se remplit automatiquement.</p>
+              <h3 class="onboarding-spot-title">Lancez votre première détection</h3>
+              <p class="onboarding-spot-desc">Consultez vos portails pour importer les annonces. Dès qu’un prospect est détecté, le briefing se remplit automatiquement.</p>
               <div class="onboarding-spot-actions">
-                <button type="button" class="btn btn-primary btn-sm onboarding-spot-cta" id="onboarding-cta-crawl-all">Crawler tout</button>
-                <button type="button" class="btn btn-secondary btn-sm" id="onboarding-cta-crawl-one">Crawler une source</button>
+                <button type="button" class="btn btn-primary btn-sm onboarding-spot-cta" id="onboarding-cta-crawl-all">Tout détecter</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="onboarding-cta-crawl-one">Détecter un portail</button>
               </div>
-              <p class="onboarding-spot-hint">↑ Boutons « Crawler tout » dans la zone bleue ou ci-dessous</p>
+              <p class="onboarding-spot-hint">↑ Boutons « Tout détecter » dans la zone foncée ou ci-dessous</p>
             </div>
           </aside>
 
           <div class="sources-section-header">
-            <h3>Sites à crawler</h3>
+            <h3>Mes portails</h3>
             <div class="sources-section-actions">
               <button class="btn btn-secondary" id="crawler-all-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                Crawler tout
+                Tout détecter
               </button>
               <button class="btn btn-primary" id="add-source-btn">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M12 4v16m8-8H4"/></svg>
-                Ajouter un site
+                Ajouter un portail
               </button>
             </div>
           </div>
           <p class="sources-section-intro form-hint" id="sources-section-intro">
-            « Crawler tout » ne parcourt que les <strong>portails recommandés</strong> ci-dessous. Désactivez un site avec l’interrupteur si besoin.
+            « Tout détecter » ne consulte que les <strong>portails recommandés</strong> ci-dessous. Désactivez un portail avec l’interrupteur si besoin.
           </p>
           <h4 class="sources-subsection-title">Portails recommandés</h4>
           <div class="sources-grid" id="sources-grid-reliable"></div>
-          <h4 class="sources-subsection-title sources-subsection-title--muted">Portails protégés (bientôt disponibles)</h4>
-          <p class="form-hint sources-subsection-hint">PAP, LeBonCoin, SeLoger, BienIci, LogicImmo — protégés Cloudflare / anti-bot. Crawl bientôt disponible, pas encore activé.</p>
+          <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (bientôt disponibles)</h4>
+          <p class="form-hint sources-subsection-hint">PAP, LeBonCoin, SeLoger, BienIci, LogicImmo — sites avec protection renforcée (anti-bots). Détection en cours d'optimisation, pas encore activée.</p>
           <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
           <div id="sources-custom-wrap" hidden>
-            <h4 class="sources-subsection-title">Sites personnalisés</h4>
+            <h4 class="sources-subsection-title">Vos portails personnalisés</h4>
             <div class="sources-grid" id="sources-grid-custom"></div>
           </div>
         </div>
 
-        <!-- Modal confirmation crawl par lien -->
+        <!-- Modal confirmation détection par lien -->
         <div class="modal-overlay" id="crawl-url-modal">
           <div class="modal">
             <div class="modal-header">
-              <h3>Lancer le crawl</h3>
+              <h3>Lancer la détection</h3>
               <button class="btn btn-ghost" id="crawl-url-close" type="button">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
             <div class="modal-body">
               <p class="crawl-url-preview" id="crawl-url-preview"></p>
-              <p class="form-hint" id="crawl-url-hint">Souhaitez-vous enregistrer ce site dans vos sources pour le crawler régulièrement ?</p>
+              <p class="form-hint" id="crawl-url-hint">Souhaitez-vous enregistrer ce site comme portail surveillé pour le consulter régulièrement ?</p>
               <div class="modal-actions crawl-url-actions">
                 <button type="button" class="btn btn-secondary" id="crawl-url-cancel">Annuler</button>
-                <button type="button" class="btn btn-secondary" id="crawl-url-once">Crawler une fois</button>
-                <button type="button" class="btn btn-primary" id="crawl-url-add">Ajouter aux sources et crawler</button>
+                <button type="button" class="btn btn-secondary" id="crawl-url-once">Détecter une fois</button>
+                <button type="button" class="btn btn-primary" id="crawl-url-add">Ajouter et surveiller</button>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Modal ajout source -->
+        <!-- Modal ajout portail -->
         <div class="modal-overlay" id="add-source-modal">
           <div class="modal">
             <div class="modal-header">
-              <h3>Ajouter un site à crawler</h3>
+              <h3>Ajouter un portail</h3>
               <button class="btn btn-ghost" id="add-source-close">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
             <form id="add-source-form" class="modal-body">
               <label class="form-field">
-                <span>Lien du site à crawler</span>
+                <span>Lien du portail à surveiller</span>
                 <input type="text" id="add-source-url" placeholder="https://www.paruvendu.fr/immobilier/" required>
               </label>
               <label class="form-field">
@@ -740,7 +740,7 @@
               <p class="form-hint">Collez simplement l’URL de la page immobilier du site. Exemple : <a href="https://www.paruvendu.fr/immobilier/" target="_blank" rel="noopener">paruvendu.fr/immobilier</a></p>
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" id="add-source-cancel">Annuler</button>
-                <button type="submit" class="btn btn-primary">Ajouter le site</button>
+                <button type="submit" class="btn btn-primary">Ajouter le portail</button>
               </div>
             </form>
           </div>
@@ -749,18 +749,18 @@
         <div class="modal-overlay" id="leads-refresh-all-modal" role="dialog" aria-labelledby="leads-refresh-all-title" aria-modal="true">
           <div class="modal">
             <div class="modal-header">
-              <h3 id="leads-refresh-all-title">Recrawler tous les prospects</h3>
+              <h3 id="leads-refresh-all-title">Actualiser toutes les fiches</h3>
             </div>
             <div class="modal-body">
               <p id="leads-refresh-all-text" class="refresh-all-confirm-text">
-                Confirmer le recrawl global des prospects actifs ?
+                Actualiser toutes les fiches actives depuis les portails ?
               </p>
               <p class="form-hint refresh-all-confirm-hint">
-                Veliora va relancer un recrawl annonce-par-annonce (sans crawl national).
+                Veliora va revisiter chaque annonce pour mettre à jour prix, contacts et photos.
               </p>
               <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" id="leads-refresh-all-cancel">Annuler</button>
-                <button type="button" class="btn btn-primary" id="leads-refresh-all-confirm">Lancer le recrawl</button>
+                <button type="button" class="btn btn-primary" id="leads-refresh-all-confirm">Lancer l'actualisation</button>
               </div>
             </div>
           </div>
@@ -768,10 +768,10 @@
         <div class="modal-overlay" id="leads-refresh-progress-modal" role="dialog" aria-labelledby="leads-refresh-progress-title" aria-modal="true">
           <div class="modal">
             <div class="modal-header">
-              <h3 id="leads-refresh-progress-title">Recrawl global en cours</h3>
+              <h3 id="leads-refresh-progress-title">Actualisation en cours</h3>
             </div>
             <div class="modal-body">
-              <p id="leads-refresh-progress-step" class="refresh-all-confirm-text">Préparation du recrawl…</p>
+              <p id="leads-refresh-progress-step" class="refresh-all-confirm-text">Préparation de l'actualisation…</p>
               <div class="lead-refresh-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div class="lead-refresh-bar-fill" id="leads-refresh-progress-fill" style="width:0%"></div>
               </div>
