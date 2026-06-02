@@ -264,6 +264,14 @@
     display: none;
   }
 
+  .leads-city-filter-wrap {
+    flex-shrink: 0;
+  }
+
+  .leads-city-filter {
+    max-width: 140px;
+  }
+
   #leads-dvf-compare-all {
     flex-shrink: 0;
     font-size: 0.75rem;

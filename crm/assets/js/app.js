@@ -30,6 +30,7 @@ const state = {
   appStats: null,
   currentView: "dashboard",
   leadsFilter: "all",
+  leadsCityFilter: "",
   leadsView: "table",
   searchQuery: "",
   selectedLead: null,
@@ -2496,6 +2497,11 @@ function setupFilters() {
       renderLeads();
     });
   });
+  const cityFilter = document.getElementById("leads-city-filter");
+  cityFilter?.addEventListener("change", () => {
+    state.leadsCityFilter = (cityFilter.value || "").toLowerCase();
+    renderLeads();
+  });
 }
 
 function setupViewToggle() {
@@ -4404,11 +4410,32 @@ function getFilteredLeads() {
       ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
     );
 
+  if (state.leadsCityFilter) {
+    const cityQ = state.leadsCityFilter;
+    leads = leads.filter((l) => (l.city || "").toLowerCase() === cityQ);
+  }
+
   if (state.searchQuery && !isUrl(state.searchQuery)) {
     leads = leads.filter((l) => leadMatchesSearchQuery(l, state.searchQuery));
   }
 
   return leads.sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
+}
+
+function populateLeadsCityFilterOptions() {
+  const select = document.getElementById("leads-city-filter");
+  if (!select) return;
+  const selected = state.leadsCityFilter || "";
+  const cities = [...new Set(
+    LEADS.map((l) => (l.city || "").trim())
+      .filter(Boolean)
+      .map((c) => c.toLowerCase()),
+  )].sort((a, b) => a.localeCompare(b, "fr"));
+  select.innerHTML = `<option value="">Toutes les villes</option>${cities
+    .map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`)
+    .join("")}`;
+  select.value = selected && cities.includes(selected) ? selected : "";
+  if (selected && !cities.includes(selected)) state.leadsCityFilter = "";
 }
 
 function getLeadSearchText(lead) {
@@ -5450,6 +5477,7 @@ function renderLeadRow(lead) {
 }
 
 function renderLeads() {
+  populateLeadsCityFilterOptions();
   const leads = getFilteredLeads();
   const tableContainer = document.getElementById("leads-table-body");
   const gridContainer = document.getElementById("leads-grid");

@@ -2012,6 +2012,28 @@ body {
   flex: 1;
 }
 
+.leads-city-filter-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.35rem 0.25rem 0.65rem;
+}
+
+.leads-city-filter {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding-right: 0.2rem;
+  max-width: 180px;
+}
+
 .view-toggle {
   display: flex;
   border: 1px solid var(--border);
