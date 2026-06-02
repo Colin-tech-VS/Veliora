@@ -112,7 +112,7 @@ Causes probables côté Veliora et leviers :
 | Table `crawl_logs` qui gonfle (1 ligne par URL crawlée) | Purge automatique désormais en place (garde 5000 lignes, `CRAWL_LOG_KEEP`). Pour repartir propre : `DELETE FROM crawl_logs;` dans SQL Editor. |
 | `lead_price_history`, `lead_outcomes`, `geocode_cache` volumineux | `geocode_cache` est réutilisable (à garder) ; purger l'historique ancien si besoin. |
 | Egress : polling du crawl + listes rechargées | Le polling n'est actif que pendant un crawl ; éviter de laisser un crawl tourner en boucle. |
-| Pool de connexions saturé | Déjà corrigé (commits récents) — utiliser le pooler **Transaction** port `6543`. |
+| Pool de connexions saturé / « base saturée » au démarrage | Corrigé : le pool est réinitialisé dans chaque worker après le fork gunicorn (`--preload` ouvrait le pool dans le maître, ses threads ne survivaient pas au fork). Utiliser le pooler **Transaction** port `6543`. |
 
 > Les **images d'annonces ne sont PAS dans Supabase** (stockées en fichiers
 > `data/lead_images/*.webp`) — elles ne comptent pas dans le quota DB. Note :
