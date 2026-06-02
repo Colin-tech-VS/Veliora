@@ -1,0 +1,68 @@
+# Reverse-proxy HTTPS devant Ollama, avec authentification Bearer.
+#
+# Caddy gère :
+#   - Le certificat TLS Let's Encrypt automatique (renouvellement inclus).
+#   - L'auth obligatoire avant de laisser passer la requête vers Ollama.
+#   - Le HTTP/2 et le streaming chunked (indispensable pour le chat token-par-token).
+#
+# Le domaine + la clé d'API sont injectés depuis le `.env` du docker-compose
+# (variables OLLAMA_DOMAIN et OLLAMA_API_KEY).
+
+{$OLLAMA_DOMAIN} {
+	# Force la TLS moderne, refuse les anciens clients.
+	tls {
+		protocols tls1.2 tls1.3
+	}
+
+	# Compression côté Caddy (le streaming reste compatible).
+	encode gzip zstd
+
+	# CORS — utile si l'on appelle l'API depuis un autre domaine (Scalingo).
+	# Pour Veliora, l'app Python appelle Ollama en HTTP-to-HTTP : pas de CORS
+	# côté navigateur, mais on garde une politique propre quand même.
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Allow-Methods "GET, POST, OPTIONS"
+		Access-Control-Allow-Headers "Authorization, Content-Type"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# OPTIONS pre-flight (CORS) — autoriser sans auth pour ne pas casser
+	# les clients qui pré-vérifient.
+	@options method OPTIONS
+	respond @options 204
+
+	# Auth Bearer obligatoire pour toutes les autres requêtes.
+	# `header_regexp` valide que l'en-tête `Authorization` matche exactement
+	# "Bearer <clé>". Sinon → 401.
+	@authorized {
+		header_regexp Authorization ^Bearer\ {$OLLAMA_API_KEY}$
+	}
+	handle @authorized {
+		reverse_proxy http://ollama:11434 {
+			# Augmenter les timeouts pour le streaming long (chat 7B sur CPU).
+			transport http {
+				read_timeout 5m
+				write_timeout 5m
+				dial_timeout 30s
+			}
+			# Préserver l'IP cliente dans les logs Ollama.
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle {
+		respond "401 Unauthorized — `Authorization: Bearer <clé>` requis" 401
+	}
+
+	# Log JSON sur stdout (visible via `docker compose logs caddy`).
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}

@@ -1,0 +1,82 @@
+# Stack Ollama auto-hébergée — déployable sur tout VPS Docker (Hetzner, OVH,
+# Scaleway, Contabo…). Caddy expose Ollama en HTTPS avec authentification
+# Bearer (côté reverse-proxy, car Ollama lui-même n'a pas d'auth).
+#
+# Pré-requis sur le VPS :
+#   - Docker + Docker Compose installés.
+#   - Un nom de domaine pointant vers l'IP du VPS (ex. ollama.veliora.fr).
+#   - Fichier `.env` à côté de ce compose, basé sur `.env.example` (généré
+#     par `make secret-key` ou `openssl rand -base64 32`).
+#
+# Démarrage :
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen2.5:7b-instruct
+#   docker compose exec ollama ollama pull llama3.2:3b   # fallback rapide
+#
+# Vérification :
+#   curl -H "Authorization: Bearer $OLLAMA_API_KEY" https://ollama.veliora.fr/api/tags
+#
+# Côté Veliora (Scalingo) :
+#   scalingo env-set OLLAMA_BASE_URL=https://ollama.veliora.fr \
+#                    OLLAMA_API_KEY=$OLLAMA_API_KEY \
+#                    OLLAMA_MODEL=qwen2.5:7b-instruct
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: veliora-ollama
+    restart: unless-stopped
+    # Bind sur le réseau interne du compose uniquement — Caddy fait le pont
+    # vers Internet en HTTPS. Pas d'exposition publique du port 11434 sans auth.
+    expose:
+      - "11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      # Garder les modèles chargés en mémoire un peu plus longtemps (réduit
+      # la latence du premier token après une période d'inactivité).
+      OLLAMA_KEEP_ALIVE: "30m"
+      # Autoriser plusieurs requêtes en parallèle (utile si plusieurs agents
+      # ouvrent l'onglet IA en même temps).
+      OLLAMA_NUM_PARALLEL: "2"
+    # Optionnel : si vous avez un GPU NVIDIA, dé-commentez le bloc ci-dessous
+    # et installez le runtime NVIDIA Docker. Sinon Ollama tourne en CPU (lent
+    # mais fonctionnel sur un VPS 8 cœurs / 16 Go RAM avec un modèle 7B).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: veliora-ollama-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      OLLAMA_API_KEY: "${OLLAMA_API_KEY}"
+      OLLAMA_DOMAIN: "${OLLAMA_DOMAIN}"
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

@@ -505,7 +505,19 @@
       state.health = res;
       if (!res.reachable) {
         if (dot) dot.dataset.state = "off";
-        if (label) label.textContent = `Ollama injoignable sur ${res.base_url || "127.0.0.1:11434"}`;
+        if (label) {
+          // En prod, le base_url ressemble à https://ollama.xxx — message dédié
+          // pour rappeler que le VPS doit tourner. Sinon, hint local.
+          const isRemote = (res.base_url || "").startsWith("https://");
+          label.innerHTML = isRemote
+            ? `VPS Ollama injoignable (<code>${escapeHtml(res.base_url)}</code>) — voir <code>OLLAMA_DEPLOY.md</code>`
+            : `Ollama local non démarré — <code>ollama serve</code>`;
+        }
+        return;
+      }
+      if (res.needs_auth) {
+        if (dot) dot.dataset.state = "warn";
+        if (label) label.textContent = "Clé OLLAMA_API_KEY refusée par le VPS";
         return;
       }
       const ok = res.has_primary_model || res.has_fallback_model;
@@ -514,7 +526,7 @@
         if (ok) {
           label.textContent = `Prêt · ${res.configured_model}`;
         } else {
-          label.textContent = `Ollama OK mais aucun modèle — \`ollama pull ${res.configured_model}\``;
+          label.innerHTML = `Aucun modèle — <code>docker compose exec ollama ollama pull ${escapeHtml(res.configured_model)}</code>`;
         }
       }
     } catch {

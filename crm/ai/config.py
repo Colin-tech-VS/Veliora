@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import os
 
-# URL Ollama : par défaut le démon local (`ollama serve`). Configurable via env
-# OLLAMA_BASE_URL pour pointer vers un autre hôte (LAN, GPU mutualisé…).
+# URL Ollama : par défaut le démon local (`ollama serve`).
+# En prod : pointer vers ton VPS Ollama (ex. `https://ollama.veliora.fr`).
+# Configurable via env OLLAMA_BASE_URL.
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+
+# Clé d'API protégeant le démon Ollama exposé en HTTPS (cf. infra/ollama/Caddyfile).
+# Vide en local — obligatoire en prod si tu ne veux pas que tout internet
+# puisse appeler ton GPU à ta place.
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "").strip()
 
 # Modèle par défaut — bon compromis vitesse / qualité / tool-use sur CPU récent.
 # Remplaçable via env (`OLLAMA_MODEL=llama3.1:8b` par ex.).

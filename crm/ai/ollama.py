@@ -9,6 +9,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 from crm.ai.config import (
+    OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     OLLAMA_CONTEXT_TOKENS,
     OLLAMA_FALLBACK_MODEL,
@@ -25,12 +26,38 @@ class OllamaError(RuntimeError):
     """Erreur Ollama propagée à l'API HTTP avec un message explicite."""
 
 
+def _auth_headers() -> dict[str, str]:
+    """Headers HTTP avec Bearer token si configuré.
+
+    Ollama lui-même n'a pas d'auth — on s'appuie sur un reverse-proxy
+    (Caddy / Nginx) qui valide `Authorization: Bearer …` avant de laisser
+    passer la requête. En local on n'envoie rien.
+    """
+    if OLLAMA_API_KEY:
+        return {"Authorization": f"Bearer {OLLAMA_API_KEY}"}
+    return {}
+
+
 def health() -> dict[str, Any]:
     """Renvoie l'état du démon Ollama et la liste des modèles installés."""
     try:
-        req = urlrequest.Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
+        req = urlrequest.Request(
+            f"{OLLAMA_BASE_URL}/api/tags",
+            method="GET",
+            headers=_auth_headers(),
+        )
         with urlrequest.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
+    except urlerror.HTTPError as exc:
+        return {
+            "ok": False,
+            "reachable": True,
+            "base_url": OLLAMA_BASE_URL,
+            "error": f"HTTP {exc.code} ({exc.reason}) — clé OLLAMA_API_KEY correcte ?",
+            "configured_model": OLLAMA_MODEL,
+            "models": [],
+            "needs_auth": exc.code in (401, 403),
+        }
     except (urlerror.URLError, TimeoutError, OSError) as exc:
         return {
             "ok": False,
@@ -93,11 +120,12 @@ def chat_stream(
         },
     }
     data = json.dumps(body).encode("utf-8")
+    headers = {"Content-Type": "application/json", **_auth_headers()}
     req = urlrequest.Request(
         f"{OLLAMA_BASE_URL}/api/chat",
         data=data,
         method="POST",
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urlrequest.urlopen(req, timeout=OLLAMA_STREAM_TIMEOUT) as resp:
@@ -118,10 +146,25 @@ def chat_stream(
             body_txt = exc.read().decode("utf-8")[:500]
         except Exception:
             pass
+        if exc.code in (401, 403):
+            raise OllamaError(
+                "Ollama refuse la requête (HTTP "
+                f"{exc.code}). Vérifiez la variable d'environnement "
+                "OLLAMA_API_KEY côté app et la clé attendue par votre reverse-proxy."
+            ) from exc
         raise OllamaError(
             f"Ollama HTTP {exc.code} ({chosen}) : {body_txt or exc.reason}"
         ) from exc
     except urlerror.URLError as exc:
+        # Message adapté local vs prod (URL HTTPS = on est sur un VPS distant).
+        is_remote = OLLAMA_BASE_URL.startswith("https://") or not OLLAMA_BASE_URL.startswith(
+            ("http://127.", "http://localhost")
+        )
+        if is_remote:
+            raise OllamaError(
+                f"Ollama injoignable sur {OLLAMA_BASE_URL}. Vérifiez que le VPS est "
+                "en ligne et que le reverse-proxy (Caddy/Nginx) écoute bien en HTTPS."
+            ) from exc
         raise OllamaError(
             f"Ollama injoignable sur {OLLAMA_BASE_URL}. Lancez `ollama serve` puis "
             f"`ollama pull {chosen}`."
