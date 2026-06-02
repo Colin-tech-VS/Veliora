@@ -151,6 +151,27 @@ def _get_postgres_pool():
         return None
 
 
+def _reset_pool_after_fork() -> None:
+    """Repart d'un pool neuf dans le worker enfant après un fork.
+
+    Avec gunicorn ``--preload``, ``init_db()`` ouvre le pool dans le process
+    MAÎTRE (ses threads de maintenance y tournent). Au fork, l'enfant hérite de
+    la référence ``_pg_pool`` mais PAS de ces threads : ``pool.connection()``
+    attendrait alors jusqu'au PoolTimeout → ``DatabaseBusyError`` (« base
+    saturée »), et plus aucune donnée ne charge. On oublie le pool hérité pour
+    qu'un pool propre au worker soit recréé à la demande.
+    """
+    global _pg_pool, _pg_pool_failed
+    _pg_pool = None
+    _pg_pool_failed = False
+
+
+try:
+    os.register_at_fork(after_in_child=_reset_pool_after_fork)
+except (AttributeError, ValueError):  # plateformes sans fork (Windows)
+    pass
+
+
 def _postgres_connection() -> DbConnection:
     import psycopg
     from psycopg.rows import dict_row
