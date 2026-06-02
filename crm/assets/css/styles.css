@@ -2,16 +2,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* === Palette 2026 — confiance (bleu) / opportunité (vert) / urgence (orange) === */
-  --brand-primary:   #1F4ED8;   /* bleu confiance / pro */
-  --brand-primary-dark: #1E3A8A;
-  --brand-primary-light: #3B82F6;
+  /* === Palette 2026 — premium immobilier ===
+     Navy profond et raffiné (pas un bleu SaaS criard), vert business
+     mesuré, ambre pour l'urgence. Sobre, qualitatif, intemporel. */
+  --brand-primary:   #2563eb;   /* indigo premium — moderne et lisible */
+  --brand-primary-dark: #1e40af;
+  --brand-primary-light: #60a5fa;
   --brand-secondary: #16A34A;   /* vert opportunité / business */
   --brand-secondary-dark: #15803D;
-  --brand-accent:    #F59E0B;   /* orange urgence / bon deal */
-  --brand-accent-dark: #D97706;
-  --brand-bg:        #F8FAFC;   /* fond global */
-  --brand-text:      #0F172A;   /* texte principal */
+  --brand-accent:    #C68A2E;   /* ambre cuivré — accent qualité (pas criard) */
+  --brand-accent-dark: #A06D1F;
+  --brand-bg:        #F7F5F1;   /* fond ivoire chaud — moins clinique */
+  --brand-text:      #1A202C;   /* charbon profond */
 
   /* Alias historiques — on garde les noms mais on les recâble sur la nouvelle palette
      pour que TOUT le CRM hérite des nouvelles couleurs sans toucher au reste du CSS. */

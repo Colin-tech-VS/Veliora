@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 
 # === Sélection du fournisseur d'IA ===========================================
-# Valeurs supportées : ollama (défaut, local ou auto-hébergé), groq, openai,
+# Valeurs supportées : groq (défaut), ollama, openai,
 # mistral, openrouter, anthropic. Pour les APIs hébergées, il suffit d'ajouter
 # AI_API_KEY=<clé> — le reste est auto-configuré.
-AI_PROVIDER = (os.getenv("AI_PROVIDER") or "ollama").strip().lower()
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "groq").strip().lower()
 
 # Clé d'API du fournisseur hébergé choisi (groq, openai, mistral, openrouter…).
 # Inutile pour Ollama (qui utilise OLLAMA_API_KEY si reverse-proxy auth).
