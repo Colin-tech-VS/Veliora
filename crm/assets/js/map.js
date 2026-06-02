@@ -395,7 +395,7 @@
         title: ag.name || "Agence",
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
-          fillColor: "#1e3a5f",
+          fillColor: "#2563eb",
           fillOpacity: 1,
           strokeColor: "#ffffff",
           strokeWeight: 2,
@@ -415,7 +415,7 @@
         radius: 11,
         color: "#fff",
         weight: 2,
-        fillColor: "#1e3a5f",
+        fillColor: "#2563eb",
         fillOpacity: 1,
       }).addTo(state.map);
       const { escapeHtml: esc } = deps();

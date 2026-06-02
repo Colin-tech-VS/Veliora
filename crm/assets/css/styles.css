@@ -4699,7 +4699,7 @@ body:has(.crawl-dock.open) .script-panel.open {
   align-items: stretch;
   min-width: 0;
   max-width: min(320px, calc(100vw - 2rem));
-  background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #0f172a 100%);
   color: #fff;
   border-radius: var(--radius-lg);
   padding: 0.35rem 0.35rem 0.35rem 0.5rem;
@@ -7395,7 +7395,7 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 
 .map-legend-dot--user { background: #2563eb; }
-.map-legend-dot--agency { background: #1e3a5f; }
+.map-legend-dot--agency { background: #2563eb; }
 .map-legend-dot--lead { background: #c45c26; }
 
 .map-legend-pending {

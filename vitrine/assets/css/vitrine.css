@@ -10,18 +10,17 @@
 }
 
 :root {
-  /* === Palette 2026 — confiance (bleu) / opportunité (vert) / urgence (orange) ===
-     Les anciens noms (--v-navy, --v-brass…) restent : on les pointe sur la nouvelle
-     palette pour ne pas réécrire toute la vitrine. */
-  --brand-primary:   #1F4ED8;
-  --brand-primary-dark: #1E3A8A;
-  --brand-primary-light: #3B82F6;
+  /* === Palette 2026 — premium immobilier ===
+     Indigo premium + ambre cuivré + ivoire chaud. Sobre et lisible. */
+  --brand-primary:   #2563eb;
+  --brand-primary-dark: #1e40af;
+  --brand-primary-light: #60a5fa;
   --brand-secondary: #16A34A;
   --brand-secondary-dark: #15803D;
-  --brand-accent:    #F59E0B;
-  --brand-accent-dark: #D97706;
-  --brand-bg:        #F8FAFC;
-  --brand-text:      #0F172A;
+  --brand-accent:    #C68A2E;
+  --brand-accent-dark: #A06D1F;
+  --brand-bg:        #F7F5F1;
+  --brand-text:      #1A202C;
 
   --v-cream: var(--brand-bg);
   --v-sand: #E2E8F0;

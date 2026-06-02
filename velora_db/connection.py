@@ -29,6 +29,73 @@ _pg_pool_failed = False
 _ipv4_cache: dict[str, str] = {}
 
 
+def _dns_a_lookup(host: str, dns_server: str = "1.1.1.1") -> list[str]:
+    """Recherche le ou les enregistrements A via un DNS public.
+
+    Ce fallback est utile quand la résolution IPv4 locale échoue mais que
+    l’IP A existe réellement dans le DNS Supabase.
+    """
+    try:
+        import random
+        import struct
+
+        transaction_id = random.randrange(0, 65536)
+        qname = b"".join(
+            len(label).to_bytes(1, "big") + label.encode("ascii")
+            for label in host.split(".")
+        ) + b"\x00"
+        packet = struct.pack(
+            ">HHHHHH", transaction_id, 0x0100, 1, 0, 0, 0
+        ) + qname + struct.pack(
+            ">HH", 1, 1
+        )
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(2.0)
+            sock.sendto(packet, (dns_server, 53))
+            data, _ = sock.recvfrom(512)
+        if len(data) < 12:
+            return []
+        resp_id, _, qdcount, ancount, _, _ = struct.unpack(
+            ">HHHHHH", data[:12]
+        )
+        if resp_id != transaction_id or ancount == 0:
+            return []
+        offset = 12
+        for _ in range(qdcount):
+            while True:
+                length = data[offset]
+                offset += 1
+                if length == 0:
+                    break
+                offset += length
+            offset += 4
+        addrs: list[str] = []
+        for _ in range(ancount):
+            if offset + 12 > len(data):
+                break
+            if data[offset] & 0xC0 == 0xC0:
+                offset += 2
+            else:
+                while True:
+                    length = data[offset]
+                    offset += 1
+                    if length == 0:
+                        break
+                    offset += length
+            atype, aclass, _, rdlength = struct.unpack(
+                ">HHIH", data[offset : offset + 10]
+            )
+            offset += 10
+            if offset + rdlength > len(data):
+                break
+            if atype == 1 and aclass == 1 and rdlength == 4:
+                addrs.append(socket.inet_ntoa(data[offset : offset + 4]))
+            offset += rdlength
+        return addrs
+    except Exception:
+        return []
+
+
 def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
     """Renvoie {"hostaddr": "1.2.3.4"} si l'hôte du DATABASE_URL résout en IPv4.
 
@@ -55,17 +122,50 @@ def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
     if cached:
         return {"hostaddr": cached}
     try:
-        port = parsed.port or 5432
+        # Essaye d'abord la résolution IPv4 classique.
+        addrs = socket.gethostbyname_ex(host)[2]
+        if addrs:
+            ipv4 = addrs[0]
+            _ipv4_cache[host] = ipv4
+            logger.info(
+                "DB host %s résolu en IPv4 %s (contournement IPv6 Scalingo)",
+                host,
+                ipv4,
+            )
+            return {"hostaddr": ipv4}
+    except OSError:
+        pass
+
+    port = parsed.port or 5432
+    try:
         infos = socket.getaddrinfo(
             host, port, family=socket.AF_INET, type=socket.SOCK_STREAM
         )
-    except socket.gaierror as exc:
-        logger.warning(
-            "Résolution IPv4 impossible pour %s : %s (laisse psycopg gérer)",
-            host,
-            exc,
-        )
-        return {}
+    except socket.gaierror:
+        try:
+            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            ipv4_infos = [info for info in infos if info[0] == socket.AF_INET]
+            if ipv4_infos:
+                infos = ipv4_infos
+            else:
+                raise
+        except socket.gaierror as exc:
+            logger.warning(
+                "Résolution IPv4 impossible pour %s : %s (tentative DNS public)",
+                host,
+                exc,
+            )
+            public_addrs = _dns_a_lookup(host)
+            if public_addrs:
+                ipv4 = public_addrs[0]
+                _ipv4_cache[host] = ipv4
+                logger.info(
+                    "DB host %s résolu en IPv4 via DNS public %s",
+                    host,
+                    ipv4,
+                )
+                return {"hostaddr": ipv4}
+            return {}
     if not infos:
         return {}
     ipv4 = infos[0][4][0]

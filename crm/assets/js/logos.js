@@ -7,7 +7,7 @@ const SOURCE_LOGO_SVG = {
   logicimmo: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#E11D48"/><text x="32" y="41" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">LI</text></svg>`,
   bienici: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#7C3AED"/><path d="M32 16l16 28H16L32 16z" fill="#fff"/></svg>`,
   paruvendu: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#059669"/><text x="32" y="41" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">PV</text></svg>`,
-  lefigaro: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#1e3a5f"/><text x="32" y="42" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="24" fill="#fff">F</text></svg>`,
+  lefigaro: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#2563eb"/><text x="32" y="42" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="24" fill="#fff">F</text></svg>`,
   custom: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#64748B"/><text x="32" y="42" text-anchor="middle" font-weight="700" font-size="18" fill="#fff">?</text></svg>`,
 };
 
