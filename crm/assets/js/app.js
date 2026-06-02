@@ -78,6 +78,8 @@ const scriptPanelState = {
   leadId: null,
   copyText: "",
 };
+const radarMatchCache = new Map();
+const radarMatchInFlight = new Set();
 
 const viewTitles = {
   dashboard: { title: "Radar automatique", subtitle: "Mode 1 — opportunités, alertes, briefing du matin" },
@@ -5068,6 +5070,7 @@ function renderRadarBriefing() {
       : RADAR?.priorities?.length
         ? RADAR.priorities
         : [];
+  prefetchRadarMatches(list.slice(0, 8));
 
   const totalOpps = counts.total_opportunities ?? activeLeads().length;
   const hotCount = counts.hot_mandate ?? 0;
@@ -5111,13 +5114,15 @@ function renderRadarBriefing() {
       const ms = top.mandate_score || 0;
       const sp = signatureProbability(top);
       featuredEl.hidden = false;
+      const topMatch = radarMatchCache.get(top.id);
+      const topMatchHint = topMatch ? ` · ${topMatch.summary}` : "";
       featuredEl.innerHTML = `
         <div class="crm-hero-featured-inner" data-id="${top.id}" role="button" tabindex="0">
           <span class="crm-hero-featured-label">Priorité n°1</span>
           <div class="crm-hero-featured-score">${renderMandatePill(top, { large: true })}</div>
           <p class="crm-hero-featured-reco">${escapeHtml(mandateCallRecommendation(ms))}</p>
           <p class="crm-hero-featured-title">${escapeHtml(top.property_title || top.address || top.owner)}</p>
-          <p class="crm-hero-featured-reason">${escapeHtml(top.mandate_score_reason || "")}${sp < 10 ? " · Opportunité faible actuellement" : ""}</p>
+          <p class="crm-hero-featured-reason">${escapeHtml(top.mandate_score_reason || "")}${escapeHtml(topMatchHint)}${sp < 10 ? " · Opportunité faible actuellement" : ""}</p>
           <span class="btn btn-primary btn-sm">Ouvrir la fiche</span>
         </div>`;
       const inner = featuredEl.querySelector(".crm-hero-featured-inner");
@@ -5151,6 +5156,10 @@ function renderRadarBriefing() {
             const alsoOn = (l._also_on && l._portal_count > 1)
               ? `<span class="also-on-badge" title="Même bien détecté sur plusieurs portails">Aussi sur ${l._portal_count} portails</span>`
               : "";
+            const match = radarMatchCache.get(l.id);
+            const matchHint = match
+              ? `<span class="radar-priority-reco">Match clients: ${escapeHtml(match.summary)}</span>`
+              : `<span class="radar-priority-reco">Match clients: analyse en cours…</span>`;
             return `
         <div class="radar-priority-row" data-id="${l.id}">
           <div class="radar-priority-main">
@@ -5159,6 +5168,7 @@ function renderRadarBriefing() {
               <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)} ${freshBadge}${alsoOn}</div>
               <div class="radar-priority-meta">${escapeHtml(l.mandate_score_reason || "")} · ${formatPrice(l)} ${renderDvfBadge(l)}</div>
               <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
+              ${matchHint}
             </div>
           </div>
           <button type="button" class="btn btn-ghost btn-sm radar-open-btn">Appeler</button>
@@ -5198,6 +5208,39 @@ function renderRadarBriefing() {
       });
     }
   }
+}
+
+function summarizeLeadMatches(payload) {
+  const c = payload?.counts || {};
+  const vente = Number(c.vente || 0);
+  const location = Number(c.location || 0);
+  const top = (payload?.top_matches || [])[0];
+  const seg = top?.segment === "locataire" ? "locataire" : "acheteur";
+  const who = top?.name ? ` · top: ${top.name} (${seg})` : "";
+  return `${vente} acheteur(s) / ${location} locataire(s)${who}`;
+}
+
+function prefetchRadarMatches(leads = []) {
+  leads.forEach((lead) => {
+    const id = Number(lead?.id || 0);
+    if (!id || radarMatchCache.has(id) || radarMatchInFlight.has(id)) return;
+    radarMatchInFlight.add(id);
+    api(`/leads/${id}/matches`, { headers: getAuthHeaders() })
+      .then((data) => {
+        radarMatchCache.set(id, {
+          counts: data?.counts || {},
+          summary: summarizeLeadMatches(data),
+        });
+        if (state.currentView === "dashboard") renderRadarBriefing();
+      })
+      .catch(() => {
+        radarMatchCache.set(id, {
+          counts: { vente: 0, location: 0 },
+          summary: "0 acheteur / 0 locataire",
+        });
+      })
+      .finally(() => radarMatchInFlight.delete(id));
+  });
 }
 
 async function fetchPlaybookStatic() {

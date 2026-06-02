@@ -612,9 +612,16 @@
     }
     if (state.aroundScanLoading) return;
     if (!state.userPos) {
-      locateUser();
-      showToast("Position GPS requise avant le scan local", "info");
-      return;
+      try {
+        await locateUser({ quiet: true, recenter: true });
+      } catch {
+        showToast(
+          "Impossible de récupérer la position GPS. Vérifiez l'autorisation navigateur + HTTPS/localhost.",
+          "warning",
+          7000,
+        );
+        return;
+      }
     }
     state.aroundScanLoading = true;
     const btn = document.getElementById("map-btn-scan-around");
@@ -831,20 +838,38 @@
   }
 
   /** Recentre une fois sur la position (sans activer le mode live). */
-  function locateUser() {
+  function locateUser({ quiet = false, recenter = true } = {}) {
     const { showToast } = deps();
     if (!navigator.geolocation) {
-      showToast("Géolocalisation non disponible", "warning");
-      return;
+      if (!quiet) showToast("Géolocalisation non disponible", "warning");
+      return Promise.reject(new Error("geolocation_unavailable"));
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        applyUserPosition(pos, { recenter: true });
-        if (!state.aroundMe) showToast("Position affichée", "success");
-      },
-      (err) => showToast(geoErrorMessage(err), "warning"),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+    return new Promise((resolve, reject) => {
+      const onOk = (pos) => {
+        applyUserPosition(pos, { recenter });
+        if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
+        resolve(pos);
+      };
+      const onFail = (err) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos2) => {
+            applyUserPosition(pos2, { recenter });
+            if (!state.aroundMe && !quiet) showToast("Position affichée", "success");
+            resolve(pos2);
+          },
+          (err2) => {
+            if (!quiet) showToast(geoErrorMessage(err2 || err), "warning");
+            reject(err2 || err);
+          },
+          { enableHighAccuracy: false, timeout: 22000, maximumAge: 180000 },
+        );
+      };
+      navigator.geolocation.getCurrentPosition(onOk, onFail, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      });
+    });
   }
 
   /** Active le détecteur live : suivi GPS continu + cercle + liste de proximité. */
@@ -984,7 +1009,7 @@
       `<span class="map-status-error-text">${esc(msg)}</span> — <button type="button" class="btn btn-link btn-sm map-status-retry" id="map-status-retry">Actualiser</button>`,
       true,
     );
-    document.getElementById("map-status-retry")?.addEventListener("click", () => enter(true));
+    document.getElementById("map-status-retry")?.addEventListener("click", () => enter(false));
   }
 
   async function enter(forceGeocode = false) {
@@ -1053,7 +1078,7 @@
   function wireControls() {
     document.getElementById("map-btn-locate")?.addEventListener("click", locateUser);
     document.getElementById("map-btn-agency")?.addEventListener("click", centerOnAgency);
-    document.getElementById("map-btn-refresh")?.addEventListener("click", () => enter(true));
+    document.getElementById("map-btn-refresh")?.addEventListener("click", () => enter(false));
     document.getElementById("map-btn-scan-around")?.addEventListener("click", scanAroundMe);
     document.getElementById("map-btn-around")?.addEventListener("click", () => {
       if (!state.aroundMe) {
@@ -1127,7 +1152,7 @@
   window.VelioraMap = {
     enter,
     locateUser,
-    refresh: () => enter(true),
+    refresh: () => enter(false),
     resize,
     leave: disableAroundMe,
   };
