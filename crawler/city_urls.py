@@ -47,7 +47,15 @@ def search_url_targets_city(url: str, city: str) -> bool:
 
 
 def listing_url_likely_in_city(url: str, city: str) -> bool:
-    """Filtre les fiches dont le chemin indique une autre commune (ex. alpes-de-haute-provence-04)."""
+    """Pré-filtre URL : ne rejette une fiche que si son chemin désigne EXPLICITEMENT
+    une autre commune (ex. alpes-de-haute-provence-04 alors qu'on vise Nantes-44).
+
+    Beaucoup de portails (leboncoin en tête) utilisent des URLs de fiche sans aucune
+    info géographique (ex. /ventes_immobilieres/2891234567.htm). Dans ce cas il n'y a
+    aucun signal pour rejeter : on laisse passer et c'est l'adresse réellement extraite
+    qui tranche en aval (_lead_in_target_city). Rejeter ici revenait à jeter toutes les
+    annonces leboncoin → « 0 annonce ».
+    """
     city = (city or "").strip()
     if not city or not url:
         return True
@@ -69,14 +77,16 @@ def listing_url_likely_in_city(url: str, city: str) -> bool:
         if not m:
             continue
         dept = m.group(1).upper()
+        # Conflit explicite de département → autre commune, on rejette.
         if target_dept and dept != target_dept.upper():
             return False
         if not target_dept and slug not in seg and len(seg) > 14:
             return False
 
-    if target_dept:
-        return False
-    return slug in path
+    # Aucun signal géographique décisif dans l'URL : on ne rejette pas ici.
+    # La page de liste est déjà filtrée ville et la vérification finale se fait
+    # sur l'adresse extraite de la fiche (_lead_in_target_city).
+    return True
 
 
 def apply_city_to_search_url(
@@ -98,8 +108,12 @@ def apply_city_to_search_url(
     if portal == "leboncoin":
         parsed = urlparse(search_url)
         qs = parse_qs(parsed.query)
-        qs["locations"] = [city]
-        qs["city"] = [city]
+        row = resolve_commune(city, postcode)
+        cp = (row or {}).get("postcode") or (postcode or "")
+        # Leboncoin filtre via "Ville_CodePostal" (ex. Nantes_44000) ; le nom seul
+        # renvoie une recherche NATIONALE (d'où « le lien n'affiche pas la bonne ville »).
+        qs["locations"] = [f"{city}_{cp}" if cp else city]
+        qs.pop("city", None)
         new_query = urlencode({k: v[0] if len(v) == 1 else v for k, v in qs.items()}, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
 
