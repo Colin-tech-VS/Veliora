@@ -7658,7 +7658,13 @@ function renderLeadMatchesHtml(data) {
     </div>`;
   const list = (data.top_matches || []).slice(0, 6);
   if (!list.length) {
-    return `${recoHtml}<p class="drawer-matches-empty">Aucun acquéreur/locataire compatible dans votre base. Importez ou créez des profils acheteurs/locataires.</p>`;
+    const hints = (data.diagnostics?.hints || []).map(
+      (h) => `<li>${escapeHtml(h)}</li>`,
+    ).join("");
+    const hintBlock = hints
+      ? `<ul class="match-diagnostics">${hints}</ul>`
+      : `<p class="drawer-matches-empty">Aucun acquéreur/locataire compatible. Créez des fiches Acheteurs / Locataires (statut Actif) avec villes, budget et segment cohérents.</p>`;
+    return `${recoHtml}${hintBlock}`;
   }
   const rows = list
     .map((m) => {

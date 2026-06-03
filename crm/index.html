@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#152a36">
-  <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=1">
+  <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=2">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -537,7 +537,7 @@
           <div class="import-listing-bar">
             <p class="import-listing-hint">Analyse ponctuelle d'une annonce ? <button type="button" class="btn btn-ghost btn-sm" id="leads-goto-analyze">Mode 2 — Analyser une URL</button></p>
           </div>
-          <div class="filters-bar">
+          <div class="filters-bar scrollbar-none">
             <button class="filter-chip active" data-filter="all">Tous <span class="count">0</span></button>
             <button class="filter-chip" data-filter="hot-mandate">Score élevé <span class="count">0</span></button>
             <button class="filter-chip" data-filter="sans-agence">Sans agence <span class="count">0</span></button>
@@ -1340,7 +1340,7 @@
 
           <label class="form-field"><span>Budget min (€)</span><input type="number" id="client-budget-min" min="0"></label>
           <label class="form-field"><span>Budget max (€)</span><input type="number" id="client-budget-max" min="0"></label>
-          <label class="form-field client-editor-cities"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Chaville, Lorient"></label>
+          <label class="form-field client-editor-cities"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Lyon, 69003 ou 69 (département)"></label>
         </div>
         <label class="form-field"><span>Détails / contraintes</span><textarea id="client-notes" rows="2" placeholder="Ex: proche gare, balcon, étage élevé, cave..."></textarea></label>
         <div class="client-editor-actions">
@@ -1353,7 +1353,7 @@
           <h3>Annonces compatibles</h3>
           <span class="client-matches-count" id="client-matches-count">—</span>
         </div>
-        <p class="client-matches-hint">Annonces du portefeuille qui correspondent aux critères de cette fiche. Cliquez pour ouvrir l'annonce et lancer un appel/SMS.</p>
+        <p class="client-matches-hint">Annonces du portefeuille alignées sur le segment (vente ↔ acheteur, location ↔ locataire), villes/CP, budget et critères. Cliquez pour ouvrir la fiche annonce.</p>
         <div class="client-matches-list" id="client-matches-list" aria-live="polite"></div>
       </section>
     </div>
@@ -1414,13 +1414,13 @@
 
   <script src="/crm/assets/js/data.js?v=2"></script>
   <script src="/crm/assets/js/logos.js"></script>
-  <script src="/crm/assets/js/clients.js?v=29"></script>
+  <script src="/crm/assets/js/clients.js?v=30"></script>
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
-  <script src="/crm/assets/js/app.js?v=82"></script>
+  <script src="/crm/assets/js/app.js?v=83"></script>
   <script src="/crm/assets/js/ai.js?v=5"></script>
   <script>
     if ("serviceWorker" in navigator) {

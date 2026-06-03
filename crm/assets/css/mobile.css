@@ -244,13 +244,8 @@
     flex-wrap: nowrap;
     gap: 0.4rem;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
     margin: 0 -0.85rem 0.75rem;
     padding: 0 0.85rem 0.35rem;
-  }
-
-  .filters-bar::-webkit-scrollbar {
-    display: none;
   }
 
   .filter-chip {

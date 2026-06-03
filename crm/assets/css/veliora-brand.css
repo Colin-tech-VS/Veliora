@@ -61,4 +61,102 @@
   --brand-gold-glow: rgba(154, 123, 79, 0.15);
   --gradient-brand: linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 100%);
   --gradient-app: var(--brand-bg);
+
+  /* Scrollbars — fines, ardoise / bronze, fond transparent */
+  --scrollbar-size: 8px;
+  --scrollbar-size-thin: 5px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(30, 51, 64, 0.2);
+  --scrollbar-thumb-hover: rgba(30, 51, 64, 0.34);
+  --scrollbar-thumb-active: rgba(154, 123, 79, 0.48);
+  --scrollbar-track-dark: transparent;
+  --scrollbar-thumb-dark: rgba(248, 246, 242, 0.14);
+  --scrollbar-thumb-dark-hover: rgba(248, 246, 242, 0.26);
+  --scrollbar-thumb-dark-active: rgba(196, 165, 116, 0.42);
+}
+
+/* ─── Scrollbars globales (CRM, vitrine, auth) ─── */
+
+@supports (scrollbar-width: thin) {
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+}
+
+*,
+*::before,
+*::after {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s var(--v-ease);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+textarea::-webkit-scrollbar,
+.select-scroll::-webkit-scrollbar,
+.table-scroll::-webkit-scrollbar {
+  width: var(--scrollbar-size-thin);
+  height: var(--scrollbar-size-thin);
+}
+
+/* Fonds sombres (sidebar CRM) */
+.sidebar,
+.sidebar-nav {
+  scrollbar-color: var(--scrollbar-thumb-dark) var(--scrollbar-track-dark);
+}
+
+.sidebar ::-webkit-scrollbar-thumb,
+.sidebar-nav ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb-dark);
+}
+
+.sidebar ::-webkit-scrollbar-thumb:hover,
+.sidebar-nav ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-dark-hover);
+}
+
+.sidebar ::-webkit-scrollbar-thumb:active,
+.sidebar-nav ::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-dark-active);
+}
+
+/* Masquage volontaire (ex. carrousel filtres mobile) */
+.scrollbar-none,
+.scrollbar-none * {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar,
+.scrollbar-none *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }

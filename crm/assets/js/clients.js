@@ -325,7 +325,12 @@ async function renderClientMatchesPanel(client) {
     }
     const items = data.top_matches || [];
     if (!items.length) {
-      list.innerHTML = `<p class="client-matches-empty">Aucune annonce ${segLabel} compatible aujourd'hui. Lancez un crawl ou élargissez les critères (villes, surface, budget) pour ouvrir le matching.</p>`;
+      const hints = (data.diagnostics?.hints || [])
+        .map((h) => `<li>${esc(h)}</li>`)
+        .join("");
+      list.innerHTML = hints
+        ? `<ul class="match-diagnostics">${hints}</ul>`
+        : `<p class="client-matches-empty">Aucune annonce ${segLabel} compatible. Lancez la veille ou élargissez villes (nom, CP ou département), budget et critères.</p>`;
       return;
     }
     list.innerHTML = items
