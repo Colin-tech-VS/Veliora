@@ -115,6 +115,11 @@ def _clean_lead_location_fields(lead: LeadData) -> None:
 
     if addr and (is_hub_listing_address(addr) or _looks_like_listing_title(addr)):
         addr = ""
+    elif addr:
+        from crawler.address_quality import is_city_only_address
+
+        if is_city_only_address(addr, city, postcode):
+            addr = ""
     if city and (_looks_like_listing_title(city) or any(ch.isdigit() for ch in city)):
         city = ""
     if postcode and not re.fullmatch(r"\d{5}", postcode):
@@ -1617,6 +1622,9 @@ def save_lead(
     from crm.dvf import apply_lead_location_fields
     apply_lead_location_fields(lead)
     _clean_lead_location_fields(lead)
+    from crawler.address_quality import scrub_lead_address_for_storage
+
+    scrub_lead_address_for_storage(lead)
     lead.city, lead.postcode = _canonicalize_city_postcode_values(
         getattr(lead, "city", None),
         getattr(lead, "postcode", None),

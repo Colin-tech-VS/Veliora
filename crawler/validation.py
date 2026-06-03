@@ -226,6 +226,15 @@ def sanitize_lead(lead: LeadData) -> LeadData:
     """Retire adresses hub, noms menu site et autres valeurs invalides."""
     if is_hub_listing_address(lead.address):
         lead.address = None
+    else:
+        from crawler.address_quality import is_city_only_address
+
+        if is_city_only_address(
+            lead.address,
+            getattr(lead, "city", None),
+            getattr(lead, "postcode", None),
+        ):
+            lead.address = None
     if not _name_ok(lead.first_name, lead.last_name):
         lead.first_name = None
         lead.last_name = None

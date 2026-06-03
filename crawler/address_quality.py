@@ -73,7 +73,8 @@ def pick_best_address(
     if f_ok and not e_ok:
         return f if is_street_level_address(f, fresh_city, fresh_postcode) else None
     if e_ok and not f_ok:
-        return e
+        # Recrawl sans nouvelle rue : effacer l'ancien placeholder ville en base.
+        return e if is_street_level_address(e, existing_city, existing_postcode) else None
     f_street = is_street_level_address(f, fresh_city, fresh_postcode)
     e_street = is_street_level_address(e, existing_city, existing_postcode)
     if f_street and not e_street:
@@ -87,4 +88,35 @@ def pick_best_address(
         e, existing_city, existing_postcode
     ):
         return None
-    return f or e
+    if f and is_street_level_address(f, fresh_city, fresh_postcode):
+        return f
+    if e and is_street_level_address(e, existing_city, existing_postcode):
+        return e
+    return None
+
+
+def scrub_lead_address_for_storage(lead) -> None:
+    """Retire adresse = ville seule ou titre d'annonce avant INSERT/UPDATE."""
+    from crawler.validation import _LISTING_TITLE_ADDR_RE
+
+    addr = (getattr(lead, "address", None) or "").strip()
+    if not addr:
+        lead.address = None
+        return
+    if _LISTING_TITLE_ADDR_RE.search(addr):
+        lead.address = None
+        return
+    try:
+        from crawler.storage import _looks_like_listing_title
+
+        if _looks_like_listing_title(addr):
+            lead.address = None
+            return
+    except Exception:
+        pass
+    if is_city_only_address(
+        addr,
+        getattr(lead, "city", None),
+        getattr(lead, "postcode", None),
+    ):
+        lead.address = None

@@ -663,7 +663,10 @@ def verify_and_apply_listing_facts(
     if title and not is_hub_listing_address(title) and (
         not lead.address or is_hub_listing_address(lead.address)
     ):
-        lead.address = title[:300]
+        from crawler.validation import _LISTING_TITLE_ADDR_RE
+
+        if not _LISTING_TITLE_ADDR_RE.search(title):
+            lead.address = title[:300]
 
     if audit.price and audit.surface:
         from crawler.listing_guard import validate_field_coherence

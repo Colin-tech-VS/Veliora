@@ -85,6 +85,15 @@ DOMAIN_ADDRESS_SELECTORS: dict[str, list[str]] = {
     "bienici": [".adSummaryAddress", "[data-test='address']"],
     "paruvendu": ["h1", ".detail-title"],
     "lefigaro": [".adresse-annonce", "[itemprop=address]", ".listing-address"],
+    "lesiteimmo": [
+        ".annonce-localisation",
+        ".detail-localisation",
+        ".property-localisation",
+        "[class*='localisation']",
+        "[class*='Localisation']",
+        "[data-testid*='location']",
+        ".adresse-annonce",
+    ],
 }
 
 RELATED_SECTION_HEADING_RE = re.compile(
@@ -1692,7 +1701,10 @@ def extract_listing_address(soup: BeautifulSoup, page_url: str = "") -> str | No
     if h1 and not candidates:
         text = h1.get_text(" ", strip=True)
         if len(text) >= 6 and not is_hub_listing_address(text):
-            candidates.append((_dom_listing_score(h1, main) + 10, text))
+            from crawler.validation import _LISTING_TITLE_ADDR_RE
+
+            if not _LISTING_TITLE_ADDR_RE.search(text):
+                candidates.append((_dom_listing_score(h1, main) + 10, text))
 
     if not candidates:
         return None
