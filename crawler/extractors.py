@@ -1184,6 +1184,41 @@ def _collect_phones_deep(html: str, main, *, page_url: str) -> list[tuple[str, i
     return sorted(scored.items(), key=lambda x: x[1], reverse=True)
 
 
+def _decode_cfemail(hexstr: str) -> str | None:
+    """Décode l'email masqué par Cloudflare (data-cfemail / .../email-protection#HEX).
+
+    Format : 1er octet = clé XOR, octets suivants = caractères XORés de l'email.
+    """
+    try:
+        data = bytes.fromhex(hexstr.strip())
+    except (ValueError, AttributeError):
+        return None
+    if len(data) < 2:
+        return None
+    key = data[0]
+    try:
+        return "".join(chr(b ^ key) for b in data[1:])
+    except ValueError:
+        return None
+
+
+# Obfuscations textuelles fréquentes : "nom (at) domaine (dot) fr".
+_EMAIL_OBFUSC_AT_RE = re.compile(
+    r"\s*[\(\[]?\s*(?:at|arobase|chez)\s*[\)\]]?\s*", re.I
+)
+_EMAIL_OBFUSC_DOT_RE = re.compile(
+    r"\s*[\(\[]?\s*(?:dot|point)\s*[\)\]]?\s*", re.I
+)
+
+
+def _deobfuscate_emails(text: str) -> list[str]:
+    """Récupère les emails écrits « nom (at) domaine (dot) fr »."""
+    if not text or ("@" in text) or not re.search(r"\b(?:at|arobase|chez)\b", text, re.I):
+        return []
+    candidate = _EMAIL_OBFUSC_DOT_RE.sub(".", _EMAIL_OBFUSC_AT_RE.sub("@", text))
+    return EMAIL_RE.findall(candidate)
+
+
 def _collect_emails_deep(html: str, main) -> list[tuple[str, int]]:
     scored: dict[str, int] = {}
 
@@ -1192,6 +1227,16 @@ def _collect_emails_deep(html: str, main) -> list[tuple[str, int]]:
         if not _email_candidate_ok(em):
             return
         scored[em] = max(scored.get(em, 0), score + _score_email_candidate(em))
+
+    # Cloudflare email-protection : data-cfemail="HEX" ou .../email-protection#HEX
+    for m in re.finditer(r'data-cfemail=["\']([0-9a-fA-F]+)["\']', html):
+        decoded = _decode_cfemail(m.group(1))
+        if decoded:
+            add(decoded, 40)
+    for m in re.finditer(r'/cdn-cgi/l/email-protection#([0-9a-fA-F]+)', html):
+        decoded = _decode_cfemail(m.group(1))
+        if decoded:
+            add(decoded, 38)
 
     for m in re.finditer(
         r'"email(?:Address)?"\s*:\s*"([^"]+@[^"]+)"',
@@ -1213,8 +1258,13 @@ def _collect_emails_deep(html: str, main) -> list[tuple[str, int]]:
     zone = _extract_contact_zone_text(main)
     for em in EMAIL_RE.findall(zone):
         add(em, 26)
-    for em in EMAIL_RE.findall(_get_hero_text(main, 14000)):
+    for em in _deobfuscate_emails(zone):
+        add(em, 24)
+    hero = _get_hero_text(main, 14000)
+    for em in EMAIL_RE.findall(hero):
         add(em, 16)
+    for em in _deobfuscate_emails(hero):
+        add(em, 14)
 
     return sorted(scored.items(), key=lambda x: x[1], reverse=True)
 

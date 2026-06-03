@@ -20,6 +20,10 @@ from crawler.config import (
     PRICE_MAX_SALE_EUR,
     PRICE_MIN_RENT_EUR,
     PRICE_MIN_SALE_EUR,
+    SURFACE_MAX_RENT_M2,
+    SURFACE_MAX_SALE_M2,
+    SURFACE_MIN_RENT_M2,
+    SURFACE_MIN_SALE_M2,
 )
 from crawler.extractors import TransactionType
 
@@ -244,6 +248,11 @@ def sanitize_lead(lead: LeadData) -> LeadData:
         lead.phone = None
     if lead.surface is not None and not _surface_ok(lead.surface):
         lead.surface = None
+    if lead.surface is not None and not _surface_plausible_for_type(
+        lead.surface, lead.transaction_type
+    ):
+        # Surface hors-logement pour ce type (terrain/parking ou artefact d'extraction).
+        lead.surface = None
     if lead.price is not None and not _price_ok(lead.price, lead.transaction_type):
         lead.price = None
     if not _price_per_m2_plausible(lead):
@@ -292,6 +301,21 @@ def _surface_ok(surface: float | None) -> bool:
     if surface is None:
         return False
     return 5 <= surface <= 50_000
+
+
+def _surface_plausible_for_type(
+    surface: float | None, transaction: TransactionType = "vente"
+) -> bool:
+    """Surface habitable cohérente avec le type (vente/location).
+
+    Écarte les valeurs hors-logement (terrains, parkings, ou surfaces concaténées à
+    l'extraction) qui mélangeraient les annonces. Bornes réglables par env.
+    """
+    if surface is None:
+        return False
+    if (transaction or "vente") == "location":
+        return SURFACE_MIN_RENT_M2 <= surface <= SURFACE_MAX_RENT_M2
+    return SURFACE_MIN_SALE_M2 <= surface <= SURFACE_MAX_SALE_M2
 
 
 def _published_at_ok(published_at: str | None) -> bool:

@@ -92,6 +92,47 @@ def _compute_property_fingerprint(
     return f"{pc}_{surf_bucket}_{price_bucket}"
 
 
+_DEDUP_STREET_STOP = frozenset({
+    "rue", "avenue", "boulevard", "impasse", "allee", "chemin", "place", "cours",
+    "quai", "route", "residence", "appartement", "appart", "maison", "vente",
+    "achat", "location", "voie", "passage", "square", "ville", "centre",
+})
+
+
+def _surface_bucket(surface: float | None) -> int | None:
+    """Tranche surface (pas de 5 m²) pour le rapprochement, ou None si invalide."""
+    try:
+        b = round(float(surface) / 5) * 5
+    except (TypeError, ValueError):
+        return None
+    return b if b >= 5 else None
+
+
+def _address_signature(address: str | None) -> str | None:
+    """Signature « numéro + rue » pour distinguer deux biens voisins d'un même CP.
+
+    Renvoie None si l'adresse est absente/trop vague (ville seule) : dans ce cas le
+    lead reste « compatible » avec n'importe quel autre (cross-portail où l'adresse
+    exacte est masquée, ex. leboncoin).
+    """
+    import unicodedata
+
+    a = (address or "").strip().lower()
+    if not a or a == "—" or len(a) < 6:
+        return None
+    a = "".join(
+        c for c in unicodedata.normalize("NFD", a) if unicodedata.category(c) != "Mn"
+    )
+    num_m = re.search(r"\b(\d{1,4})(?:\s*(?:bis|ter|quater))?\b", a)
+    num = num_m.group(1) if num_m else ""
+    # Sans numéro de voie, l'adresse (ville/rue seule) est trop vague pour distinguer
+    # deux biens : on la traite comme « compatible » (None) plutôt que de scinder à tort.
+    if not num:
+        return None
+    words = [w for w in re.findall(r"[a-z]{4,}", a) if w not in _DEDUP_STREET_STOP]
+    return (f"{num}-" + "-".join(words[:2])).strip("-") or None
+
+
 def _looks_like_listing_title(text: str | None) -> bool:
     t = (text or "").strip()
     if not t:
@@ -234,23 +275,76 @@ def _annotate_dedup(leads: list[dict]) -> list[dict]:
     """Annonce les doublons cross-portail SANS jamais masquer de lead.
 
     Important : aucun prospect ne doit disparaître de la liste (sauf suppression
-    explicite par l'utilisateur). L'empreinte (CP + surface + prix par buckets) est
-    trop grossière pour masquer des biens — elle peut confondre deux appartements
-    distincts d'une même ville. On garde donc TOUS les leads et on se contente
-    d'annoter, pour un simple badge, la fiche la mieux scorée d'un groupe réellement
-    multi-portails (sources différentes).
+    explicite par l'utilisateur). On regroupe les fiches d'un même bien grâce à
+    plusieurs signaux, puis on annote (badge) la mieux scorée d'un groupe réellement
+    multi-portails :
+
+    - Empreinte « CP + surface + prix » (rapprochement cross-portail).
+    - Garde adresse : dans un même bucket, deux adresses « numéro+rue » DIFFÉRENTES
+      ne sont PAS fusionnées (évite de confondre deux appartements voisins). Une
+      adresse absente reste compatible (cas leboncoin où l'adresse exacte est masquée).
+    - Contact + surface : même téléphone/email ET même surface = même bien reposté
+      (rattrape les cas où le prix a changé d'un portail à l'autre).
     """
     from collections import defaultdict
 
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for lead in leads:
+    n = len(leads)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[max(ri, rj)] = min(ri, rj)
+
+    # 1) Empreinte propriété, scindée par signature d'adresse (anti-faux-voisins).
+    by_fp: dict[str, list[int]] = defaultdict(list)
+    for idx, lead in enumerate(leads):
         fp = lead.get("property_fingerprint")
         if fp:
-            groups[fp].append(lead)
+            by_fp[fp].append(idx)
+    for idxs in by_fp.values():
+        if len(idxs) < 2:
+            continue
+        sigs = {
+            _address_signature(leads[i].get("address")) for i in idxs
+        } - {None}
+        # Deux adresses « numéro+rue » distinctes dans le même bucket → biens voisins
+        # différents : on ne les rapproche pas. (0 ou 1 signature = compatible.)
+        if len(sigs) > 1:
+            continue
+        first = idxs[0]
+        for j in idxs[1:]:
+            union(first, j)
 
+    # 2) Contact + surface : même tél/email ET même surface = même bien.
+    by_contact: dict[tuple, list[int]] = defaultdict(list)
+    for idx, lead in enumerate(leads):
+        surf = _surface_bucket(lead.get("surface"))
+        if not surf:
+            continue
+        phone = re.sub(r"\D", "", str(lead.get("phone") or ""))
+        email = str(lead.get("email") or "").strip().lower()
+        if phone and len(phone) >= 9 and phone != "—":
+            by_contact[("p", phone, surf)].append(idx)
+        if email and "@" in email and email != "—":
+            by_contact[("e", email, surf)].append(idx)
+    for idxs in by_contact.values():
+        first = idxs[0]
+        for j in idxs[1:]:
+            union(first, j)
+
+    # 3) Annotation des groupes réellement multi-portails.
+    groups: dict[int, list[dict]] = defaultdict(list)
+    for idx, lead in enumerate(leads):
+        groups[find(idx)].append(lead)
     for group in groups.values():
         sources = {(l.get("source") or "") for l in group}
-        # Annoter uniquement un vrai doublon cross-portail (au moins 2 portails).
         if len(group) > 1 and len([s for s in sources if s]) > 1:
             canonical = max(group, key=lambda l: l.get("mandate_score") or 0)
             canonical["_also_on"] = sorted(s for s in sources if s)
@@ -1588,6 +1682,24 @@ def _coerce_source_id(conn, source_id: str | None, agency_id: str) -> str | None
     return None
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """True si l'exception est un conflit de clé unique (SQLite ou Postgres).
+
+    Sert à détecter la course entre deux crawls de la même URL : la ligne a été
+    créée entre notre SELECT et notre INSERT. On rejoue alors en mise à jour.
+    """
+    name = type(exc).__name__.lower()
+    if "uniqueviolation" in name or "integrityerror" in name:
+        text = f"{exc}".lower()
+        return (
+            "unique" in text
+            or "duplicate key" in text
+            or "idx_leads_agency_url" in text
+            or "source_url" in text
+        )
+    return False
+
+
 def save_lead(
     lead: LeadData,
     source_id: str | None = None,
@@ -1597,6 +1709,7 @@ def save_lead(
     require_verification: bool = True,
     deep_refresh: bool = False,
     veille_recrawl: bool = False,
+    _race_retry: bool = False,
 ) -> dict | None:
     """Enregistre ou met à jour après vérification obligatoire des données."""
     from crawler.validation import (
@@ -1736,6 +1849,7 @@ def save_lead(
     lead_postcode = getattr(lead, "postcode", None)
     lead_sector = getattr(lead, "sector", None)
 
+    race_retry = False
     with get_connection() as conn:
         source_id = _coerce_source_id(conn, source_id, agency_id)
         if existing_row:
@@ -1901,49 +2015,80 @@ def save_lead(
                 ),
             )
         except Exception as exc:
-            logger.exception(
-                "INSERT lead échoué — %s (agence %s): %s",
-                lead.source_url[:80],
-                agency_id,
-                exc,
-            )
-            return {
-                "id": None,
-                "created": False,
-                "verified": False,
-                "verification": str(exc)[:200],
-                "errors": [str(exc)[:200]],
+            if _is_unique_violation(exc) and not _race_retry:
+                # Course entre deux crawls : la fiche a été créée entre le SELECT
+                # et l'INSERT. On bascule en mise à jour (rejoué HORS connexion pour
+                # ne pas saturer le pool) — aucune fiche perdue.
+                logger.info(
+                    "INSERT en course (URL déjà créée) — bascule en mise à jour : %s",
+                    lead.source_url[:80],
+                )
+                race_retry = True
+                cur = None
+            else:
+                logger.exception(
+                    "INSERT lead échoué — %s (agence %s): %s",
+                    lead.source_url[:80],
+                    agency_id,
+                    exc,
+                )
+                return {
+                    "id": None,
+                    "created": False,
+                    "verified": False,
+                    "verification": str(exc)[:200],
+                    "errors": [str(exc)[:200]],
+                }
+        if race_retry:
+            # Sortie du with (connexion rendue au pool) puis rejeu en mise à jour.
+            pass
+        elif not cur:
+            return None
+        else:
+            new_id = cur.lastrowid
+            if not new_id:
+                logger.error(
+                    "INSERT lead sans id retourné — %s (agence %s)",
+                    lead.source_url[:80],
+                    agency_id,
+                )
+                return {
+                    "id": None,
+                    "created": False,
+                    "verified": False,
+                    "verification": "échec enregistrement base",
+                    "errors": ["id prospect non créé"],
+                }
+            if agency_id and new_id and lead.price:
+                _record_price_change(conn, int(new_id), agency_id, int(lead.price), now=now)
+            conn.commit()
+            saved_out = {
+                "id": new_id,
+                "created": True,
+                "verified": True,
+                "partial": partial,
+                "verification": verification.summary(),
+                "updated": False,
             }
-        new_id = cur.lastrowid
-        if not new_id:
-            logger.error(
-                "INSERT lead sans id retourné — %s (agence %s)",
-                lead.source_url[:80],
-                agency_id,
+            _schedule_lead_image_after_save(
+                lead, agency_id, int(new_id), saved_out, deep_refresh=deep_refresh
             )
-            return {
-                "id": None,
-                "created": False,
-                "verified": False,
-                "verification": "échec enregistrement base",
-                "errors": ["id prospect non créé"],
-            }
-        if agency_id and new_id and lead.price:
-            _record_price_change(conn, int(new_id), agency_id, int(lead.price), now=now)
-        conn.commit()
-        saved_out = {
-            "id": new_id,
-            "created": True,
-            "verified": True,
-            "partial": partial,
-            "verification": verification.summary(),
-            "updated": False,
-        }
-        _schedule_lead_image_after_save(
-            lead, agency_id, int(new_id), saved_out, deep_refresh=deep_refresh
+            invalidate_sources_cache(agency_id)
+            return saved_out
+
+    # Hors connexion : course détectée à l'INSERT → rejeu en mise à jour (une fois).
+    if race_retry:
+        return save_lead(
+            lead,
+            source_id,
+            job_id,
+            agency_id=agency_id,
+            require_verification=False,
+            deep_refresh=deep_refresh,
+            veille_recrawl=veille_recrawl,
+            _race_retry=True,
         )
-        invalidate_sources_cache(agency_id)
-        return saved_out
+    return None
 
 
 def _schedule_lead_image_after_save(
