@@ -213,6 +213,40 @@ function leadFreshness(isoStr) {
   }
 }
 
+/** Un prospect créé via l'estimateur (vs annonce crawlée « détectée »). */
+function leadIsFromEstimation(lead) {
+  if (!lead) return false;
+  const src = (lead.source || "").toLowerCase();
+  return (
+    src === "estimation" ||
+    src.includes("estimation") ||
+    String(lead.source_id || "").toLowerCase().endsWith(":estimation") ||
+    String(lead.source_url || "").startsWith("estimation://")
+  );
+}
+
+/** Badge de provenance : « Estimation » (saisie estimateur) ou « Détecté » (crawl). */
+function leadOriginBadgeHtml(lead, { small = false } = {}) {
+  if (leadIsFromEstimation(lead)) {
+    const cls = small
+      ? "origin-badge origin-badge-est origin-badge-sm"
+      : "origin-badge origin-badge-est";
+    return `<span class="${cls}" title="Bien ajouté via l'estimateur">📋 Estimation</span>`;
+  }
+  const fresh = leadFreshness(lead.created_at);
+  if (!fresh) return "";
+  return small
+    ? `<span class="freshness-badge freshness-badge-sm" title="Détecté ${fresh}">⚡ ${fresh}</span>`
+    : `<span class="freshness-badge" title="Date de détection">⚡ Détecté ${fresh}</span>`;
+}
+
+/** Petite pastille « Estimé » sur un lead crawlé déjà passé par l'estimateur. */
+function leadEstimatedChipHtml(lead) {
+  const est = lead && lead.price_estimate;
+  if (!est || !est.ok || leadIsFromEstimation(lead)) return "";
+  return `<span class="estimated-chip" title="Estimation calculée">✓ Estimé</span>`;
+}
+
 async function fetchRoiStats() {
   try {
     const data = await api("/roi/stats");
@@ -5177,10 +5211,8 @@ function renderRadarBriefing() {
         .map(
           (l) => {
             const ms = l.mandate_score || 0;
-            const fresh = leadFreshness(l.created_at);
-            const freshBadge = fresh
-              ? `<span class="freshness-badge" title="Date de détection">⚡ Détecté ${fresh}</span>`
-              : "";
+            const freshBadge = leadOriginBadgeHtml(l);
+            const estimatedChip = leadEstimatedChipHtml(l);
             const alsoOn = (l._also_on && l._portal_count > 1)
               ? `<span class="also-on-badge" title="Même bien détecté sur plusieurs portails">Aussi sur ${l._portal_count} portails</span>`
               : "";
@@ -5193,7 +5225,7 @@ function renderRadarBriefing() {
           <div class="radar-priority-main">
             ${renderMandatePill(l, { large: true })}
             <div>
-              <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)} ${freshBadge}${alsoOn}</div>
+              <div class="radar-priority-title">${escapeHtml(l.property_title || l.address || l.owner)} ${freshBadge}${alsoOn}${estimatedChip}</div>
               <div class="radar-priority-meta">${escapeHtml(l.mandate_score_reason || "")} · ${formatPrice(l)} ${renderDvfBadge(l)}</div>
               <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
               ${matchHint}
@@ -5781,10 +5813,8 @@ function getLeadDeleteButtonHtml(lead) {
 
 function renderLeadRow(lead) {
   const ms = lead.mandate_score || 0;
-  const fresh = leadFreshness(lead.created_at);
-  const freshBadge = fresh
-    ? `<span class="freshness-badge freshness-badge-sm" title="Détecté ${fresh}">⚡ ${fresh}</span>`
-    : "";
+  const freshBadge = leadOriginBadgeHtml(lead, { small: true });
+  const estimatedChip = leadEstimatedChipHtml(lead);
   const alsoOnBadge = lead._portal_count > 1
     ? `<span class="also-on-badge also-on-badge-sm" title="Détecté sur ${lead._portal_count} portails">${lead._portal_count} portails</span>`
     : "";
@@ -5810,7 +5840,7 @@ function renderLeadRow(lead) {
         <div class="lead-property lead-property--with-thumb">
           ${leadThumbHtml(lead)}
           <div class="lead-property-text">
-            <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}</div>
+            <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}${estimatedChip}</div>
             <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
           </div>
         </div>
@@ -5874,7 +5904,7 @@ function renderLeads() {
           </div>
         </div>
         <div class="lead-card-body">
-          <div class="property-title">${escapeHtml(lead.property_title || lead.address)}</div>
+          <div class="property-title">${escapeHtml(lead.property_title || lead.address)} ${leadOriginBadgeHtml(lead, { small: true })}${leadEstimatedChipHtml(lead)}</div>
           <div class="property-meta">${escapeHtml(lead.mandate_score_reason || "")}</div>
           ${leadQuickFactsHtml(lead)}
           <div class="property-meta">${escapeHtml(lead.property_detail || lead.property)} · ${formatPrice(lead)} ${getTransactionBadge(lead)} ${renderDvfBadge(lead)}</div>
@@ -6358,10 +6388,39 @@ const ESTIMATOR_FEATURES = [
   ["has_elevator", "Ascenseur"],
   ["has_parking", "Parking / box"],
   ["has_outdoor", "Balcon / terrasse / jardin"],
+  ["has_cellar", "Cave / cellier"],
   ["has_view", "Belle vue"],
+  ["bright", "Très lumineux"],
+  ["recent_renovation", "Rénovation récente"],
   ["noise_nuisance", "Nuisances (bruit, vis-à-vis…)"],
   ["prime_sector", "Quartier très recherché"],
 ];
+const ESTIMATOR_DPE_GRADES = [
+  ["", "—"],
+  ["A", "A"],
+  ["B", "B"],
+  ["C", "C"],
+  ["D", "D"],
+  ["E", "E"],
+  ["F", "F (passoire)"],
+  ["G", "G (passoire)"],
+];
+const ESTIMATOR_EXPOSURES = [
+  ["", "—"],
+  ["sud", "Plein sud"],
+  ["sud_ouest", "Sud / Ouest"],
+  ["traversant", "Traversant"],
+  ["est_ouest", "Est / Ouest"],
+  ["nord", "Nord"],
+];
+const ESTIMATOR_CONSTRUCTION_PERIODS = [
+  ["", "—"],
+  ["avant_1949", "Avant 1949"],
+  ["1949_1974", "1949–1974"],
+  ["1975_2000", "1975–2000"],
+  ["apres_2000", "Après 2000"],
+];
+const ESTIMATOR_DEFAULT_COMMISSION_PCT = 5;
 
 const drawerEstimates = new Map();
 
@@ -6428,12 +6487,21 @@ function collectEstimatorInputs(lead, prefix = "tab-est") {
     parseFloat(form?.querySelector(`#${prefix}-surface`)?.value) ||
     parseFloat(lead.surface) ||
     0;
+  const commissionRaw = form?.querySelector(`#${prefix}-commission`)?.value;
   const inputs = {
     surface,
     property_type:
       form?.querySelector(`#${prefix}-property-type`)?.value || guessLeadPropertyType(lead),
     rooms: form?.querySelector(`#${prefix}-rooms`)?.value || parseLeadRooms(lead) || null,
+    floor: form?.querySelector(`#${prefix}-floor`)?.value ?? "",
     condition: form?.querySelector(`#${prefix}-condition`)?.value || "standard",
+    dpe: form?.querySelector(`#${prefix}-dpe`)?.value || "",
+    exposure: form?.querySelector(`#${prefix}-exposure`)?.value || "",
+    construction_period: form?.querySelector(`#${prefix}-construction`)?.value || "",
+    commission_pct:
+      commissionRaw !== undefined && commissionRaw !== ""
+        ? commissionRaw
+        : ESTIMATOR_DEFAULT_COMMISSION_PCT,
     address: form?.querySelector(`#${prefix}-address`)?.value || lead.address || "",
     city: form?.querySelector(`#${prefix}-city`)?.value || lead.city || "",
     postcode: form?.querySelector(`#${prefix}-postcode`)?.value || lead.postcode || "",
@@ -6445,15 +6513,52 @@ function collectEstimatorInputs(lead, prefix = "tab-est") {
   return inputs;
 }
 
+// Comparaison « Annonce vs Estimation » — affichée seulement pour un bien qui
+// possède déjà un prix d'annonce (lead crawlé). Aucun nouveau prospect n'est
+// créé : on confronte l'estimation au prix affiché de l'annonce existante.
+function buildEstimateListingComparisonHtml(result) {
+  if (result.listing_price == null || result.delta_vs_estimate_pct == null) return "";
+  const d = result.delta_vs_estimate_pct;
+  let cls, label;
+  if (d >= 7) {
+    cls = "over";
+    label = "Annonce au-dessus de l'estimation — marge de négociation";
+  } else if (d <= -7) {
+    cls = "under";
+    label = "Annonce sous l'estimation — opportunité";
+  } else {
+    cls = "fair";
+    label = "Annonce cohérente avec l'estimation";
+  }
+  const estNet = result.estimate_net_vendeur != null ? result.estimate_net_vendeur : result.estimate_total;
+  const listingM2 = result.listing_m2 ? ` · ${Number(result.listing_m2).toLocaleString("fr-FR")} €/m²` : "";
+  const estM2 = result.price_per_m2 ? ` · ${Number(result.price_per_m2).toLocaleString("fr-FR")} €/m²` : "";
+  return `
+    <div class="drawer-estimator-compare compare-${cls}">
+      <div class="drawer-estimator-compare-head">Comparaison avec l'annonce existante</div>
+      <div class="drawer-estimator-compare-rows">
+        <div class="cmp-row">
+          <span class="cmp-k">Prix de l'annonce</span>
+          <span class="cmp-v">${fmtEuro(result.listing_price)}<small>${listingM2}</small></span>
+        </div>
+        <div class="cmp-row">
+          <span class="cmp-k">Estimation net vendeur</span>
+          <span class="cmp-v">${fmtEuro(estNet)}<small>${estM2}</small></span>
+        </div>
+      </div>
+      <div class="drawer-estimator-compare-verdict">
+        <span class="cmp-delta">${d > 0 ? "+" : ""}${d} %</span>
+        <span class="cmp-label">${escapeHtml(label)}</span>
+      </div>
+    </div>`;
+}
+
 function renderPriceEstimateResultHtml(result) {
   if (!result?.ok) {
     return `<p class="drawer-estimator-error">${escapeHtml(result?.reason || result?.error || "Estimation indisponible")}</p>`;
   }
   const confCls = result.confidence || "low";
-  const delta =
-    result.delta_vs_estimate_pct != null
-      ? `<p class="drawer-estimator-delta">Annonce : <strong>${fmtEuro(result.listing_price)}</strong> · écart <strong>${result.delta_vs_estimate_pct > 0 ? "+" : ""}${result.delta_vs_estimate_pct} %</strong> vs estimation</p>`
-      : "";
+  const delta = buildEstimateListingComparisonHtml(result);
   const adj =
     result.adjustments?.length > 0
       ? `<ul class="drawer-estimator-adj">${result.adjustments
@@ -6466,13 +6571,25 @@ function renderPriceEstimateResultHtml(result) {
   const method = (result.methodology || [])
     .map((line) => `<li>${escapeHtml(line)}</li>`)
     .join("");
+  const commissionPct = result.commission_pct != null ? result.commission_pct : null;
+  const faiBlock =
+    result.estimate_fai != null
+      ? `
+        <div class="drawer-estimator-fai">
+          <span class="drawer-estimator-fai-label">Prix de présentation FAI<small>honoraires ${commissionPct != null ? commissionPct : "—"} % inclus</small></span>
+          <strong class="drawer-estimator-fai-total">${fmtEuro(result.estimate_fai)}</strong>
+          <span class="drawer-estimator-fai-range">${fmtEuro(result.range_low_fai)} – ${fmtEuro(result.range_high_fai)}${result.commission_amount ? ` · dont ${fmtEuro(result.commission_amount)} d'honoraires` : ""}</span>
+        </div>`
+      : "";
   return `
     <div class="drawer-estimator-result" data-confidence="${confCls}">
       <div class="drawer-estimator-main">
-        <span class="drawer-estimator-label">Estimation indicative</span>
+        <span class="drawer-estimator-label">Estimation net vendeur</span>
         <strong class="drawer-estimator-total" data-count-to="${Number(result.estimate_total) || 0}">${fmtEuro(result.estimate_total)}</strong>
         <span class="drawer-estimator-range">${fmtEuro(result.range_low)} – ${fmtEuro(result.range_high)}</span>
+        <span class="drawer-estimator-net-hint">Valeur actée du bien (hors honoraires) · comparable à Meilleurs Agents</span>
       </div>
+      ${faiBlock}
       <p class="drawer-estimator-meta">
         <span class="drawer-estimator-conf conf-${confCls}">Confiance ${escapeHtml(result.confidence_label || "")}</span>
         · ${result.sample_count || 0} ventes DVF · ${escapeHtml(result.reference_period || "")}
@@ -6502,23 +6619,28 @@ function resolveEstimatorContextLead() {
   return null;
 }
 
-function renderEstimatorFormHtml(lead, prefix = "tab-est") {
+// Grille de critères du bien (réutilisée par l'estimation d'un lead existant
+// et par le formulaire de création d'un nouveau bien à estimer).
+function estimatorCriteriaGridHtml(lead, prefix, cached) {
   const propType = guessLeadPropertyType(lead);
   const rooms = parseLeadRooms(lead);
   const addr = lead.address && lead.address !== "—" ? lead.address : "";
-  const typeOpts = ESTIMATOR_PROPERTY_TYPES.map(
-    ([v, l]) => `<option value="${v}"${v === propType ? " selected" : ""}>${l}</option>`,
-  ).join("");
-  const condOpts = ESTIMATOR_CONDITIONS.map(
-    ([v, l]) => `<option value="${v}"${v === "standard" ? " selected" : ""}>${l}</option>`,
-  ).join("");
+  const cachedVal = (k, dflt = "") => (cached && cached[k] != null ? cached[k] : dflt);
+  const optsFrom = (list, selected, fallback = "") =>
+    list
+      .map(([v, l]) => `<option value="${v}"${v === (selected || fallback) ? " selected" : ""}>${l}</option>`)
+      .join("");
+  const typeOpts = optsFrom(ESTIMATOR_PROPERTY_TYPES, cachedVal("property_type"), propType);
+  const condOpts = optsFrom(ESTIMATOR_CONDITIONS, cachedVal("condition"), "standard");
+  const dpeOpts = optsFrom(ESTIMATOR_DPE_GRADES, cachedVal("dpe"));
+  const expoOpts = optsFrom(ESTIMATOR_EXPOSURES, cachedVal("exposure"));
+  const constrOpts = optsFrom(ESTIMATOR_CONSTRUCTION_PERIODS, cachedVal("construction_period"));
+  const commissionVal = cachedVal("commission_pct", ESTIMATOR_DEFAULT_COMMISSION_PCT);
   const featHtml = ESTIMATOR_FEATURES.map(
     ([key, label]) =>
-      `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
+      `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"${cached && cached[key] ? " checked" : ""}> ${escapeHtml(label)}</label>`,
   ).join("");
-  const cached = drawerEstimates.get(lead.id) || lead.price_estimate || null;
   return `
-    <form id="${prefix}-form" class="drawer-estimator-form" onsubmit="return false">
       <div class="drawer-estimator-grid">
         <label class="drawer-estimator-field">
           <span>Surface (m²)</span>
@@ -6529,12 +6651,32 @@ function renderEstimatorFormHtml(lead, prefix = "tab-est") {
           <input type="number" id="${prefix}-rooms" min="1" max="15" placeholder="—" value="${rooms}">
         </label>
         <label class="drawer-estimator-field">
+          <span>Étage</span>
+          <input type="number" id="${prefix}-floor" min="0" max="60" placeholder="—" value="${cachedVal("floor")}">
+        </label>
+        <label class="drawer-estimator-field">
           <span>Type de bien</span>
           <select id="${prefix}-property-type">${typeOpts}</select>
         </label>
         <label class="drawer-estimator-field">
           <span>État</span>
           <select id="${prefix}-condition">${condOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>DPE</span>
+          <select id="${prefix}-dpe">${dpeOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Exposition</span>
+          <select id="${prefix}-exposure">${expoOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Construction</span>
+          <select id="${prefix}-construction">${constrOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Honoraires agence (%)</span>
+          <input type="number" id="${prefix}-commission" min="0" max="12" step="0.1" value="${commissionVal}">
         </label>
         <label class="drawer-estimator-field drawer-estimator-field--wide">
           <span>Adresse</span>
@@ -6549,10 +6691,51 @@ function renderEstimatorFormHtml(lead, prefix = "tab-est") {
           <input type="text" id="${prefix}-postcode" value="${escapeAttr(lead.postcode || "")}" maxlength="5">
         </label>
       </div>
-      <div class="drawer-estimator-features">${featHtml}</div>
+      <div class="drawer-estimator-features">${featHtml}</div>`;
+}
+
+function renderEstimatorFormHtml(lead, prefix = "tab-est") {
+  const cached = drawerEstimates.get(lead.id) || lead.price_estimate || null;
+  return `
+    <form id="${prefix}-form" class="drawer-estimator-form" onsubmit="return false">
+      ${estimatorCriteriaGridHtml(lead, prefix, cached)}
       <button type="button" class="btn btn-primary" id="${prefix}-calc-btn">Calculer l'estimation</button>
     </form>
     <div id="${prefix}-result" class="drawer-estimator-result-wrap">${cached ? renderPriceEstimateResultHtml(cached) : ""}</div>`;
+}
+
+// Formulaire « Nouveau bien » : coordonnées propriétaire + critères → crée un
+// prospect tagué « Estimation » et lance l'estimation.
+function renderEstimatorNewLeadFormHtml(prefix = "tab-est-new") {
+  const blank = {};
+  return `
+    <form id="${prefix}-form" class="drawer-estimator-form drawer-estimator-form--new" onsubmit="return false">
+      <div class="drawer-estimator-owner-title">Le bien</div>
+      ${estimatorCriteriaGridHtml(blank, prefix, null)}
+      <details class="drawer-estimator-owner-details">
+        <summary>+ Ajouter le propriétaire <span class="drawer-estimator-optional">(optionnel)</span></summary>
+        <div class="drawer-estimator-grid">
+          <label class="drawer-estimator-field">
+            <span>Prénom</span>
+            <input type="text" id="${prefix}-first_name" placeholder="Prénom">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Nom</span>
+            <input type="text" id="${prefix}-last_name" placeholder="Nom">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Téléphone</span>
+            <input type="tel" id="${prefix}-phone" placeholder="06…">
+          </label>
+          <label class="drawer-estimator-field">
+            <span>Email</span>
+            <input type="email" id="${prefix}-email" placeholder="email@…">
+          </label>
+        </div>
+      </details>
+      <button type="button" class="btn btn-primary" id="${prefix}-create-btn">Créer le prospect &amp; estimer</button>
+    </form>
+    <div id="${prefix}-result" class="drawer-estimator-result-wrap"></div>`;
 }
 
 function renderDrawerEstimatorCta(lead) {
@@ -6593,12 +6776,30 @@ function renderEstimateurView() {
   if (!root) return;
 
   const vente = getVenteLeadsForEstimator();
-  if (!vente.length) {
+  // Sans aucun prospect en vente, on bascule d'office sur la création d'un bien.
+  const mode = state.estimatorMode === "new" || !vente.length ? "new" : "existing";
+
+  const intro = `
+    <p class="estimateur-intro">
+      Estimation indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
+      ajustée selon le bien — première passe type Meilleurs Agents.
+    </p>`;
+
+  if (mode === "new") {
     root.innerHTML = `
-      <div class="estimateur-empty">
-        <h3>Aucun prospect en vente</h3>
-        <p class="form-hint">L'estimateur s'applique aux annonces <strong>vente</strong>. Crawlez des sources ou importez une fiche vente.</p>
-        <button type="button" class="btn btn-secondary" onclick="switchView('crawler')">Alimenter le radar</button>
+      <div class="estimateur-layout">
+        <aside class="estimateur-sidebar">
+          ${intro}
+          <div class="estimateur-newlead-note">
+            <strong>Nouveau bien à estimer</strong>
+            <p class="form-hint">Renseignez juste le bien : il sera enregistré comme prospect avec le badge <span class="origin-badge origin-badge-est">📋 Estimation</span>. Le propriétaire reste optionnel.</p>
+          </div>
+          ${vente.length ? `<button type="button" class="btn btn-ghost btn-sm" id="tab-est-back-btn">← Estimer un prospect existant</button>` : ""}
+        </aside>
+        <div class="estimateur-main drawer-estimator">
+          <h3 class="estimateur-form-title">Créer &amp; estimer un bien</h3>
+          ${renderEstimatorNewLeadFormHtml("tab-est-new")}
+        </div>
       </div>`;
     return;
   }
@@ -6621,19 +6822,16 @@ function renderEstimateurView() {
     .join("");
 
   const priceLine = lead.price ? formatPrice(lead) : "—";
-  const ms = lead.mandate_score || 0;
 
   root.innerHTML = `
     <div class="estimateur-layout">
       <aside class="estimateur-sidebar">
-        <p class="estimateur-intro">
-          Estimation indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
-          ajustée selon le bien — première passe type Meilleurs Agents.
-        </p>
+        ${intro}
         <label class="estimateur-lead-picker">
           <span class="estimateur-lead-picker-label">Prospect à estimer</span>
           <select id="tab-est-lead-select" class="estimateur-lead-select">${options}</select>
         </label>
+        <button type="button" class="btn btn-secondary btn-sm estimateur-newlead-btn" id="tab-est-new-btn">+ Nouveau bien à estimer</button>
         <div class="estimateur-lead-card">
           <strong>${escapeHtml(lead.property_title || lead.listing_title || "Bien")}</strong>
           <p>${escapeHtml(lead.address || "—")}${lead.city ? `, ${escapeHtml(lead.city)}` : ""}</p>
@@ -6651,7 +6849,10 @@ function renderEstimateurView() {
 }
 
 function openEstimateurTab(leadId) {
-  if (leadId != null) state.estimatorLeadId = leadId;
+  if (leadId != null) {
+    state.estimatorLeadId = leadId;
+    state.estimatorMode = "existing";
+  }
   switchView("estimateur");
 }
 
@@ -6703,6 +6904,81 @@ async function runPriceEstimate(lead, prefix = "tab-est") {
   }
 }
 
+// Crée un prospect depuis le formulaire « Nouveau bien » puis l'estime.
+async function createEstimatorLead(prefix = "tab-est-new") {
+  const form = document.getElementById(`${prefix}-form`);
+  const btn = document.getElementById(`${prefix}-create-btn`);
+  const wrap = document.getElementById(`${prefix}-result`);
+  if (!form) return;
+  const inputs = collectEstimatorInputs({}, prefix);
+  if (!inputs.surface || inputs.surface <= 0) {
+    showToast("Indiquez une surface en m² pour estimer", "warning");
+    return;
+  }
+  if (!inputs.address && !inputs.city) {
+    showToast("Indiquez au moins une ville ou une adresse", "warning");
+    return;
+  }
+  const val = (id) => form.querySelector(`#${prefix}-${id}`)?.value?.trim() || "";
+  const payload = {
+    first_name: val("first_name"),
+    last_name: val("last_name"),
+    phone: val("phone"),
+    email: val("email"),
+    address: inputs.address,
+    city: inputs.city,
+    postcode: inputs.postcode,
+    surface: inputs.surface,
+    property_type: inputs.property_type,
+    inputs,
+  };
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Création…";
+  }
+  if (wrap) wrap.innerHTML = `<p class="drawer-estimator-loading">Création du prospect et analyse DVF…</p>`;
+  try {
+    const result = await api("/leads/manual", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (!result.ok) {
+      if (wrap) wrap.innerHTML = `<p class="drawer-estimator-error">${escapeHtml(result.error || "Création impossible")}</p>`;
+      showToast(result.error || "Création impossible", "warning", 6000);
+      return;
+    }
+    // Recharge la liste des prospects (le bien y apparaît avec le badge Estimation).
+    try {
+      LEADS = await api("/leads");
+      syncRadarFromLeads(LEADS);
+    } catch {
+      /* la liste se rafraîchira au prochain cycle */
+    }
+    const newLead = result.lead;
+    if (newLead && result.estimate?.ok) drawerEstimates.set(newLead.id, result.estimate);
+    if (newLead) {
+      state.estimatorMode = "existing";
+      state.estimatorLeadId = newLead.id;
+      renderEstimateurView();
+      animateEstimatorTotal(document.getElementById("estimateur-root"));
+    }
+    const est = result.estimate;
+    showToast(
+      est?.ok ? `Prospect créé · estimation ${fmtEuro(est.estimate_total)}` : "Prospect créé",
+      "success",
+      6000,
+    );
+  } catch (err) {
+    if (wrap) wrap.innerHTML = `<p class="drawer-estimator-error">${escapeHtml(err.message)}</p>`;
+    showToast(err.message, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Créer le prospect & estimer";
+    }
+  }
+}
+
 // ─── Dossier d'estimation imprimable (PDF) ───
 function estimatorDossierData(lead) {
   return drawerEstimates.get(lead?.id) || lead?.price_estimate || null;
@@ -6726,6 +7002,14 @@ function buildEstimationDossierHtml(lead, est, profile) {
     .join("");
   const method = (est.methodology || []).map((m) => `<li>${escapeHtml(m)}</li>`).join("");
   const typeLabel = { appartement: "Appartement", maison: "Maison", studio: "Studio", terrain: "Terrain", autre: "Autre" }[est.property_type] || "Bien";
+  const dpeLabel = est.dpe ? `<tr><td>DPE</td><td>${escapeHtml(est.dpe)}</td></tr>` : "";
+  const floorLabel = est.floor != null ? `<tr><td>Étage</td><td>${est.floor === 0 ? "Rez-de-chaussée" : est.floor}</td></tr>` : "";
+  const faiSection =
+    est.estimate_fai != null
+      ? `<div class="est-fai">Prix de présentation FAI (honoraires ${est.commission_pct != null ? est.commission_pct : "—"} % inclus) :
+         <strong>${fmtEuro(est.estimate_fai)}</strong>
+         <span>${fmtEuro(est.range_low_fai)} – ${fmtEuro(est.range_high_fai)}${est.commission_amount ? ` · dont ${fmtEuro(est.commission_amount)} d'honoraires` : ""}</span></div>`
+      : "";
   return `
   <div class="est-doc">
     <header class="est-head">
@@ -6740,13 +7024,17 @@ function buildEstimationDossierHtml(lead, est, profile) {
         <tr><td>Adresse</td><td>${addr}</td></tr>
         <tr><td>Type</td><td>${escapeHtml(typeLabel)}${est.rooms ? ` · ${est.rooms} pièce(s)` : ""}</td></tr>
         <tr><td>Surface</td><td>${est.surface} m²</td></tr>
+        ${floorLabel}
         <tr><td>État</td><td>${escapeHtml(est.condition || "standard")}</td></tr>
+        ${dpeLabel}
       </table>
     </section>
     <section class="est-value">
       <h2>Estimation de valeur vénale</h2>
+      <div class="est-total-label">Net vendeur (valeur actée)</div>
       <div class="est-total">${fmtEuro(est.estimate_total)}</div>
       <div class="est-range">Fourchette : ${fmtEuro(est.range_low)} – ${fmtEuro(est.range_high)} · ${escapeHtml(est.price_per_m2 ? est.price_per_m2.toLocaleString("fr-FR") + " €/m²" : "")}</div>
+      ${faiSection}
       <p class="est-conf">Confiance ${escapeHtml(est.confidence_label || "")} · ${est.sample_count || 0} ventes DVF (${escapeHtml(est.reference_period || "")}) · ${escapeHtml(est.commune || est.sector || "")}</p>
     </section>
     ${adjRows ? `<section><h2>Ajustements appliqués</h2><table class="est-adj"><tbody>${adjRows}</tbody></table></section>` : ""}
@@ -6793,8 +7081,12 @@ async function printEstimationDossier(lead) {
       .est-kv td:first-child { color: #555; width: 35%; }
       .est-adj td.num, .num { text-align: right; font-weight: 600; }
       .est-value { text-align: center; background: #f6f4f0; border: 1px solid #ddd6cb; border-radius: 10px; padding: 1.2rem; margin: 1rem 0; }
+      .est-total-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #9a7349; font-weight: 600; }
       .est-total { font-size: 2.4rem; font-weight: 700; color: #1e3340; }
       .est-range { font-size: 1rem; color: #333; margin-top: 0.3rem; }
+      .est-fai { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px dashed #ccc3b4; font-size: 0.95rem; color: #333; }
+      .est-fai strong { font-size: 1.3rem; color: #1e3340; display: block; margin: 0.15rem 0; }
+      .est-fai span { font-size: 0.82rem; color: #666; }
       .est-conf { font-size: 0.82rem; color: #666; margin-top: 0.4rem; }
       .est-method { font-size: 0.85rem; color: #444; padding-left: 1.2rem; }
       .est-disclaimer { font-size: 0.72rem; color: #777; margin-top: 1.5rem; font-style: italic; }
@@ -6823,6 +7115,23 @@ function setupEstimateur() {
       e.preventDefault();
       const lead = resolveEstimatorLead();
       if (lead) runPriceEstimate(lead, "tab-est").catch((err) => showToast(err.message, "error"));
+      return;
+    }
+    if (e.target.closest("#tab-est-new-btn")) {
+      e.preventDefault();
+      state.estimatorMode = "new";
+      renderEstimateurView();
+      return;
+    }
+    if (e.target.closest("#tab-est-back-btn")) {
+      e.preventDefault();
+      state.estimatorMode = "existing";
+      renderEstimateurView();
+      return;
+    }
+    if (e.target.closest("#tab-est-new-create-btn")) {
+      e.preventDefault();
+      createEstimatorLead("tab-est-new").catch((err) => showToast(err.message, "error"));
       return;
     }
     if (e.target.closest("#tab-est-open-drawer")) {

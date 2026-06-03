@@ -1638,6 +1638,119 @@ body {
   color: rgba(246, 244, 240, 0.78);
 }
 
+.drawer-estimator-net-hint {
+  font-size: 0.7rem;
+  color: rgba(246, 244, 240, 0.6);
+  margin-top: 0.15rem;
+}
+
+.drawer-estimator-fai {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: -0.4rem 0 0.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.drawer-estimator-fai-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--v-brass);
+}
+
+.drawer-estimator-fai-label small {
+  display: inline;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.35rem;
+}
+
+.drawer-estimator-fai-total {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-estimator-fai-range {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ── Comparaison Annonce vs Estimation (lead crawlé existant) ── */
+.drawer-estimator-compare {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  border-left-width: 4px;
+  background: var(--bg-muted);
+}
+.drawer-estimator-compare-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+.drawer-estimator-compare-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.drawer-estimator-compare .cmp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+.drawer-estimator-compare .cmp-k {
+  color: var(--text-secondary);
+}
+.drawer-estimator-compare .cmp-v {
+  font-weight: 700;
+  color: var(--v-ink);
+  font-variant-numeric: tabular-nums;
+}
+.drawer-estimator-compare .cmp-v small {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.drawer-estimator-compare-verdict {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--border-light);
+  font-size: 0.82rem;
+}
+.drawer-estimator-compare-verdict .cmp-delta {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+}
+.drawer-estimator-compare-verdict .cmp-label {
+  color: var(--text-primary);
+}
+.compare-over { border-left-color: #b45309; }
+.compare-over .cmp-delta { color: #b45309; background: rgba(180, 83, 9, 0.12); }
+.compare-under { border-left-color: #15803d; }
+.compare-under .cmp-delta { color: #15803d; background: rgba(21, 128, 61, 0.12); }
+.compare-fair { border-left-color: var(--v-brass, #9a7349); }
+.compare-fair .cmp-delta { color: var(--v-brass, #9a7349); background: rgba(154, 115, 73, 0.12); }
+
 .drawer-estimator-meta,
 .drawer-estimator-m2,
 .drawer-estimator-delta {
@@ -7204,6 +7317,101 @@ body:has(.crawl-dock.open) .script-dock.open {
 .also-on-badge-sm {
   font-size: 0.62rem;
   padding: 0.1rem 0.35rem;
+}
+
+/* ── Badge provenance « Estimation » (vs « Détecté » pour les crawls) ── */
+.origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.origin-badge-est {
+  color: var(--v-brass, #9a7349);
+  background: rgba(154, 115, 73, 0.12);
+  border: 1px solid rgba(154, 115, 73, 0.28);
+}
+.origin-badge-sm {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+}
+
+/* Pastille « Estimé » sur un lead crawlé déjà passé par l'estimateur. */
+.estimated-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #15803d;
+  background: rgba(21, 128, 61, 0.1);
+  border: 1px solid rgba(21, 128, 61, 0.22);
+  border-radius: 20px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── Estimateur : bloc création « Nouveau bien » ── */
+.estimateur-newlead-btn {
+  width: 100%;
+  margin: 0.6rem 0;
+}
+.estimateur-newlead-note {
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+.estimateur-newlead-note strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--v-ink);
+}
+.drawer-estimator-owner {
+  margin-bottom: 0.4rem;
+}
+.drawer-estimator-owner-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--v-brass, #9a7349);
+  margin: 0.6rem 0 0.4rem;
+}
+.drawer-estimator-owner-details {
+  margin: 0.6rem 0 0.2rem;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0 0.85rem;
+}
+.drawer-estimator-owner-details[open] {
+  padding-bottom: 0.6rem;
+}
+.drawer-estimator-owner-details > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.6rem 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--v-brass, #9a7349);
+  user-select: none;
+}
+.drawer-estimator-owner-details > summary::-webkit-details-marker {
+  display: none;
+}
+.drawer-estimator-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* ─── Vitrine theme — titres & cartes ─── */
