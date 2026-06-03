@@ -6358,10 +6358,39 @@ const ESTIMATOR_FEATURES = [
   ["has_elevator", "Ascenseur"],
   ["has_parking", "Parking / box"],
   ["has_outdoor", "Balcon / terrasse / jardin"],
+  ["has_cellar", "Cave / cellier"],
   ["has_view", "Belle vue"],
+  ["bright", "Très lumineux"],
+  ["recent_renovation", "Rénovation récente"],
   ["noise_nuisance", "Nuisances (bruit, vis-à-vis…)"],
   ["prime_sector", "Quartier très recherché"],
 ];
+const ESTIMATOR_DPE_GRADES = [
+  ["", "—"],
+  ["A", "A"],
+  ["B", "B"],
+  ["C", "C"],
+  ["D", "D"],
+  ["E", "E"],
+  ["F", "F (passoire)"],
+  ["G", "G (passoire)"],
+];
+const ESTIMATOR_EXPOSURES = [
+  ["", "—"],
+  ["sud", "Plein sud"],
+  ["sud_ouest", "Sud / Ouest"],
+  ["traversant", "Traversant"],
+  ["est_ouest", "Est / Ouest"],
+  ["nord", "Nord"],
+];
+const ESTIMATOR_CONSTRUCTION_PERIODS = [
+  ["", "—"],
+  ["avant_1949", "Avant 1949"],
+  ["1949_1974", "1949–1974"],
+  ["1975_2000", "1975–2000"],
+  ["apres_2000", "Après 2000"],
+];
+const ESTIMATOR_DEFAULT_COMMISSION_PCT = 5;
 
 const drawerEstimates = new Map();
 
@@ -6428,12 +6457,21 @@ function collectEstimatorInputs(lead, prefix = "tab-est") {
     parseFloat(form?.querySelector(`#${prefix}-surface`)?.value) ||
     parseFloat(lead.surface) ||
     0;
+  const commissionRaw = form?.querySelector(`#${prefix}-commission`)?.value;
   const inputs = {
     surface,
     property_type:
       form?.querySelector(`#${prefix}-property-type`)?.value || guessLeadPropertyType(lead),
     rooms: form?.querySelector(`#${prefix}-rooms`)?.value || parseLeadRooms(lead) || null,
+    floor: form?.querySelector(`#${prefix}-floor`)?.value ?? "",
     condition: form?.querySelector(`#${prefix}-condition`)?.value || "standard",
+    dpe: form?.querySelector(`#${prefix}-dpe`)?.value || "",
+    exposure: form?.querySelector(`#${prefix}-exposure`)?.value || "",
+    construction_period: form?.querySelector(`#${prefix}-construction`)?.value || "",
+    commission_pct:
+      commissionRaw !== undefined && commissionRaw !== ""
+        ? commissionRaw
+        : ESTIMATOR_DEFAULT_COMMISSION_PCT,
     address: form?.querySelector(`#${prefix}-address`)?.value || lead.address || "",
     city: form?.querySelector(`#${prefix}-city`)?.value || lead.city || "",
     postcode: form?.querySelector(`#${prefix}-postcode`)?.value || lead.postcode || "",
@@ -6466,13 +6504,25 @@ function renderPriceEstimateResultHtml(result) {
   const method = (result.methodology || [])
     .map((line) => `<li>${escapeHtml(line)}</li>`)
     .join("");
+  const commissionPct = result.commission_pct != null ? result.commission_pct : null;
+  const faiBlock =
+    result.estimate_fai != null
+      ? `
+        <div class="drawer-estimator-fai">
+          <span class="drawer-estimator-fai-label">Prix de présentation FAI<small>honoraires ${commissionPct != null ? commissionPct : "—"} % inclus</small></span>
+          <strong class="drawer-estimator-fai-total">${fmtEuro(result.estimate_fai)}</strong>
+          <span class="drawer-estimator-fai-range">${fmtEuro(result.range_low_fai)} – ${fmtEuro(result.range_high_fai)}${result.commission_amount ? ` · dont ${fmtEuro(result.commission_amount)} d'honoraires` : ""}</span>
+        </div>`
+      : "";
   return `
     <div class="drawer-estimator-result" data-confidence="${confCls}">
       <div class="drawer-estimator-main">
-        <span class="drawer-estimator-label">Estimation indicative</span>
+        <span class="drawer-estimator-label">Estimation net vendeur</span>
         <strong class="drawer-estimator-total" data-count-to="${Number(result.estimate_total) || 0}">${fmtEuro(result.estimate_total)}</strong>
         <span class="drawer-estimator-range">${fmtEuro(result.range_low)} – ${fmtEuro(result.range_high)}</span>
+        <span class="drawer-estimator-net-hint">Valeur actée du bien (hors honoraires) · comparable à Meilleurs Agents</span>
       </div>
+      ${faiBlock}
       <p class="drawer-estimator-meta">
         <span class="drawer-estimator-conf conf-${confCls}">Confiance ${escapeHtml(result.confidence_label || "")}</span>
         · ${result.sample_count || 0} ventes DVF · ${escapeHtml(result.reference_period || "")}
@@ -6506,17 +6556,26 @@ function renderEstimatorFormHtml(lead, prefix = "tab-est") {
   const propType = guessLeadPropertyType(lead);
   const rooms = parseLeadRooms(lead);
   const addr = lead.address && lead.address !== "—" ? lead.address : "";
+  const cached = drawerEstimates.get(lead.id) || lead.price_estimate || null;
+  const cachedVal = (k, dflt = "") => (cached && cached[k] != null ? cached[k] : dflt);
   const typeOpts = ESTIMATOR_PROPERTY_TYPES.map(
-    ([v, l]) => `<option value="${v}"${v === propType ? " selected" : ""}>${l}</option>`,
+    ([v, l]) => `<option value="${v}"${v === (cachedVal("property_type") || propType) ? " selected" : ""}>${l}</option>`,
   ).join("");
   const condOpts = ESTIMATOR_CONDITIONS.map(
-    ([v, l]) => `<option value="${v}"${v === "standard" ? " selected" : ""}>${l}</option>`,
+    ([v, l]) => `<option value="${v}"${v === (cachedVal("condition") || "standard") ? " selected" : ""}>${l}</option>`,
   ).join("");
+  const optsFrom = (list, selected) =>
+    list
+      .map(([v, l]) => `<option value="${v}"${v === (selected || "") ? " selected" : ""}>${l}</option>`)
+      .join("");
+  const dpeOpts = optsFrom(ESTIMATOR_DPE_GRADES, cachedVal("dpe"));
+  const expoOpts = optsFrom(ESTIMATOR_EXPOSURES, cachedVal("exposure"));
+  const constrOpts = optsFrom(ESTIMATOR_CONSTRUCTION_PERIODS, cachedVal("construction_period"));
+  const commissionVal = cachedVal("commission_pct", ESTIMATOR_DEFAULT_COMMISSION_PCT);
   const featHtml = ESTIMATOR_FEATURES.map(
     ([key, label]) =>
-      `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"> ${escapeHtml(label)}</label>`,
+      `<label class="drawer-estimator-check"><input type="checkbox" id="${prefix}-${key}" name="${key}"${cached && cached[key] ? " checked" : ""}> ${escapeHtml(label)}</label>`,
   ).join("");
-  const cached = drawerEstimates.get(lead.id) || lead.price_estimate || null;
   return `
     <form id="${prefix}-form" class="drawer-estimator-form" onsubmit="return false">
       <div class="drawer-estimator-grid">
@@ -6529,12 +6588,32 @@ function renderEstimatorFormHtml(lead, prefix = "tab-est") {
           <input type="number" id="${prefix}-rooms" min="1" max="15" placeholder="—" value="${rooms}">
         </label>
         <label class="drawer-estimator-field">
+          <span>Étage</span>
+          <input type="number" id="${prefix}-floor" min="0" max="60" placeholder="—" value="${cachedVal("floor")}">
+        </label>
+        <label class="drawer-estimator-field">
           <span>Type de bien</span>
           <select id="${prefix}-property-type">${typeOpts}</select>
         </label>
         <label class="drawer-estimator-field">
           <span>État</span>
           <select id="${prefix}-condition">${condOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>DPE</span>
+          <select id="${prefix}-dpe">${dpeOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Exposition</span>
+          <select id="${prefix}-exposure">${expoOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Construction</span>
+          <select id="${prefix}-construction">${constrOpts}</select>
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Honoraires agence (%)</span>
+          <input type="number" id="${prefix}-commission" min="0" max="12" step="0.1" value="${commissionVal}">
         </label>
         <label class="drawer-estimator-field drawer-estimator-field--wide">
           <span>Adresse</span>
@@ -6726,6 +6805,14 @@ function buildEstimationDossierHtml(lead, est, profile) {
     .join("");
   const method = (est.methodology || []).map((m) => `<li>${escapeHtml(m)}</li>`).join("");
   const typeLabel = { appartement: "Appartement", maison: "Maison", studio: "Studio", terrain: "Terrain", autre: "Autre" }[est.property_type] || "Bien";
+  const dpeLabel = est.dpe ? `<tr><td>DPE</td><td>${escapeHtml(est.dpe)}</td></tr>` : "";
+  const floorLabel = est.floor != null ? `<tr><td>Étage</td><td>${est.floor === 0 ? "Rez-de-chaussée" : est.floor}</td></tr>` : "";
+  const faiSection =
+    est.estimate_fai != null
+      ? `<div class="est-fai">Prix de présentation FAI (honoraires ${est.commission_pct != null ? est.commission_pct : "—"} % inclus) :
+         <strong>${fmtEuro(est.estimate_fai)}</strong>
+         <span>${fmtEuro(est.range_low_fai)} – ${fmtEuro(est.range_high_fai)}${est.commission_amount ? ` · dont ${fmtEuro(est.commission_amount)} d'honoraires` : ""}</span></div>`
+      : "";
   return `
   <div class="est-doc">
     <header class="est-head">
@@ -6740,13 +6827,17 @@ function buildEstimationDossierHtml(lead, est, profile) {
         <tr><td>Adresse</td><td>${addr}</td></tr>
         <tr><td>Type</td><td>${escapeHtml(typeLabel)}${est.rooms ? ` · ${est.rooms} pièce(s)` : ""}</td></tr>
         <tr><td>Surface</td><td>${est.surface} m²</td></tr>
+        ${floorLabel}
         <tr><td>État</td><td>${escapeHtml(est.condition || "standard")}</td></tr>
+        ${dpeLabel}
       </table>
     </section>
     <section class="est-value">
       <h2>Estimation de valeur vénale</h2>
+      <div class="est-total-label">Net vendeur (valeur actée)</div>
       <div class="est-total">${fmtEuro(est.estimate_total)}</div>
       <div class="est-range">Fourchette : ${fmtEuro(est.range_low)} – ${fmtEuro(est.range_high)} · ${escapeHtml(est.price_per_m2 ? est.price_per_m2.toLocaleString("fr-FR") + " €/m²" : "")}</div>
+      ${faiSection}
       <p class="est-conf">Confiance ${escapeHtml(est.confidence_label || "")} · ${est.sample_count || 0} ventes DVF (${escapeHtml(est.reference_period || "")}) · ${escapeHtml(est.commune || est.sector || "")}</p>
     </section>
     ${adjRows ? `<section><h2>Ajustements appliqués</h2><table class="est-adj"><tbody>${adjRows}</tbody></table></section>` : ""}
@@ -6793,8 +6884,12 @@ async function printEstimationDossier(lead) {
       .est-kv td:first-child { color: #555; width: 35%; }
       .est-adj td.num, .num { text-align: right; font-weight: 600; }
       .est-value { text-align: center; background: #f6f4f0; border: 1px solid #ddd6cb; border-radius: 10px; padding: 1.2rem; margin: 1rem 0; }
+      .est-total-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: #9a7349; font-weight: 600; }
       .est-total { font-size: 2.4rem; font-weight: 700; color: #1e3340; }
       .est-range { font-size: 1rem; color: #333; margin-top: 0.3rem; }
+      .est-fai { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px dashed #ccc3b4; font-size: 0.95rem; color: #333; }
+      .est-fai strong { font-size: 1.3rem; color: #1e3340; display: block; margin: 0.15rem 0; }
+      .est-fai span { font-size: 0.82rem; color: #666; }
       .est-conf { font-size: 0.82rem; color: #666; margin-top: 0.4rem; }
       .est-method { font-size: 0.85rem; color: #444; padding-left: 1.2rem; }
       .est-disclaimer { font-size: 0.72rem; color: #777; margin-top: 1.5rem; font-style: italic; }

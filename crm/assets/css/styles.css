@@ -1638,6 +1638,54 @@ body {
   color: rgba(246, 244, 240, 0.78);
 }
 
+.drawer-estimator-net-hint {
+  font-size: 0.7rem;
+  color: rgba(246, 244, 240, 0.6);
+  margin-top: 0.15rem;
+}
+
+.drawer-estimator-fai {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: -0.4rem 0 0.75rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.drawer-estimator-fai-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--v-brass);
+}
+
+.drawer-estimator-fai-label small {
+  display: inline;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.35rem;
+}
+
+.drawer-estimator-fai-total {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-estimator-fai-range {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
 .drawer-estimator-meta,
 .drawer-estimator-m2,
 .drawer-estimator-delta {
