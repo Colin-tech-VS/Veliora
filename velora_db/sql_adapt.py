@@ -35,6 +35,13 @@ def _adapt_datetime(s: str) -> str:
     )
     # datetime('now')
     s = re.sub(r"datetime\(\s*'now'\s*\)", "NOW()", s, flags=re.IGNORECASE)
+    # datetime(COALESCE(col1, col2)) — comparaisons leads stale, etc.
+    s = re.sub(
+        r"datetime\(\s*(COALESCE\s*\([^)]+\))\s*\)",
+        r"(\1)::timestamptz",
+        s,
+        flags=re.IGNORECASE,
+    )
     # datetime(<colonne>) — cast d'une colonne/expression en timestamptz
     s = re.sub(
         r"datetime\(\s*([A-Za-z_][\w.]*)\s*\)",

@@ -828,19 +828,20 @@ def get_leads_stale_for_refresh(
 ) -> list[dict]:
     """Prospects actifs avec URL, non rafraîchis depuis stale_hours (les plus anciens d'abord)."""
     limit = max(1, int(limit))
-    stale_hours = max(1, int(stale_hours))
+    hours = max(1, int(stale_hours))
+    # Intervalle en littéral pour sql_adapt Postgres (datetime('now', ?) non traduit).
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT id, source_url, updated_at, created_at, status
+            f"""SELECT id, source_url, updated_at, created_at, status
                FROM leads
                WHERE agency_id = ?
                  AND COALESCE(status, 'nouveau') != 'retire'
                  AND TRIM(COALESCE(source_url, '')) != ''
-                 AND datetime(COALESCE(updated_at, created_at))
-                     < datetime('now', ?)
-               ORDER BY datetime(COALESCE(updated_at, created_at)) ASC
+                 AND COALESCE(updated_at, created_at)
+                     < datetime('now', '-{hours} hours')
+               ORDER BY COALESCE(updated_at, created_at) ASC
                LIMIT ?""",
-            (agency_id, f"-{stale_hours} hours", limit),
+            (agency_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
 
