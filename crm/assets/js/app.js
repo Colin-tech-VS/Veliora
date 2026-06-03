@@ -125,7 +125,9 @@ const viewTitles = {
   playbook: { title: "Scripts d'appel", subtitle: "Quoi dire, quand appeler, comment relancer" },
   leads: { title: "Vos prospects", subtitle: "Classés par priorité mandat (Score Mandat™)" },
   crawler: { title: "Veille portails", subtitle: "Choisissez vos sites — Veliora alimente le briefing" },
-  pipeline: { title: "Pipeline", subtitle: "Glissez-déposez vos dossiers — du premier contact au mandat" },
+  pipeline: { title: "Mon pipeline", subtitle: "Vos affaires en cours — de la prise en charge à la vente" },
+  transactions: { title: "Affaires", subtitle: "Toutes les affaires de l'agence, étape par étape" },
+  commissions: { title: "Commissions", subtitle: "Suivi des ventes conclues — part agence et part agent" },
   map: {
     title: "Carte",
     subtitle: "Vos annonces, votre agence et votre position (mobile & bureau)",
@@ -5129,6 +5131,12 @@ function renderView(view = state.currentView) {
     case "portail":
       if (typeof renderPortalView === "function") renderPortalView();
       break;
+    case "transactions":
+      if (typeof renderTransactionsView === "function") renderTransactionsView();
+      break;
+    case "commissions":
+      if (typeof renderCommissionsView === "function") renderCommissionsView();
+      break;
     default:
       break;
   }
@@ -5213,6 +5221,13 @@ function mandateCallRecommendation(score) {
   if (s >= 65) return "À appeler sous 48h";
   if (s >= 45) return "À traiter cette semaine";
   return "À surveiller";
+}
+
+function txStageBadge(lead) {
+  // Étape transaction (calculée serveur) — cohérence avec l'onglet Affaires/Pipeline.
+  const tx = lead.transaction;
+  if (!tx || !tx.stage || tx.stage === "prospect") return "";
+  return `<span class="status-badge" style="background:#eef6f4;color:#1f5f5b" title="Affaire — ${escapeAttr(tx.next_action || "")}">${escapeHtml(tx.stage_label || "")}</span>`;
 }
 
 function renderMandatePill(lead, opts = {}) {
@@ -6104,7 +6119,7 @@ function renderLeads() {
           <div class="property-meta">${escapeHtml(lead.mandate_score_reason || "")}</div>
           ${leadQuickFactsHtml(lead)}
           <div class="property-meta">${escapeHtml(lead.property_detail || lead.property)} · ${formatPrice(lead)} ${getTransactionBadge(lead)} ${renderDvfBadge(lead)}</div>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${getTypeBadge(lead)} ${getStatusBadge(lead.status)} <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(lead.mandate_score || 0))}</span></div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${getTypeBadge(lead)} ${getStatusBadge(lead.status)} ${txStageBadge(lead)} <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(lead.mandate_score || 0))}</span></div>
         </div>
         <div class="lead-card-footer">
           <span class="source-tag">${lead.source}</span>
@@ -6228,6 +6243,13 @@ function setupPipelineBoard() {
 function renderPipeline() {
   const board = document.getElementById("pipeline-board");
   if (!board) return;
+
+  // Pipeline = affaires de l'AGENT CONNECTÉ, piloté par les étapes transaction
+  // (prise en charge → mandat → publication → vente). Tout se met à jour partout.
+  if (typeof window.renderPipelineView === "function") {
+    window.renderPipelineView();
+    return;
+  }
 
   board.innerHTML = PIPELINE_STAGES.map((col) => {
     const cards = LEADS.filter((l) => pipelineMatchesColumn(l, col.key)).sort(

@@ -43,14 +43,6 @@ def validate_listing_data(data: dict, *, require_contact: bool = True) -> str | 
     return None
 
 
-def create_public_listing(data: dict) -> dict:
-    """Désactivé — seules les agences publient via le CRM."""
-    return {
-        "ok": False,
-        "error": "La publication est réservée aux agences immobilières (espace CRM).",
-    }
-
-
 def create_agency_listing(agency_id: str, data: dict) -> dict:
     err = validate_listing_data(data, require_contact=False)
     if err:
@@ -60,6 +52,75 @@ def create_agency_listing(agency_id: str, data: dict) -> dict:
         status = "published"
     item = create_listing(
         {**data, "status": status},
+        agency_id=agency_id,
+        publisher_type="agency",
+    )
+    return {"ok": True, "listing": item}
+
+
+def publish_listing_from_lead(
+    agency_id: str,
+    lead_id: int,
+    data: dict | None = None,
+) -> dict:
+    """Publie une annonce détectée (lead crawlé) — exige un MANDAT SIGNÉ.
+
+    Règle métier du workflow transaction : on ne met en ligne un bien que lorsque
+    l'agent a signé le mandat. À défaut, on refuse avec un message explicite et le
+    code `signed_mandate_required` pour que l'UI guide vers la signature.
+    """
+    from crawler.storage import get_lead
+    from crm.agents.storage import assign_lead, get_assignment
+    from crm.transactions.service import signed_mandate_for_lead
+
+    data = data or {}
+    lead = get_lead(int(lead_id), agency_id)
+    if not lead:
+        return {"ok": False, "error": "Prospect introuvable."}
+
+    mandate = signed_mandate_for_lead(agency_id, int(lead_id))
+    if not mandate:
+        return {
+            "ok": False,
+            "error": "Mandat signé requis avant publication. Préparez puis signez le mandat.",
+            "code": "signed_mandate_required",
+        }
+
+    # L'agent en charge = celui passé, sinon celui déjà assigné. On (re)pose la
+    # prise en charge pour garantir le rattachement au portefeuille.
+    agent_id = (data.get("agent_id") or "").strip() or (get_assignment(agency_id, int(lead_id)) or {}).get("agent_id")
+    agent_name = None
+    if agent_id:
+        res = assign_lead(agency_id, int(lead_id), agent_id)
+        if res.get("ok"):
+            agent_name = res.get("agent_name")
+
+    fields = mandate.get("fields") or {}
+    title = (
+        (data.get("title") or "").strip()
+        or (lead.get("property_title") or "").strip()
+        or f"{(lead.get('property_type') or 'Bien')} {lead.get('city') or ''}".strip()
+    )
+    listing_data = {
+        "title": title,
+        "description": (data.get("description") or "").strip(),
+        "transaction_type": lead.get("transaction_type") or "vente",
+        "property_type": (lead.get("property_type") or "appartement").lower(),
+        "price": data.get("price") or lead.get("price"),
+        "surface": data.get("surface") or lead.get("surface"),
+        "rooms": data.get("rooms") or fields.get("rooms"),
+        "city": lead.get("city") or fields.get("city") or "",
+        "postcode": lead.get("postcode") or fields.get("postal_code"),
+        "address": lead.get("address"),
+        "image_url": (data.get("image_url") or lead.get("listing_image_url") or "").strip() or None,
+        "status": (data.get("status") or "published").strip().lower(),
+    }
+    err = validate_listing_data(listing_data, require_contact=False)
+    if err:
+        return {"ok": False, "error": err}
+
+    item = create_listing(
+        {**listing_data, "agent_id": agent_id, "agent_name": agent_name, "source_lead_id": int(lead_id)},
         agency_id=agency_id,
         publisher_type="agency",
     )

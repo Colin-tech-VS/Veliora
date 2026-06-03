@@ -2361,6 +2361,12 @@ def get_leads(
 
         leads = hydrate_leads_for_list(leads, agency_id)
     _attach_estimates(leads, agency_id)
+    try:
+        from crm.transactions.service import attach_transactions
+
+        attach_transactions(leads, agency_id)
+    except Exception:
+        logger.debug("attach_transactions ignoré", exc_info=True)
     return _annotate_dedup(leads)
 
 

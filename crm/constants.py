@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # Incrémenter quand le contrat /api/health ou les routes CRM changent.
-API_VERSION = 7
+API_VERSION = 8
 
 # Clé localStorage / cookie (veliora_* ; propscout_* conservé pour migration).
 AUTH_TOKEN_KEY = "veliora_token"

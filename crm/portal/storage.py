@@ -37,11 +37,20 @@ def ensure_portal_tables(conn) -> None:
             contact_phone TEXT,
             contact_email TEXT,
             image_url TEXT,
+            agent_id TEXT,
+            agent_name TEXT,
+            source_lead_id INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             published_at TEXT
         )
     """)
+    # Migration douce des tables créées avant l'ajout des colonnes agent.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(portal_listings)").fetchall()}
+    for col in ("agent_id", "agent_name", "source_lead_id"):
+        if col not in cols:
+            ddl = "INTEGER" if col == "source_lead_id" else "TEXT"
+            conn.execute(f"ALTER TABLE portal_listings ADD COLUMN {col} {ddl}")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_listings_status "
         "ON portal_listings(status, city)"
@@ -149,8 +158,9 @@ def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) ->
                (id, agency_id, publisher_type, status, transaction_type, title, description,
                 property_type, price, surface, rooms, city, postcode, address,
                 contact_name, contact_phone, contact_email, image_url,
+                agent_id, agent_name, source_lead_id,
                 created_at, updated_at, published_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 lid,
                 agency_id,
@@ -170,6 +180,9 @@ def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) ->
                 (data.get("contact_phone") or "").strip() or None,
                 (data.get("contact_email") or "").strip().lower() or None,
                 (data.get("image_url") or "").strip() or None,
+                (data.get("agent_id") or "").strip() or None,
+                (data.get("agent_name") or "").strip() or None,
+                data.get("source_lead_id"),
                 now,
                 now,
                 published_at,

@@ -1,0 +1,86 @@
+/* Transactions cockpit — UI simple pour agents non techniques */
+
+.tx-view { padding: 0.5rem 0 2rem; }
+.tx-intro { color: var(--text-muted, #5b6b78); margin: 0 0 1rem; font-size: 0.95rem; }
+.tx-loading, .tx-error, .tx-empty { padding: 1.25rem; color: var(--text-muted, #5b6b78); }
+.tx-error { color: #b4232a; }
+.tx-empty {
+  background: var(--surface-2, #f5f7f9); border: 1px dashed var(--border, #d6dee4);
+  border-radius: 12px; text-align: center;
+}
+
+.tx-legend { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.tx-legend-chip {
+  font-size: 0.72rem; background: var(--surface-2, #f0f3f6); color: #43525e;
+  border: 1px solid var(--border, #e0e6ea); border-radius: 999px; padding: 0.2rem 0.6rem;
+}
+.tx-legend-chip b { color: var(--brand, #152a36); }
+
+.tx-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.tx-pipeline.pipeline-board { display: block; }
+.tx-pipeline .tx-grid { margin-top: 0.5rem; }
+
+.tx-card {
+  background: #fff; border: 1px solid var(--border, #e3e9ee); border-radius: 14px;
+  padding: 1rem; box-shadow: 0 1px 3px rgba(20,42,54,.05);
+  display: flex; flex-direction: column; gap: 0.7rem;
+}
+.tx-card-head { display: flex; justify-content: space-between; gap: 0.5rem; align-items: flex-start; }
+.tx-card-head h4 { margin: 0; font-size: 0.98rem; line-height: 1.25; }
+.tx-card-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--text-muted, #6a7884); }
+.tx-card-figures { text-align: right; white-space: nowrap; }
+.tx-card-figures span { font-weight: 700; color: var(--brand, #152a36); }
+.tx-card-figures small { display: block; color: #7a8893; font-size: 0.74rem; }
+
+.tx-stepper-bar {
+  height: 6px; background: var(--surface-2, #eef2f5); border-radius: 999px; overflow: hidden;
+}
+.tx-stepper-bar span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #2c7a7b, #38a169); border-radius: 999px;
+  transition: width .3s ease;
+}
+.tx-stepper-label { font-size: 0.74rem; color: #43525e; margin-top: 0.3rem; font-weight: 600; }
+
+.tx-card-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.tx-agent-badge { font-size: 0.76rem; color: #43525e; }
+.tx-badge { font-size: 0.68rem; padding: 0.12rem 0.5rem; border-radius: 999px; }
+.tx-badge-ok { background: #e6f4ea; color: #1f7a42; }
+
+.tx-card-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.tx-assign, .tx-validate { display: flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
+.tx-agent-select { font-size: 0.82rem; padding: 0.3rem 0.4rem; border-radius: 8px; border: 1px solid var(--border, #d6dee4); }
+.tx-done { color: #1f7a42; font-weight: 700; font-size: 0.85rem; }
+
+/* Stage tint on left border */
+.tx-card.tx-stage-vendu { border-left: 4px solid #38a169; }
+.tx-card.tx-stage-compromis,
+.tx-card.tx-stage-dossier_acquereur { border-left: 4px solid #d69e2e; }
+.tx-card.tx-stage-publie,
+.tx-card.tx-stage-acquereur,
+.tx-card.tx-stage-visite { border-left: 4px solid #3182ce; }
+.tx-card.tx-stage-mandat_valide,
+.tx-card.tx-stage-mandat_cree { border-left: 4px solid #805ad5; }
+.tx-card.tx-stage-prospect,
+.tx-card.tx-stage-pris_en_charge,
+.tx-card.tx-stage-contacte { border-left: 4px solid #a0aec0; }
+
+/* Dossier dynamique */
+.tx-dossier-stage {
+  font-weight: 700; color: var(--brand, #152a36); margin-bottom: 0.75rem;
+  background: #eef6f4; border-radius: 8px; padding: 0.4rem 0.7rem; display: inline-block;
+}
+.tx-dossier-block { border: 1px solid var(--border, #e3e9ee); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 0.8rem; }
+.tx-dossier-block legend { font-weight: 700; font-size: 0.85rem; padding: 0 0.4rem; color: #2d3b45; }
+.tx-dossier-block p { margin: 0.2rem 0; font-size: 0.86rem; }
+.tx-dossier-cols { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* Commissions */
+.tx-comm-summary { display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 1.25rem; }
+.tx-comm-kpi { background: #fff; border: 1px solid var(--border, #e3e9ee); border-radius: 12px; padding: 0.9rem 1rem; }
+.tx-comm-kpi span { display: block; font-size: 0.76rem; color: #6a7884; }
+.tx-comm-kpi strong { font-size: 1.35rem; color: var(--brand, #152a36); }
+.tx-comm-h { margin: 1.25rem 0 0.5rem; font-size: 0.95rem; }

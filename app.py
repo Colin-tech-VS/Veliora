@@ -345,6 +345,10 @@ def api_health():
         "delete_sources_post": True,
         "delete_leads": True,
         "delete_leads_all": True,
+        "transactions": True,
+        "agents": True,
+        "portal_publish_from_lead": True,
+        "publish_requires_signed_mandate": True,
         "patch_source_url": True,
         "post_source_url": True,
         "radar_analyze_url": True,
@@ -1949,6 +1953,249 @@ def api_portal_listing(listing_id):
     return jsonify(out), 200 if out.get("ok") else 400
 
 
+@app.route("/api/portal/listings/from-lead", methods=["POST"])
+@app.route("/api/portal/listings/from-lead/<int:lead_id>", methods=["POST"])
+def api_portal_publish_from_lead(lead_id: int | None = None):
+    """Publie une annonce détectée — exige un mandat signé (workflow transaction)."""
+    from crm.portal.service import publish_listing_from_lead
+
+    aid = _aid()
+    data = request.get_json(silent=True) or {}
+    lid = lead_id if lead_id is not None else data.get("lead_id")
+    try:
+        lid = int(lid)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "lead_id requis"}), 400
+    out = publish_listing_from_lead(aid, lid, data)
+    if out.get("ok"):
+        return jsonify(out), 201
+    code = 409 if out.get("code") == "signed_mandate_required" else 400
+    return jsonify(out), code
+
+
+# ─── Agents (collaborateurs) & prise en charge ───
+
+@app.route("/api/agents", methods=["GET"])
+def api_agents():
+    from crm.agents.storage import list_agents
+
+    return jsonify({"ok": True, "agents": list_agents(_aid())})
+
+
+@app.route("/api/leads/<int:lead_id>/assign", methods=["POST"])
+def api_assign_lead(lead_id: int):
+    """Prise en charge d'un prospect par un agent de l'agence."""
+    from crm.agents.storage import assign_lead
+
+    aid = _aid()
+    lead = get_lead(lead_id, aid)
+    if not lead:
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    agent_id = (data.get("agent_id") or "").strip()
+    if not agent_id:
+        return jsonify({"ok": False, "error": "agent_id requis"}), 400
+    out = assign_lead(aid, lead_id, agent_id)
+    return jsonify(out), 200 if out.get("ok") else 400
+
+
+@app.route("/api/leads/<int:lead_id>/unassign", methods=["POST"])
+def api_unassign_lead(lead_id: int):
+    from crm.agents.storage import unassign_lead
+
+    unassign_lead(_aid(), lead_id)
+    return jsonify({"ok": True})
+
+
+# ─── Transactions (cycle de vie complet d'une affaire) ───
+
+@app.route("/api/transactions", methods=["GET"])
+def api_transactions():
+    """Affaires de l'agence. `?scope=mine` = uniquement celles de l'agent connecté."""
+    from crm.transactions.service import build_transactions
+
+    scope = (request.args.get("scope") or "").strip().lower()
+    agent_id = (request.args.get("agent_id") or "").strip() or None
+    if scope == "mine":
+        agent_id = (get_current_user() or {}).get("id")
+    try:
+        return jsonify(build_transactions(_aid(), for_agent_id=agent_id))
+    except Exception as exc:
+        logging.exception("GET /api/transactions")
+        return jsonify({"ok": False, "error": f"Transactions indisponibles : {exc}"}), 500
+
+
+@app.route("/api/transactions/<int:lead_id>/dossier", methods=["GET"])
+def api_transaction_dossier(lead_id: int):
+    """Dossier dynamique complet (annonce + vendeur + acquéreur + agent + agence)."""
+    from crm.transactions.service import compose_dossier
+
+    aid = _aid()
+    if not get_lead(lead_id, aid):
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
+    return jsonify(compose_dossier(aid, lead_id))
+
+
+@app.route("/api/mandates/<mandate_id>/validate", methods=["POST"])
+def api_mandate_validate(mandate_id: str):
+    """Validation d'une partie (owner|agent). Les 2 → mandat signé + dossier auto."""
+    from crm.mandates.storage import validate_mandate_party
+
+    aid = _aid()
+    data = request.get_json(silent=True) or {}
+    party = (data.get("party") or "").strip().lower()
+    user = get_current_user() or {}
+    agent_id = data.get("agent_id") or (user.get("id") if party == "agent" else None)
+    agent_name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p) or None
+    try:
+        out = validate_mandate_party(
+            mandate_id, aid, party, agent_id=agent_id, agent_name=agent_name
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if not out:
+        return jsonify({"ok": False, "error": "Mandat introuvable"}), 404
+    return jsonify({"ok": True, **out})
+
+
+@app.route("/api/transactions/<int:lead_id>/buyer", methods=["POST"])
+def api_transaction_buyer(lead_id: int):
+    """Rapproche un acquéreur / locataire (étape 7)."""
+    from crm.mandates.storage import get_property_client
+    from crm.transactions.storage import set_progress
+
+    aid = _aid()
+    data = request.get_json(silent=True) or {}
+    client_id = (data.get("client_id") or "").strip()
+    if client_id and not get_property_client(client_id, aid):
+        return jsonify({"ok": False, "error": "Client introuvable"}), 404
+    prog = set_progress(aid, lead_id, buyer_client_id=client_id or None)
+    return jsonify({"ok": True, "progress": prog})
+
+
+@app.route("/api/transactions/<int:lead_id>/milestone", methods=["POST"])
+def api_transaction_milestone(lead_id: int):
+    """Pose un jalon : visite, dossier acquéreur, compromis (étapes 8-10)."""
+    import datetime
+
+    from crm.mandates.dossiers import create_mandate_dossier, dossier_from_mandate_fields
+    from crm.mandates.storage import list_seller_mandates
+    from crm.transactions.storage import set_progress
+
+    aid = _aid()
+    data = request.get_json(silent=True) or {}
+    kind = (data.get("kind") or "").strip().lower()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    if kind == "visit":
+        return jsonify({"ok": True, "progress": set_progress(aid, lead_id, visit_at=now)})
+    if kind == "compromis":
+        return jsonify({"ok": True, "progress": set_progress(aid, lead_id, compromis_at=now)})
+    if kind == "buyer_dossier":
+        # Dossier acquéreur : on réutilise la mécanique dossier liée au mandat.
+        dossier_id = None
+        mandates = list_seller_mandates(aid, lead_id=lead_id, status="signed")
+        if mandates:
+            d = create_mandate_dossier(
+                aid, mandates[0]["id"],
+                {**dossier_from_mandate_fields(mandates[0]), "title": "Dossier acquéreur", "status": "acquereur"},
+            )
+            dossier_id = d["id"]
+        return jsonify({"ok": True, "progress": set_progress(aid, lead_id, buyer_dossier_id=dossier_id or "pending")})
+    return jsonify({"ok": False, "error": "kind invalide (visit|buyer_dossier|compromis)"}), 400
+
+
+@app.route("/api/transactions/<int:lead_id>/finalize", methods=["POST"])
+def api_transaction_finalize(lead_id: int):
+    """Clôture l'affaire (vendu) + enregistre la commission (split agence / agent)."""
+    import datetime
+
+    from crm.agents.storage import get_assignment
+    from crm.transactions.service import signed_mandate_for_lead
+    from crm.transactions.storage import record_commission, set_progress
+
+    aid = _aid()
+    lead = get_lead(lead_id, aid)
+    if not lead:
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        total = float(data.get("total_amount") or data.get("commission") or 0)
+    except (TypeError, ValueError):
+        total = 0.0
+    if total <= 0:
+        return jsonify({"ok": False, "error": "Montant de commission requis (> 0)."}), 400
+    agent_pct = data.get("agent_pct")
+    assignment = get_assignment(aid, lead_id) or {}
+    mandate = signed_mandate_for_lead(aid, lead_id)
+    comm = record_commission(
+        aid,
+        lead_id=lead_id,
+        mandate_id=(mandate or {}).get("id"),
+        agent_id=data.get("agent_id") or assignment.get("agent_id"),
+        agent_name=assignment.get("agent_name"),
+        total_amount=total,
+        agent_pct=float(agent_pct) if agent_pct is not None else None,
+    )
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    set_progress(aid, lead_id, sold_at=now)
+    return jsonify({"ok": True, "commission": comm})
+
+
+@app.route("/api/transactions/<int:lead_id>/email", methods=["POST"])
+def api_transaction_email(lead_id: int):
+    """Envoie le dossier/annonce au bon correspondant — reply-to = agent connecté."""
+    from crm.email.service import email_enabled, send_email
+    from crm.transactions.service import compose_dossier
+
+    aid = _aid()
+    if not get_lead(lead_id, aid):
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    dossier = compose_dossier(aid, lead_id)
+    target = (data.get("to_role") or "seller").strip().lower()
+    to = (data.get("email") or "").strip()
+    if not to:
+        if target == "buyer" and dossier.get("buyer"):
+            to = (dossier["buyer"].get("email") or "").strip()
+        else:
+            to = (dossier.get("seller") or {}).get("email") or ""
+    to = (to or "").strip()
+    if not to or to == "—":
+        return jsonify({"ok": False, "error": "Email du correspondant requis"}), 400
+
+    user = get_current_user() or {}
+    agent_email = (user.get("email") or "").strip()
+    agent_name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p) or None
+    agency_name = user.get("agency_name") or get_agency_name(aid) or "votre agence"
+    p = dossier.get("property") or {}
+    subject = (data.get("subject") or f"Votre bien — {p.get('title') or 'dossier'}").strip()
+    body = (data.get("message") or "").strip()
+    html = (
+        f"<p>Bonjour,</p><p>{body or 'Voici les informations concernant votre bien.'}</p>"
+        f"<ul><li><strong>Bien :</strong> {p.get('title','')}</li>"
+        f"<li><strong>Adresse :</strong> {p.get('address','')} {p.get('postcode','')} {p.get('city','')}</li>"
+        f"<li><strong>Surface :</strong> {p.get('surface') or '—'} m²</li>"
+        f"<li><strong>Prix :</strong> {p.get('price') or '—'} €</li></ul>"
+        f"<p>{agent_name or 'Votre conseiller'} — {agency_name}"
+        + (f"<br><a href='mailto:{agent_email}'>{agent_email}</a>" if agent_email else "")
+        + "</p>"
+    )
+    sent = send_email(
+        to, subject, html,
+        reply_to=agent_email or None,
+        from_name=f"{agent_name} · {agency_name}" if agent_name else agency_name,
+    )
+    return jsonify({"ok": True, "sent_smtp": sent, "email_configured": email_enabled(), "to": to})
+
+
+@app.route("/api/commissions", methods=["GET"])
+def api_commissions():
+    """Suivi des commissions encaissées (agence + par agent)."""
+    from crm.transactions.storage import list_commissions
+
+    return jsonify({"ok": True, **list_commissions(_aid())})
+
+
 @app.route("/api/onboarding", methods=["GET", "PATCH"])
 def api_onboarding():
     from velora_db.connection import DatabaseBusyError
@@ -2367,18 +2614,33 @@ def api_mandate_send(mandate_id):
     if not to or to == "—":
         return jsonify({"error": "Email du vendeur requis pour l'envoi"}), 400
 
+    user = get_current_user() or {}
+    agent_email = (user.get("email") or "").strip()
+    agent_name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p) or None
+    agency_name = user.get("agency_name") or get_agency_name(agency_id) or "votre agence"
+
     type_label = "vente" if mandate["mandate_type"] == "vente" else "location"
     subject = f"Mandat de {type_label} — {mandate.get('title', 'Bien')}"
     html = mandate.get("body_html") or ""
+    signature = (
+        f"<p style='margin-top:8px'>{agent_name or 'Votre conseiller'} — {agency_name}"
+        + (f"<br>Répondez à cet email : <a href='mailto:{agent_email}'>{agent_email}</a>" if agent_email else "")
+        + "</p>"
+    )
     intro = (
         "<p>Bonjour,</p>"
         "<p>Veuillez trouver ci-dessous votre mandat à valider et signer. "
         "N'hésitez pas à nous contacter pour toute question.</p>"
-        "<hr>"
+        f"{signature}<hr>"
     )
     full_html = intro + html
 
-    sent_smtp = send_email(to, subject, full_html)
+    # Réponses dirigées vers l'agent connecté (from_name lisible côté destinataire).
+    sent_smtp = send_email(
+        to, subject, full_html,
+        reply_to=agent_email or None,
+        from_name=f"{agent_name} · {agency_name}" if agent_name else agency_name,
+    )
     mandate = update_seller_mandate(
         mandate_id,
         agency_id,

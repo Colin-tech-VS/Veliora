@@ -22,18 +22,35 @@ def email_enabled() -> bool:
     return bool(SMTP_HOST and SMTP_FROM)
 
 
-def send_email(to: str, subject: str, html_body: str, text_body: str | None = None) -> bool:
+def send_email(
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+    *,
+    reply_to: str | None = None,
+    from_name: str | None = None,
+) -> bool:
+    """Envoie un email. `reply_to` : les réponses partent vers cette adresse
+    (ex. l'agent connecté), tout en gardant `SMTP_FROM` comme expéditeur technique
+    pour la délivrabilité (SPF/DKIM du domaine Veliora)."""
     to = (to or "").strip()
     if not to:
         return False
     text_body = text_body or _html_to_text(html_body)
     if not email_enabled():
-        logger.info("Email (non envoyé — SMTP non configuré) → %s | %s", to, subject)
+        logger.info(
+            "Email (non envoyé — SMTP non configuré) → %s | %s | reply-to=%s",
+            to, subject, (reply_to or "").strip() or "—",
+        )
         return False
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = SMTP_FROM
+    msg["From"] = f"{from_name} <{SMTP_FROM}>" if from_name else SMTP_FROM
     msg["To"] = to
+    reply_to = (reply_to or "").strip()
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     try:

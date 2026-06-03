@@ -70,6 +70,11 @@ def ensure_mandate_tables(conn) -> None:
             updated_at TEXT NOT NULL
         )
     """)
+    # Double validation (propriétaire + agent) — migration douce.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(seller_mandates)").fetchall()}
+    for col in ("owner_validated_at", "agent_validated_at", "agent_id", "agent_name"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE seller_mandates ADD COLUMN {col} TEXT")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_seller_mandates_agency "
         "ON seller_mandates(agency_id)"
@@ -232,6 +237,7 @@ def fields_from_lead(lead: dict, mandate_type: str) -> dict:
 
 
 def _row_mandate(row) -> dict:
+    keys = row.keys()
     return {
         "id": row["id"],
         "agency_id": row["agency_id"],
@@ -245,6 +251,10 @@ def _row_mandate(row) -> dict:
         "recipient_email": row["recipient_email"],
         "sent_at": row["sent_at"],
         "signed_at": row["signed_at"],
+        "owner_validated_at": row["owner_validated_at"] if "owner_validated_at" in keys else None,
+        "agent_validated_at": row["agent_validated_at"] if "agent_validated_at" in keys else None,
+        "agent_id": row["agent_id"] if "agent_id" in keys else None,
+        "agent_name": row["agent_name"] if "agent_name" in keys else None,
         "notes": row["notes"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -379,6 +389,69 @@ def update_seller_mandate(mandate_id: str, agency_id: str, data: dict) -> dict |
         )
         conn.commit()
     return get_seller_mandate(mandate_id, agency_id)
+
+
+def validate_mandate_party(
+    mandate_id: str,
+    agency_id: str,
+    party: str,
+    *,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+) -> dict | None:
+    """Valide le mandat pour une partie (« owner » ou « agent »).
+
+    Quand les DEUX parties ont validé, le mandat passe en « signed » (signé) et un
+    dossier de commercialisation est créé automatiquement s'il n'en existe pas.
+    """
+    row = get_seller_mandate(mandate_id, agency_id)
+    if not row:
+        return None
+    party = (party or "").strip().lower()
+    if party not in ("owner", "agent"):
+        raise ValueError("party doit être 'owner' ou 'agent'")
+    now = _now()
+    owner_at = row.get("owner_validated_at") or (now if party == "owner" else None)
+    agent_at = row.get("agent_validated_at") or (now if party == "agent" else None)
+    status = row["status"]
+    signed_at = row.get("signed_at")
+    both = bool(owner_at and agent_at)
+    if both:
+        status = "signed"
+        signed_at = signed_at or now
+    set_agent_id = agent_id or row.get("agent_id")
+    set_agent_name = agent_name or row.get("agent_name")
+    with get_connection() as conn:
+        ensure_mandate_tables(conn)
+        conn.execute(
+            """UPDATE seller_mandates SET
+               owner_validated_at = ?, agent_validated_at = ?, status = ?,
+               signed_at = ?, agent_id = ?, agent_name = ?, updated_at = ?
+               WHERE id = ? AND agency_id = ?""",
+            (owner_at, agent_at, status, signed_at, set_agent_id, set_agent_name, now, mandate_id, agency_id),
+        )
+        conn.commit()
+    mandate = get_seller_mandate(mandate_id, agency_id)
+    dossier = None
+    if both:
+        dossier = ensure_dossier_for_mandate(agency_id, mandate)
+    return {"mandate": mandate, "dossier": dossier, "fully_validated": both}
+
+
+def ensure_dossier_for_mandate(agency_id: str, mandate: dict) -> dict:
+    """Crée (si absent) le dossier de commercialisation lié au mandat."""
+    from crm.mandates.dossiers import (
+        create_mandate_dossier,
+        dossier_from_mandate_fields,
+        list_mandate_dossiers,
+    )
+
+    existing = list_mandate_dossiers(mandate["id"], agency_id)
+    if existing:
+        return existing[0]
+    return create_mandate_dossier(
+        agency_id, mandate["id"], dossier_from_mandate_fields(mandate)
+    )
 
 
 def delete_seller_mandate(mandate_id: str, agency_id: str) -> bool:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import date
 from typing import Any
 
@@ -451,14 +452,37 @@ def is_active_lead(lead: dict) -> bool:
 
 
 def _lead_matches_cities(lead: dict, cities: list[str]) -> bool:
+    """Le lead est-il dans le secteur ? Tolère le format « Ville (CP) » et le CP.
+
+    Compare le nom de commune (accents/casse ignorés) ET le code postal, sur les
+    champs ville / adresse / secteur du lead. Robuste que le secteur soit stocké
+    « Chaville », « Chaville (92370) » ou « 92370 ».
+    """
     if not cities:
         return True
-    addr = (lead.get("address") or "").lower()
-    city = (lead.get("city") or "").lower()
+
+    def _norm(s: str) -> str:
+        s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode()
+        return re.sub(r"\s+", " ", s).strip().lower()
+
+    addr = _norm(lead.get("address"))
+    city = _norm(lead.get("city"))
+    sector = _norm(lead.get("sector"))
+    lead_pc = re.sub(r"\D", "", str(lead.get("postcode") or ""))
+    haystack = " ".join(p for p in (city, addr, sector) if p)
+
     for raw in cities:
-        c = raw.strip().lower()
-        if c and (c in addr or c in city):
+        token = str(raw or "")
+        target_pcs = re.findall(r"\d{5}", token)
+        name = _norm(re.sub(r"\(.*?\)", "", token))  # « Chaville (92370) » → « chaville »
+        name = re.sub(r"\b\d{5}\b", "", name).strip()
+        if name and name in haystack:
             return True
+        for pc in target_pcs:
+            if lead_pc and lead_pc == pc:
+                return True
+            if pc in addr:
+                return True
     return False
 
 
