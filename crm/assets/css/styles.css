@@ -1686,6 +1686,71 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Comparaison Annonce vs Estimation (lead crawlé existant) ── */
+.drawer-estimator-compare {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  border-left-width: 4px;
+  background: var(--bg-muted);
+}
+.drawer-estimator-compare-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+.drawer-estimator-compare-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.drawer-estimator-compare .cmp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+.drawer-estimator-compare .cmp-k {
+  color: var(--text-secondary);
+}
+.drawer-estimator-compare .cmp-v {
+  font-weight: 700;
+  color: var(--v-ink);
+  font-variant-numeric: tabular-nums;
+}
+.drawer-estimator-compare .cmp-v small {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.drawer-estimator-compare-verdict {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed var(--border-light);
+  font-size: 0.82rem;
+}
+.drawer-estimator-compare-verdict .cmp-delta {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+}
+.drawer-estimator-compare-verdict .cmp-label {
+  color: var(--text-primary);
+}
+.compare-over { border-left-color: #b45309; }
+.compare-over .cmp-delta { color: #b45309; background: rgba(180, 83, 9, 0.12); }
+.compare-under { border-left-color: #15803d; }
+.compare-under .cmp-delta { color: #15803d; background: rgba(21, 128, 61, 0.12); }
+.compare-fair { border-left-color: var(--v-brass, #9a7349); }
+.compare-fair .cmp-delta { color: var(--v-brass, #9a7349); background: rgba(154, 115, 73, 0.12); }
+
 .drawer-estimator-meta,
 .drawer-estimator-m2,
 .drawer-estimator-delta {

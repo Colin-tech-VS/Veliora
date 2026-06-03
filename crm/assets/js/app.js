@@ -6513,15 +6513,52 @@ function collectEstimatorInputs(lead, prefix = "tab-est") {
   return inputs;
 }
 
+// Comparaison « Annonce vs Estimation » — affichée seulement pour un bien qui
+// possède déjà un prix d'annonce (lead crawlé). Aucun nouveau prospect n'est
+// créé : on confronte l'estimation au prix affiché de l'annonce existante.
+function buildEstimateListingComparisonHtml(result) {
+  if (result.listing_price == null || result.delta_vs_estimate_pct == null) return "";
+  const d = result.delta_vs_estimate_pct;
+  let cls, label;
+  if (d >= 7) {
+    cls = "over";
+    label = "Annonce au-dessus de l'estimation — marge de négociation";
+  } else if (d <= -7) {
+    cls = "under";
+    label = "Annonce sous l'estimation — opportunité";
+  } else {
+    cls = "fair";
+    label = "Annonce cohérente avec l'estimation";
+  }
+  const estNet = result.estimate_net_vendeur != null ? result.estimate_net_vendeur : result.estimate_total;
+  const listingM2 = result.listing_m2 ? ` · ${Number(result.listing_m2).toLocaleString("fr-FR")} €/m²` : "";
+  const estM2 = result.price_per_m2 ? ` · ${Number(result.price_per_m2).toLocaleString("fr-FR")} €/m²` : "";
+  return `
+    <div class="drawer-estimator-compare compare-${cls}">
+      <div class="drawer-estimator-compare-head">Comparaison avec l'annonce existante</div>
+      <div class="drawer-estimator-compare-rows">
+        <div class="cmp-row">
+          <span class="cmp-k">Prix de l'annonce</span>
+          <span class="cmp-v">${fmtEuro(result.listing_price)}<small>${listingM2}</small></span>
+        </div>
+        <div class="cmp-row">
+          <span class="cmp-k">Estimation net vendeur</span>
+          <span class="cmp-v">${fmtEuro(estNet)}<small>${estM2}</small></span>
+        </div>
+      </div>
+      <div class="drawer-estimator-compare-verdict">
+        <span class="cmp-delta">${d > 0 ? "+" : ""}${d} %</span>
+        <span class="cmp-label">${escapeHtml(label)}</span>
+      </div>
+    </div>`;
+}
+
 function renderPriceEstimateResultHtml(result) {
   if (!result?.ok) {
     return `<p class="drawer-estimator-error">${escapeHtml(result?.reason || result?.error || "Estimation indisponible")}</p>`;
   }
   const confCls = result.confidence || "low";
-  const delta =
-    result.delta_vs_estimate_pct != null
-      ? `<p class="drawer-estimator-delta">Annonce : <strong>${fmtEuro(result.listing_price)}</strong> · écart <strong>${result.delta_vs_estimate_pct > 0 ? "+" : ""}${result.delta_vs_estimate_pct} %</strong> vs estimation</p>`
-      : "";
+  const delta = buildEstimateListingComparisonHtml(result);
   const adj =
     result.adjustments?.length > 0
       ? `<ul class="drawer-estimator-adj">${result.adjustments
