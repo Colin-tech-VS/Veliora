@@ -30,7 +30,7 @@ FREE_PROXY_SOURCES = [
 ]
 
 # Cible : on s'arrête dès qu'on a assez de proxies fonctionnels
-TARGET_WORKING = 12
+TARGET_WORKING = 20
 MAX_CANDIDATES_TESTED = 140
 TEST_TIMEOUT_SEC = 6
 TEST_WORKERS = 40

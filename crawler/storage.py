@@ -1166,6 +1166,7 @@ def crawl_veille_readiness(agency_id: str) -> dict:
     from crawler.config import (
         CRAWL_AUTO_FREE_PROXIES,
         CRAWL_PLAYWRIGHT_ENABLED,
+        CRAWL_PROXIES,
         antibot_portals_crawl_enabled,
         proxies_enabled,
     )
@@ -1184,15 +1185,14 @@ def crawl_veille_readiness(agency_id: str) -> dict:
     proxies_on = proxies_enabled()
     if not antibot_on:
         hints.append(
-            "Leboncoin, PAP, SeLoger, Bien’ici : exclus de la veille (anti-bot). "
-            "La rotation d’IP ne tourne que si CRAWL_PROXIES est renseigné sur le serveur "
-            "(proxies résidentiels recommandés) ou CRAWL_AUTO_FREE_PROXIES=true."
+            "Leboncoin, PAP, SeLoger, Bien’ici : exclus tant que le pool IP auto est vide "
+            "(chargement au démarrage) — ajoutez CRAWL_PROXIES pour plus de fiabilité."
         )
-    elif proxies_on:
-        hints.append("Portails protégés activés — rotation IP via vos proxies configurés.")
+    elif proxies_on and CRAWL_PROXIES:
+        hints.append("Rotation IP : vos proxies CRAWL_PROXIES (prioritaires).")
     elif CRAWL_AUTO_FREE_PROXIES:
         hints.append(
-            "Portails protégés activés — rotation via pool de proxies publics (best-effort)."
+            "Rotation IP automatique active (pool public testé) + portails protégés inclus."
         )
     elif CRAWL_PLAYWRIGHT_ENABLED:
         hints.append(

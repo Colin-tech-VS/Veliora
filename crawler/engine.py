@@ -270,13 +270,10 @@ class CrawlerEngine:
         )
 
         try:
-            from crawler.config import CRAWL_PROXY_ROTATE_EACH_CRAWL
-            from crawler.proxy_manager import begin_crawl_session
+            from crawler.proxy_manager import begin_crawl_session, reset_block_rotation_counter
 
-            if CRAWL_PROXY_ROTATE_EACH_CRAWL:
-                begin_crawl_session(force_new=True)
-            from crawler.proxy_manager import reset_block_rotation_counter
-
+            # Tous les types de job : nouvelle IP si pool dispo (payant ou auto-gratuit).
+            begin_crawl_session(force_new=True)
             reset_block_rotation_counter()
             self.refresh_adapters(agency_id)
             self._veille_mode = job_type == "veille_auto"
@@ -492,13 +489,9 @@ class CrawlerEngine:
                     job_id,
                 )
                 break
-            from crawler.config import CRAWL_PROXY_ROTATE_EACH_CRAWL
-            from crawler.proxy_manager import begin_crawl_session
+            from crawler.proxy_manager import begin_crawl_session, reset_block_rotation_counter
 
-            if CRAWL_PROXY_ROTATE_EACH_CRAWL:
-                begin_crawl_session(force_new=True)
-            from crawler.proxy_manager import reset_block_rotation_counter
-
+            begin_crawl_session(force_new=True)
             reset_block_rotation_counter()
             pct = int(10 + (i / len(sources)) * 80)
             update_crawl_job(
@@ -2230,6 +2223,9 @@ class CrawlerEngine:
 def bootstrap_background_services() -> None:
     """Démarre la veille auto au boot si CRAWL_AUTO_START=true (idempotent)."""
     from crawler.config import CRAWL_AUTO_START
+    from crawler.proxy_manager import warm_proxy_pool_async
+
+    warm_proxy_pool_async()
 
     if not CRAWL_AUTO_START:
         logger.info("Veille auto au boot désactivée (CRAWL_AUTO_START=false)")

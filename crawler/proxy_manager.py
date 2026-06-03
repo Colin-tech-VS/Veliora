@@ -1,11 +1,9 @@
 """Rotation de proxy — par job, par portail, et dès qu'un site bloque (anti-bot).
 
-Deux sources d'IP :
-  1. CRAWL_PROXIES (env) — proxies fournis (idéalement résidentiels rotatifs).
-  2. Pool auto-gratuit — chargé à la volée au 1ᵉʳ blocage si CRAWL_AUTO_FREE_PROXIES
-     est actif et qu'aucun proxy n'est configuré. Consulté UNIQUEMENT en rotation
-     de blocage : le début de crawl reste en direct (rapide) tant qu'aucun portail
-     ne bloque.
+Deux sources d'IP (CRAWL_PROXIES prioritaire si défini) :
+  1. Proxies fournis via l'environnement (résidentiels rotatifs = idéal).
+  2. Pool auto-gratuit (CRAWL_AUTO_FREE_PROXIES) — chargé au boot et avant chaque
+     session crawl ; rotation à chaque portail + sur blocage anti-bot.
 """
 
 from __future__ import annotations
@@ -20,8 +18,8 @@ _lock = threading.Lock()
 _rr_index = 0
 _session_proxy: str | None = None
 _block_rotation_count = 0
-# Pool de secours (proxies publics testés), rempli paresseusement au blocage.
 _auto_pool: list[str] = []
+_pool_warm_started = False
 
 
 def _env_proxies() -> list[str]:
@@ -59,10 +57,7 @@ def ensure_proxy_pool() -> int:
     """Garantit qu'un pool d'IP est disponible pour la rotation.
 
     - CRAWL_PROXIES défini → on l'utilise tel quel.
-    - Sinon, si CRAWL_AUTO_FREE_PROXIES actif → on récupère (paresseusement, en
-      cache) un pool de proxies publics testés.
-
-    Retourne le nombre d'IP disponibles.
+    - Sinon, si CRAWL_AUTO_FREE_PROXIES actif → récupère et teste des proxies publics.
     """
     global _auto_pool
     from crawler.config import CRAWL_AUTO_FREE_PROXIES
@@ -81,10 +76,33 @@ def ensure_proxy_pool() -> int:
     with _lock:
         _auto_pool = pool
     if pool:
-        logger.warning("Pool de proxies gratuits chargé : %d IP testées (rotation active).", len(pool))
+        logger.info(
+            "Pool IP automatique prêt : %d proxy(s) testés (rotation veille/crawl).",
+            len(pool),
+        )
     else:
-        logger.warning("Aucun proxy gratuit fonctionnel — rotation impossible pour ce blocage.")
+        logger.warning(
+            "Aucun proxy public fonctionnel — crawl en IP serveur (risque anti-bot)."
+        )
     return len(pool)
+
+
+def warm_proxy_pool_async() -> None:
+    """Précharge le pool au boot serveur (non bloquant)."""
+    global _pool_warm_started
+    from crawler.config import CRAWL_AUTO_FREE_PROXIES
+
+    if _pool_warm_started or _env_proxies() or not CRAWL_AUTO_FREE_PROXIES:
+        return
+    _pool_warm_started = True
+
+    def _run() -> None:
+        try:
+            ensure_proxy_pool()
+        except Exception:
+            logger.exception("Préchargement pool proxies")
+
+    threading.Thread(target=_run, name="veliora-proxy-warm", daemon=True).start()
 
 
 def max_rotations_on_block() -> int:
@@ -95,7 +113,6 @@ def max_rotations_on_block() -> int:
     if not CRAWL_PROXY_ROTATE_ON_BLOCK or not proxies:
         return 0
     n = len(proxies)
-    # Passerelle rotative (1 URL) : plusieurs resets session ; liste : 1 essai par proxy
     return max(3, min(n * 2, 12)) if n == 1 else max(1, min(n, 10))
 
 
@@ -117,14 +134,11 @@ def _advance_proxy() -> str | None:
 
 
 def begin_crawl_session(*, force_new: bool = True) -> str | None:
-    """Nouveau proxy en début de job / portail.
-
-    N'agit que si des proxies sont *fournis* (CRAWL_PROXIES) : le pool auto-gratuit
-    n'est pas utilisé ici pour garder un démarrage direct/rapide — il n'entre en jeu
-    qu'à la rotation sur blocage.
-    """
+    """Nouveau proxy en début de job / portail (pool payant ou auto-gratuit)."""
     global _block_rotation_count
-    if not _env_proxies():
+
+    ensure_proxy_pool()
+    if not _effective_proxies():
         return None
 
     from crawler.browser import close_browser_session
@@ -150,6 +164,7 @@ def rotate_proxy_on_block(reason: str = "anti-bot") -> str | None:
     global _block_rotation_count
     from crawler.config import CRAWL_PROXY_ROTATE_ON_BLOCK
 
+    ensure_proxy_pool()
     if not CRAWL_PROXY_ROTATE_ON_BLOCK or not proxies_enabled():
         return None
     if _block_rotation_count >= max_rotations_on_block():
@@ -183,6 +198,11 @@ def end_crawl_session() -> None:
 
 
 def pick_proxy() -> str | None:
+    """Proxy courant pour curl_cffi / Playwright (charge le pool auto si besoin)."""
+    from crawler.config import CRAWL_AUTO_FREE_PROXIES
+
+    if CRAWL_AUTO_FREE_PROXIES and not _env_proxies() and not _auto_pool:
+        ensure_proxy_pool()
     proxies = _effective_proxies()
     if not proxies:
         return None

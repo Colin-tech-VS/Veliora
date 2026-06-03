@@ -246,11 +246,10 @@ CRAWL_PROXY_ROTATE_ON_BLOCK = os.getenv("CRAWL_PROXY_ROTATE_ON_BLOCK", "true").s
     "yes",
 )
 
-# Si CRAWL_PROXIES est vide ET qu'un portail bloque : récupérer automatiquement un
-# pool de proxies HTTP publics (testés) pour faire tourner l'IP sans abonnement.
-# Best-effort (rate-limit par IP surtout) ; de vrais proxies résidentiels via
-# CRAWL_PROXIES restent bien plus fiables et prennent le dessus s'ils sont fournis.
-CRAWL_AUTO_FREE_PROXIES = os.getenv("CRAWL_AUTO_FREE_PROXIES", "false").strip().lower() in (
+# Si CRAWL_PROXIES est vide : pool de proxies HTTP publics testés + rotation auto.
+# Activé par défaut (veille, crawl manuel, import URL, refresh fiches). Désactiver :
+# CRAWL_AUTO_FREE_PROXIES=false. Les CRAWL_PROXIES payants restent prioritaires.
+CRAWL_AUTO_FREE_PROXIES = os.getenv("CRAWL_AUTO_FREE_PROXIES", "true").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -344,15 +343,15 @@ CRAWL_VEILLE_SOURCE_MAX_SEC = max(
 
 
 def antibot_portals_crawl_enabled() -> bool:
-    """Leboncoin, PAP, SeLoger… : activables si Playwright + proxies (ou forçage explicite)."""
+    """Leboncoin, PAP, SeLoger… inclus dès qu'une rotation IP est active (proxy ou pool auto)."""
     raw = (os.getenv("CRAWL_ANTIBOT_PORTALS_ENABLED") or "").strip().lower()
     if raw in ("1", "true", "yes"):
         return True
     if raw in ("0", "false", "no"):
         return False
-    if not CRAWL_PLAYWRIGHT_ENABLED:
-        return False
-    return proxies_enabled() or CRAWL_AUTO_FREE_PROXIES
+    if CRAWL_AUTO_FREE_PROXIES or proxies_enabled():
+        return True
+    return CRAWL_PLAYWRIGHT_ENABLED
 
 
 def background_crawl_config() -> dict:
@@ -367,4 +366,5 @@ def background_crawl_config() -> dict:
         "lead_refresh_max_per_run": CRAWL_LEAD_REFRESH_MAX_PER_RUN,
         "antibot_portals_enabled": antibot_portals_crawl_enabled(),
         "proxies_configured": proxies_enabled(),
+        "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
     }

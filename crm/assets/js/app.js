@@ -4812,7 +4812,7 @@ function updateCrawlerVeilleHint(status) {
     lines.push(`À corriger : ${veille.blockers.join(" · ")}`);
   }
   if (veille.hints?.length) {
-    lines.push(veille.hints[0]);
+    veille.hints.forEach((h) => lines.push(h));
   }
   if (veille.ready && !veille.blockers?.length) {
     const names = (veille.portails_veille_names || []).slice(0, 4).join(", ");
