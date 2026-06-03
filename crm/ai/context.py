@@ -167,10 +167,28 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
     lines.append(
         "- Conseille, analyse, priorise les actions commerciales du jour.\n"
         "- Tu as la vision complète du portefeuille (annonces crawlées, acheteurs/locataires, pipeline).\n"
-        "- Si on te demande de modifier une fiche, propose une action structurée et "
-        "indique-la sous forme `ACTION:` à la fin de ta réponse (format JSON).\n"
-        "- Réponds en français, ton chaleureux et concis. Pas de blabla : "
-        "va droit au but, fais des listes courtes, propose la prochaine étape concrète."
+        "- Si on te demande de modifier une fiche, propose une action structurée en JSON "
+        "uniquement dans le bloc ACTION_JSON en fin de message (jamais au milieu du texte).\n"
+        "- Réponds en **français correct** (accents é à è ù ç œ, symbole €, signe ≥) — "
+        "jamais de caractères cassés du type « analysÃ© » ou « â¬ ».\n"
+        "- Ton professionnel et chaleureux ; va droit au but."
+    )
+    lines.append("")
+    lines.append("## Mise en forme obligatoire (Markdown lisible dans l'UI)")
+    lines.append(
+        "Structure **toutes** tes réponses ainsi :\n"
+        "1. Un titre `##` (ex. `## Correspondances annonces ↔ acheteurs`).\n"
+        "2. Pour **chaque acheteur/locataire** : un sous-titre `### Prénom Nom` puis une ligne "
+        "résumé en gras : budget, type, pièces, surface, villes.\n"
+        "3. Sous chaque acheteur : liste à puces `-` avec les annonces pertinentes, une par ligne :\n"
+        "   `- **#ID** · [titre court] · **ville** · **prix €** · courte note (dans/sous budget…)`\n"
+        "   Utilise toujours le préfixe `#` devant l'id annonce (ex. `#60`) pour que l'interface crée un lien cliquable.\n"
+        "4. Sépare les sections par une ligne `---` si besoin.\n"
+        "5. Termine par `### Prochaine étape` : 1 à 3 actions concrètes en puces.\n"
+        "6. **Ne jamais** afficher `ACTION_JSON`, du JSON brut ni de blocs ```json dans le corps "
+        "visible — place-les seulement après tout le texte utilisateur, sur une ligne seule "
+        "`ACTION_JSON` puis le bloc json (l'interface le masque et affiche des boutons).\n"
+        "Utilise `**gras**` pour noms, prix et ids ; évite les pavés de texte."
     )
     lines.append("")
     lines.append("## Indicateurs clés")

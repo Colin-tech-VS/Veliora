@@ -54,42 +54,127 @@
     return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
   }
 
-  // ── Markdown ultra léger (gras + listes + retours) ──
+  // ── Réparation UTF-8 mal interprété (ex. analysÃ© → analysé, â¬ → €) ──
+  function repairMojibake(text) {
+    const s = String(text || "");
+    if (!/[ÃÂâ€â¬â‰¥]/.test(s)) return s;
+    try {
+      const bytes = Uint8Array.from(s, (ch) => ch.charCodeAt(0) & 0xff);
+      const fixed = new TextDecoder("utf-8").decode(bytes);
+      if (fixed && !fixed.includes("\uFFFD")) return fixed;
+    } catch {
+      /* ignore */
+    }
+    return s
+      .replace(/â‚¬/g, "€")
+      .replace(/â¬/g, "€")
+      .replace(/â‰¥/g, "≥")
+      .replace(/Ã©/g, "é")
+      .replace(/Ã¨/g, "è")
+      .replace(/Ãª/g, "ê")
+      .replace(/Ã«/g, "ë")
+      .replace(/Ã /g, "à")
+      .replace(/Ã¢/g, "â")
+      .replace(/Ã®/g, "î")
+      .replace(/Ã´/g, "ô")
+      .replace(/Ã»/g, "û")
+      .replace(/Ã¹/g, "ù")
+      .replace(/Ã§/g, "ç")
+      .replace(/Å“/g, "œ")
+      .replace(/Ã‰/g, "É")
+      .replace(/Ã€/g, "À");
+  }
+
   function renderInline(text) {
-    let out = escapeHtml(text);
+    let out = escapeHtml(repairMojibake(text));
+    // Liens markdown [label](url)
+    out = out.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="ai-md-link">$1</a>',
+    );
     out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>");
     out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    // Annonces #123 → lien fiche
+    out = out.replace(
+      /#(\d{1,6})\b/g,
+      '<a href="#" class="ai-lead-link" data-lead-id="$1">#$1</a>',
+    );
+    // Montants en euros
+    out = out.replace(
+      /(\d[\d\s]*)\s*€/g,
+      '<span class="ai-md-price">$1 €</span>',
+    );
     return out;
   }
 
   function renderMarkdownLite(text) {
-    const safe = String(text || "");
+    const safe = repairMojibake(stripActionBlocks(String(text || "")));
     const lines = safe.split(/\r?\n/);
     const html = [];
     let inList = false;
+    const closeList = () => {
+      if (inList) {
+        html.push("</ul>");
+        inList = false;
+      }
+    };
     for (const raw of lines) {
       const line = raw.trimEnd();
+      const trimmed = line.trim();
+      if (/^---+$/.test(trimmed)) {
+        closeList();
+        html.push('<hr class="ai-md-hr" />');
+        continue;
+      }
+      const h3 = trimmed.match(/^###\s+(.+)$/);
+      if (h3) {
+        closeList();
+        html.push(`<h3 class="ai-md-h3">${renderInline(h3[1])}</h3>`);
+        continue;
+      }
+      const h2 = trimmed.match(/^##\s+(.+)$/);
+      if (h2) {
+        closeList();
+        html.push(`<h2 class="ai-md-h2">${renderInline(h2[1])}</h2>`);
+        continue;
+      }
+      const quote = trimmed.match(/^>\s+(.+)$/);
+      if (quote) {
+        closeList();
+        html.push(`<blockquote class="ai-md-quote">${renderInline(quote[1])}</blockquote>`);
+        continue;
+      }
       const bullet = line.match(/^\s*(?:[-*•]|\d+\.)\s+(.+)$/);
       if (bullet) {
         if (!inList) {
-          html.push("<ul>");
+          html.push('<ul class="ai-md-list">');
           inList = true;
         }
         html.push(`<li>${renderInline(bullet[1])}</li>`);
         continue;
       }
-      if (inList) {
-        html.push("</ul>");
-        inList = false;
-      }
-      if (!line.trim()) {
-        html.push("<div class=\"ai-msg-spacer\"></div>");
+      closeList();
+      if (!trimmed) {
+        html.push('<div class="ai-msg-spacer"></div>');
         continue;
       }
-      html.push(`<p>${renderInline(line)}</p>`);
+      html.push(`<p class="ai-md-p">${renderInline(line)}</p>`);
     }
-    if (inList) html.push("</ul>");
+    closeList();
     return html.join("");
+  }
+
+  function bindLeadLinks(root) {
+    if (!root) return;
+    root.querySelectorAll(".ai-lead-link:not([data-bound])").forEach((a) => {
+      a.dataset.bound = "1";
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        const id = parseInt(a.dataset.leadId, 10);
+        if (Number.isFinite(id) && typeof openDrawer === "function") openDrawer(id);
+      });
+    });
   }
 
   // ── Détection d'un bloc ACTION_JSON dans la réponse ──
@@ -110,7 +195,12 @@
   }
 
   function stripActionBlocks(text) {
-    return String(text || "").replace(/ACTION_JSON\s*```json\s*[\s\S]*?```/gi, "").trim();
+    let s = String(text || "");
+    s = s.replace(/ACTION_JSON\s*```json\s*[\s\S]*?```/gi, "");
+    s = s.replace(/ACTION_JSON\s*```json[\s\S]*$/i, "");
+    s = s.replace(/```json\s*\{[\s\S]*$/i, "");
+    s = s.replace(/ACTION_JSON\s*$/i, "");
+    return s.trim();
   }
 
   function actionLabel(action) {
@@ -193,6 +283,7 @@
     if (!bubble) return;
     const visible = stripActionBlocks(fullText) || "…";
     bubble.innerHTML = renderMarkdownLite(visible);
+    bindLeadLinks(bubble);
     scrollToBottom();
   }
 
@@ -202,7 +293,10 @@
     const actions = extractActions(fullText);
     const visible = stripActionBlocks(fullText) || "…";
     const bubble = node.querySelector(".ai-msg-bubble");
-    if (bubble) bubble.innerHTML = renderMarkdownLite(visible);
+    if (bubble) {
+      bubble.innerHTML = renderMarkdownLite(visible);
+      bindLeadLinks(bubble);
+    }
 
     const body = node.querySelector(".ai-msg-body");
     if (body && actions.length) {
@@ -264,6 +358,10 @@
     addUserMessage(userText);
     const node = addAssistantPlaceholder();
     let fullText = "";
+    const applyAssistantText = (text, { replace = false } = {}) => {
+      fullText = replace ? String(text || "") : fullText + String(text || "");
+      appendAssistantText(node, fullText);
+    };
 
     const payload = {
       message: userText,
@@ -310,13 +408,13 @@
       }
       if (!res.body || !res.body.getReader) {
         const all = await res.text();
-        all.split(/\n/).forEach((line) => handleEvent(node, line, (delta) => { fullText += delta; }));
+        all.split(/\n/).forEach((line) => handleEvent(node, line, applyAssistantText));
         finalizeAssistantNode(node, fullText);
         await refreshConversationsList();
         return;
       }
       const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder("utf-8");
       let buffer = "";
       while (true) {
         const { value, done } = await reader.read();
@@ -326,14 +424,11 @@
         while ((idx = buffer.indexOf("\n")) !== -1) {
           const line = buffer.slice(0, idx).trim();
           buffer = buffer.slice(idx + 1);
-          if (line) handleEvent(node, line, (delta) => {
-            fullText += delta;
-            appendAssistantText(node, fullText);
-          });
+          if (line) handleEvent(node, line, applyAssistantText);
         }
       }
       const tail = buffer.trim();
-      if (tail) handleEvent(node, tail, (delta) => { fullText += delta; });
+      if (tail) handleEvent(node, tail, applyAssistantText);
       // Si rien n'est sorti du tout, on affiche un message clair plutôt qu'une
       // bulle vide qui laisse l'agent dans le flou.
       if (!fullText.trim()) {
@@ -367,7 +462,7 @@
     }
   }
 
-  function handleEvent(node, line, onDelta) {
+  function handleEvent(node, line, onText) {
     let evt;
     try {
       evt = JSON.parse(line);
@@ -379,13 +474,11 @@
       state.conversationId = evt.conversation.id;
       highlightActiveConversation();
     } else if (evt.type === "token") {
-      onDelta(evt.delta || "");
+      onText(evt.delta || "");
     } else if (evt.type === "error") {
       showErrorMessage(node, evt.error || "Erreur IA");
     } else if (evt.type === "final" && typeof evt.content === "string") {
-      // Le serveur renvoie la réponse complète : on l'utilise comme source de vérité.
-      onDelta("");
-      appendAssistantText(node, evt.content);
+      onText(evt.content, { replace: true });
     }
   }
 

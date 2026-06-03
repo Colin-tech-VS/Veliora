@@ -2630,9 +2630,10 @@ def api_ai_chat():
         ):
             yield json.dumps(event, ensure_ascii=False) + "\n"
 
-    resp = Response(generate(), mimetype="application/x-ndjson")
+    resp = Response(generate(), mimetype="application/x-ndjson; charset=utf-8")
     resp.headers["Cache-Control"] = "no-cache, no-transform"
     resp.headers["X-Accel-Buffering"] = "no"
+    resp.charset = "utf-8"
     return resp
 
 

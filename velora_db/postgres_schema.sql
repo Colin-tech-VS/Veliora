@@ -1,5 +1,8 @@
 -- Veliora — schéma PostgreSQL pour Supabase (projet « Veliora »)
 -- SQL Editor Supabase → New query → Run
+--
+-- Ensuite (obligatoire) : scripts/supabase_enable_rls.sql
+-- (sinon tables « Unrestricted » dans le dashboard).
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 

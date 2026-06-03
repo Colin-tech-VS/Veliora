@@ -1,132 +1,176 @@
-# Veliora sur Supabase (gratuit)
+# Veliora sur Supabase
 
-Base **en ligne** partagée entre Scalingo, votre PC et toute l’équipe — projet Supabase nommé **Veliora**.
+Base **PostgreSQL** partagée (Scalingo, PC, équipe) — projet Supabase **Veliora**.
 
-## 1. Créer le projet Supabase
+Veliora utilise **uniquement** `DATABASE_URL` (connexion Postgres directe). Les clés `SUPABASE_ANON_KEY` / API REST ne sont **pas** nécessaires au fonctionnement actuel de l'app.
 
-1. [https://supabase.com](https://supabase.com) → **New project**
-2. **Name** : `Veliora`
-3. **Database password** : notez-la (mot de passe fort)
-4. Région : `West EU (Paris)` ou proche de vos utilisateurs
-5. Plan **Free** (500 Mo DB, suffisant pour démarrer)
+---
 
-## 2. Appliquer le schéma SQL
+## 1. Créer le projet
 
-1. Dashboard → **SQL Editor** → **New query**
-2. Collez tout le fichier [`velora_db/postgres_schema.sql`](velora_db/postgres_schema.sql)
-3. **Run** — toutes les tables Veliora sont créées
+1. [supabase.com](https://supabase.com) → **New project** → nom `Veliora`
+2. Région : **West EU (Paris)** si possible
+3. Mot de passe base : à conserver dans un gestionnaire de mots de passe
 
-## 3. Récupérer l’URL de connexion
+---
 
-1. **Project Settings** → **Database**
-2. **Connection string** → **URI** (mode **Transaction** pooler, port `6543`)
-3. Remplacez `[YOUR-PASSWORD]` par le mot de passe du projet
+## 2. Schéma SQL
 
-Exemple :
+1. **SQL Editor** → New query
+2. Coller tout [`velora_db/postgres_schema.sql`](velora_db/postgres_schema.sql) → **Run**
+3. Puis **obligatoire pour la sécurité** : exécuter [`scripts/supabase_enable_rls.sql`](scripts/supabase_enable_rls.sql)
 
-```text
-postgresql://postgres.xxxxxxxxxxxx:VOTRE_MDP@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
-```
+Sans l’étape 3, le dashboard affiche **Unrestricted** sur toutes les tables.
 
-## 4. Configurer Veliora
+---
 
-Dans `.env` (local) ou variables Scalingo :
+## 3. Connexion Veliora
 
 ```env
-# Supabase — active PostgreSQL (sinon SQLite local data/propscout.db)
 DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@....pooler.supabase.com:6543/postgres
-
-# Optionnel (API REST Supabase — futur)
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_ANON_KEY=eyJhbG...
 ```
 
-**Sans `DATABASE_URL`** : Veliora utilise **SQLite** (`data/propscout.db`) comme avant.
+- Mode **Transaction** pooler, port **6543** (pas 5432 direct en prod Scalingo)
+- **Sans** `DATABASE_URL` → SQLite local `data/propscout.db`
 
-Optionnel : `VELIORA_AUTO_SCHEMA=true` pour ré-appliquer `postgres_schema.sql` au démarrage (sinon, exécutez le SQL une fois dans le dashboard Supabase, étape 2).
-
-Redémarrez le serveur :
-
-```bash
-python app.py
-```
-
-Vérifiez :
-
-```http
-GET /api/health
-```
-
-→ `"database": { "backend": "supabase", ... }`
-
-## 5. Migrer les données locales (optionnel)
-
-Si vous avez déjà des prospects dans `data/propscout.db` :
-
-```bash
-pip install psycopg[binary]
-python scripts/migrate_sqlite_to_supabase.py --dry-run
-python scripts/migrate_sqlite_to_supabase.py
-```
-
-## 6. Scalingo
-
-Dans `scalingo.json` ou le dashboard :
+Scalingo :
 
 ```bash
 scalingo --app veliora env-set DATABASE_URL="postgresql://..."
 ```
 
-Vous pouvez **retirer** le volume disque SQLite (`VELIORA_DB_PATH`) : tout est sur Supabase.
+Vérifier : `GET /api/health` → `"database": { "backend": "supabase", ... }`
 
-## Sécurité
+---
 
-- Ne commitez **jamais** `.env` ni le mot de passe DB
-- Supabase : **Settings** → **Database** → rotate password si fuite
+## 4. Tables « Unrestricted » — correctif
 
-### Tables « Unrestricted » → activer la RLS
+| Symptôme | Cause | Action |
+|----------|--------|--------|
+| Badge **Unrestricted** | RLS désactivée | Run `scripts/supabase_enable_rls.sql` |
+| Données exposées via API | Clé `anon` + PostgREST | Même script (RLS + `REVOKE` anon/authenticated) |
 
-Dans le dashboard, les tables sans **Row Level Security** sont marquées
-**« Unrestricted »**. Tant que la RLS est désactivée, toute personne disposant
-de l'URL du projet + la clé `anon` peut lire/écrire **toutes** les données via
-l'API REST auto-générée (PostgREST). L'app Veliora, elle, se connecte en direct
-au Postgres avec le rôle privilégié du pooler (qui **contourne** la RLS) — donc
-activer la RLS **ne casse pas l'app** et ferme l'accès anonyme.
+**L’app Veliora n’est pas impactée** : elle passe par le pooler avec le rôle propriétaire (`postgres`), qui contourne la RLS.
 
-**Correctif (1 min)** : Dashboard → **SQL Editor** → coller
-[`scripts/supabase_enable_rls.sql`](scripts/supabase_enable_rls.sql) → **Run**.
-Les tables ne sont alors plus « Unrestricted », et l'app continue de fonctionner.
+**Ne pas** mettre `SUPABASE_ANON_KEY` dans le front-end Veliora tant que vous n’avez pas de politiques RLS métier par agence.
 
-## Usage / quota dépassé (« exceeding usage »)
+---
 
-Le plan Free Supabase plafonne surtout : **taille de base 500 Mo**, **egress
-~5 Go/mois**, et la base est mise en pause après inactivité prolongée.
+## 5. « Exceeding image usage » / quota dépassé
 
-Où regarder : **Dashboard → Reports / Usage** (voir quelle métrique dépasse :
-*Database size*, *Egress*, *Compute*).
+Deux métriques différentes dans le dashboard :
 
-Causes probables côté Veliora et leviers :
+### A) Storage (fichiers / images dans Supabase Storage)
 
-| Cause | Levier |
-|-------|--------|
-| Table `crawl_logs` qui gonfle (1 ligne par URL crawlée) | Purge automatique désormais en place (garde 5000 lignes, `CRAWL_LOG_KEEP`). Pour repartir propre : `DELETE FROM crawl_logs;` dans SQL Editor. |
-| `lead_price_history`, `lead_outcomes`, `geocode_cache` volumineux | `geocode_cache` est réutilisable (à garder) ; purger l'historique ancien si besoin. |
-| Egress : polling du crawl + listes rechargées | Le polling n'est actif que pendant un crawl ; éviter de laisser un crawl tourner en boucle. |
-| Pool de connexions saturé / « base saturée » au démarrage | Corrigé : le pool est réinitialisé dans chaque worker après le fork gunicorn (`--preload` ouvrait le pool dans le maître, ses threads ne survivaient pas au fork). Utiliser le pooler **Transaction** port `6543`. |
+- Quota **Free** : **1 Go** de fichiers dans les **buckets** Storage
+- Veliora **ne stocke pas** les photos d’annonces dans Supabase Storage  
+  → fichiers `data/lead_images/*.webp` sur le serveur (Scalingo : disque éphémère)
+- Si l’alerte concerne **Storage** :
+  1. **Storage** → vérifier chaque bucket → supprimer les fichiers via l’UI (pas via SQL seul)
+  2. Si vous avez vidé les buckets mais le quota ne bouge pas : fichiers **orphelins** (suppression SQL) → [support Supabase](https://supabase.com/dashboard/support/new)
+  3. Ne créez pas de bucket pour les images Veliora tant que Scalingo/S3 n’est pas configuré
 
-> Les **images d'annonces ne sont PAS dans Supabase** (stockées en fichiers
-> `data/lead_images/*.webp`) — elles ne comptent pas dans le quota DB. Note :
-> sur Scalingo le disque est éphémère, ces images sont reperdues à chaque
-> redéploiement (sujet distinct du quota Supabase).
+### B) Database size (PostgreSQL — 500 Mo en Free)
 
-> Astuce taille : `SELECT pg_size_pretty(pg_total_relation_size('crawl_logs'));`
-> pour voir le poids d'une table dans le SQL Editor.
+- C’est la **taille des tables** (leads, logs, cache JSON…), pas les images WebP
+- Diagnostic : [`scripts/supabase_maintenance.sql`](scripts/supabase_maintenance.sql)
+- Purge automatique côté app : `crawl_logs` plafonné à **5000** lignes (`CRAWL_LOG_KEEP`)
 
-## Dépannage
+Tables qui grossissent le plus :
+
+| Table | Pourquoi | Action |
+|-------|----------|--------|
+| `crawl_logs` | 1 ligne par URL visitée | Purge SQL + variable `CRAWL_LOG_KEEP=3000` |
+| `leads` | Portefeuille | Normal ; éviter champs JSON énormes |
+| `dvf_commune_cache` | Cache médianes DVF | Utile ; purger si > 50 Mo |
+| `lead_price_history` | Historique prix | Purger > 12 mois (SQL maintenance) |
+| `facts_audit` / payloads JSON | Détail crawl | Limiter rétention si besoin |
+
+Commande utile :
+
+```sql
+SELECT pg_size_pretty(pg_database_size(current_database()));
+```
+
+---
+
+## 6. Quel plan Supabase choisir ?
+
+| Profil | Plan | Prix indicatif | Quand |
+|--------|------|----------------|--------|
+| Test / 1 agence, < 5k leads | **Free** | 0 € | OK si DB < **400 Mo** et peu de crawls |
+| Production 1–3 agences, crawls réguliers | **Pro** | ~25 $/mo | DB > 400 Mo, besoin de non-pause, plus d’egress |
+| Plusieurs agences / gros crawls | **Pro** + surveillance | ~25 $ + | `CRAWL_LOG_KEEP=2000`, maintenance mensuelle |
+| Équipe / SLA | **Team** | ~599 $/mo | Rarement nécessaire au stade Veliora |
+
+**Free — limites à surveiller**
+
+- **500 Mo** base Postgres → pause projet si dépassé longtemps
+- **5 Go** egress / mois (API + pooler)
+- **1 Go** Storage (si vous utilisez des buckets)
+- Inactivité → projet mis en pause
+
+**Pro — intérêt principal**
+
+- **8 Go** base
+- **100 Go** Storage
+- **250 Go** egress
+- Pas de pause pour inactivité
+- Sauvegardes / support
+
+**Recommandation Veliora aujourd’hui**
+
+1. Rester en **Free** si `pg_database_size` < **350 Mo** après purge `crawl_logs`
+2. Passer en **Pro** si :
+   - alerte **Database size** récurrente
+   - plus de **2–3 agences** avec crawls quotidiens
+   - besoin de dispo 24/7 sans pause Supabase
+3. **Ne pas** utiliser Supabase Storage pour les images → garder proxy Veliora `/api/leads/.../image` (évite le quota Storage)
+
+Variables Scalingo utiles :
+
+```bash
+scalingo --app veliora env-set CRAWL_LOG_KEEP=3000
+```
+
+---
+
+## 7. Maintenance (mensuelle)
+
+1. SQL Editor → [`scripts/supabase_maintenance.sql`](scripts/supabase_maintenance.sql)
+2. Noter les 3 plus grosses tables
+3. Si `crawl_logs` > 100 Mo → `DELETE FROM crawl_logs;` ou réduire `CRAWL_LOG_KEEP`
+4. **Settings → Database** → vérifier Usage
+
+L’app exécute aussi `prune_crawl_logs()` à chaque démarrage worker (Postgres).
+
+---
+
+## 8. Migration SQLite → Supabase
+
+```bash
+pip install "psycopg[binary]"
+python scripts/migrate_sqlite_to_supabase.py --dry-run
+python scripts/migrate_sqlite_to_supabase.py
+```
+
+---
+
+## 9. Dépannage
 
 | Problème | Action |
 |----------|--------|
-| `connection refused` | Vérifiez l’URI pooler (port 6543) et le mot de passe |
-| `relation does not exist` | Relancez `postgres_schema.sql` dans SQL Editor |
-| Données vides en prod | Lancez `migrate_sqlite_to_supabase.py` |
-| Retour SQLite local | Supprimez `DATABASE_URL` du `.env` |
+| Tables Unrestricted | `scripts/supabase_enable_rls.sql` |
+| Quota Storage / « image » | Vider buckets Storage ; pas SQL seul |
+| DB > 500 Mo | `supabase_maintenance.sql` + Pro ou purge |
+| `connection refused` | URI pooler 6543, mot de passe |
+| `relation does not exist` | `postgres_schema.sql` |
+| Retour SQLite | Retirer `DATABASE_URL` |
+
+---
+
+## Sécurité
+
+- Ne jamais committer `.env` ni `DATABASE_URL`
+- Rotation mot de passe : Settings → Database
+- Ne pas exposer `SUPABASE_SERVICE_ROLE_KEY` côté navigateur

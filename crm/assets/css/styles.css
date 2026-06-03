@@ -1809,6 +1809,76 @@ body {
   color: var(--text-primary);
 }
 
+.drawer-estimator-cap-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.drawer-estimator-filter {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.drawer-estimator-comparables {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.drawer-estimator-comparables > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.drawer-estimator-comparables-hint {
+  margin: 0 0.75rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.drawer-estimator-comparables-scroll {
+  overflow-x: auto;
+  padding: 0 0.5rem 0.5rem;
+}
+
+.drawer-estimator-comparables-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.drawer-estimator-comparables-table th,
+.drawer-estimator-comparables-table td {
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+}
+
+.drawer-estimator-comparables-table th {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.drawer-estimator-comparables-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-estimator-comparables-table td small {
+  color: var(--text-muted);
+}
+
 .drawer-estimator-delta {
   padding: 0.5rem 0.7rem;
   background: var(--bg-muted);
@@ -8401,6 +8471,72 @@ body:has(.crawl-dock.open) .script-dock.open {
   padding: 0.05rem 0.35rem;
   border-radius: 4px;
   font-size: 0.85em;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--v-navy);
+  letter-spacing: -0.02em;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-h3 {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--v-ink);
+  padding: 0.5rem 0.7rem;
+  background: linear-gradient(90deg, rgba(154, 115, 73, 0.1), transparent);
+  border-left: 3px solid var(--v-brass);
+  border-radius: 0 8px 8px 0;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-h3:first-child {
+  margin-top: 0;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-hr {
+  border: none;
+  border-top: 1px dashed var(--v-border-warm);
+  margin: 0.65rem 0;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-quote {
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.7rem;
+  border-left: 3px solid var(--v-sage);
+  background: rgba(74, 107, 101, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-list {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 1.2rem;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-list li {
+  margin-bottom: 0.35rem;
+  line-height: 1.5;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-p {
+  margin: 0 0 0.45rem;
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-link,
+.ai-msg-assistant .ai-msg-bubble .ai-lead-link {
+  color: var(--brand-primary);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(31, 78, 216, 0.45);
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-link:hover,
+.ai-msg-assistant .ai-msg-bubble .ai-lead-link:hover {
+  color: var(--v-brass);
+  border-bottom-color: var(--v-brass);
+}
+.ai-msg-assistant .ai-msg-bubble .ai-md-price {
+  font-weight: 700;
+  color: var(--v-sage);
+  white-space: nowrap;
+}
+.ai-msg-assistant .ai-msg-bubble strong {
+  color: var(--v-ink);
+  font-weight: 600;
 }
 .ai-msg-spacer { height: 0.3rem; }
 .ai-msg-meta {

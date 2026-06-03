@@ -1,43 +1,39 @@
 -- ============================================================================
--- Veliora — Activer la Row Level Security (RLS) sur toutes les tables publiques
+-- Veliora — Sécuriser Supabase : RLS + révoquer l'accès API anon/authenticated
 -- ============================================================================
 --
--- Pourquoi : dans le dashboard Supabase, une table sans RLS est marquée
--- « Unrestricted ». Si l'API REST/GraphQL auto-générée (PostgREST) est
--- joignable avec la clé `anon`, N'IMPORTE QUI peut alors lire/écrire toutes
--- les données (leads, contacts, etc.). Activer la RLS sans politique = refus
--- par défaut pour anon/authenticated → la fuite est fermée.
+-- Symptôme dashboard : tables marquées « Unrestricted ».
+-- Risque : clé anon + API REST PostgREST → lecture/écriture de TOUTES les données.
 --
--- Pourquoi c'est SANS RISQUE pour Veliora :
--- L'app ne passe PAS par l'API anon : elle se connecte en direct au Postgres
--- via le pooler Supabase avec le rôle privilégié (postgres / service_role).
--- Ce rôle CONTOURNE la RLS (BYPASSRLS + propriétaire des tables). On active
--- donc ENABLE (et non FORCE) : le propriétaire et service_role gardent l'accès
--- complet, seuls anon/authenticated sont bloqués.
+-- Veliora se connecte en Postgres (pooler, rôle postgres) → BYPASSRLS → l'app
+-- continue de fonctionner après ce script.
 --
--- Comment l'appliquer :
---   Supabase Dashboard → SQL Editor → coller ce script → Run.
---   (Le SQL Editor se connecte en postgres, donc l'app continue de fonctionner.)
---
--- Vérifier ensuite : Dashboard → Table Editor → les tables ne doivent plus
--- afficher « Unrestricted ». Et l'app Veliora doit continuer à lister les leads.
+-- À exécuter : Dashboard → SQL Editor → Run (une fois par projet).
 -- ============================================================================
 
+-- 1) Row Level Security sur toutes les tables public
 DO $$
 DECLARE
   r RECORD;
 BEGIN
   FOR r IN
-    SELECT tablename
-    FROM pg_tables
-    WHERE schemaname = 'public'
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY;', r.tablename);
   END LOOP;
 END $$;
 
--- Contrôle : liste les tables publiques et leur statut RLS (rowsecurity = true attendu).
-SELECT tablename, rowsecurity
+-- 2) Retirer les droits par défaut sur les tables (anon / authenticated)
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon, authenticated;
+
+-- 3) Storage : si vous utilisez des buckets Supabase, activer RLS côté Storage
+--    (Dashboard → Storage → chaque bucket → Policies, ou laisser buckets vides).
+--    Veliora n'y stocke PAS les photos d'annonces (fichiers locaux / Scalingo).
+
+-- 4) Vérification
+SELECT tablename, rowsecurity AS rls_enabled
 FROM pg_tables
 WHERE schemaname = 'public'
 ORDER BY tablename;

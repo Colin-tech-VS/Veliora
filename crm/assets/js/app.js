@@ -6553,12 +6553,51 @@ function buildEstimateListingComparisonHtml(result) {
     </div>`;
 }
 
+function renderEstimatorComparablesHtml(result) {
+  const list = result.comparables;
+  if (!list?.length) return "";
+  const total = result.comparables_total || list.length;
+  const rows = list
+    .map((c) => {
+      const dist =
+        c.distance_m != null ? `${Number(c.distance_m).toLocaleString("fr-FR")} m` : "—";
+      const d = c.date
+        ? new Date(c.date).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })
+        : "—";
+      return `<tr>
+        <td>${escapeHtml(d)}</td>
+        <td>${escapeHtml(c.address || "—")}${c.postcode ? ` <small>${escapeHtml(c.postcode)}</small>` : ""}</td>
+        <td class="num">${c.surface != null ? `${c.surface} m²` : "—"}</td>
+        <td class="num">${c.price != null ? fmtEuro(c.price) : "—"}</td>
+        <td class="num">${c.price_m2 != null ? `${Number(c.price_m2).toLocaleString("fr-FR")} €` : "—"}</td>
+        <td class="num">${escapeHtml(dist)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <details class="drawer-estimator-comparables" open>
+      <summary>Ventes comparables DVF (${list.length}${total > list.length ? ` sur ${total}` : ""})</summary>
+      <p class="drawer-estimator-comparables-hint">Actes récents retenus pour la médiane (type, surface proche, hors valeurs aberrantes).</p>
+      <div class="drawer-estimator-comparables-scroll">
+        <table class="drawer-estimator-comparables-table">
+          <thead><tr><th>Date</th><th>Adresse</th><th>Surf.</th><th>Prix</th><th>€/m²</th><th>Dist.</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </details>`;
+}
+
 function renderPriceEstimateResultHtml(result) {
   if (!result?.ok) {
     return `<p class="drawer-estimator-error">${escapeHtml(result?.reason || result?.error || "Estimation indisponible")}</p>`;
   }
   const confCls = result.confidence || "low";
   const delta = buildEstimateListingComparisonHtml(result);
+  const comparables = renderEstimatorComparablesHtml(result);
+  const capNote =
+    result.adjustments_capped && result.adjustments_raw_total_pct != null
+      ? `<p class="drawer-estimator-cap-note">Ajustements plafonnés (brut ${result.adjustments_raw_total_pct > 0 ? "+" : ""}${result.adjustments_raw_total_pct} % → retenu ${result.adjustments_total_pct > 0 ? "+" : ""}${result.adjustments_total_pct} %).</p>`
+      : "";
   const adj =
     result.adjustments?.length > 0
       ? `<ul class="drawer-estimator-adj">${result.adjustments
@@ -6566,7 +6605,7 @@ function renderPriceEstimateResultHtml(result) {
             (a) =>
               `<li>${escapeHtml(a.label)} <span>${a.pct > 0 ? "+" : ""}${a.pct} %</span></li>`,
           )
-          .join("")}</ul>`
+          .join("")}</ul>${capNote}`
       : "";
   const method = (result.methodology || [])
     .map((line) => `<li>${escapeHtml(line)}</li>`)
@@ -6599,7 +6638,10 @@ function renderPriceEstimateResultHtml(result) {
         Base DVF <strong>${(result.median_m2 || 0).toLocaleString("fr-FR")} €/m²</strong>
         · retenu <strong>${fmtEuro(result.price_per_m2)}/m²</strong>
         · surface ${result.surface} m²
+        ${result.dvf_surface_band ? ` · tranche ${escapeHtml(result.dvf_surface_band)}` : ""}
       </p>
+      ${result.dvf_filter_detail ? `<p class="drawer-estimator-filter">${escapeHtml(result.dvf_filter_detail)}</p>` : ""}
+      ${comparables}
       ${delta}
       ${adj}
       ${method ? `<ol class="drawer-estimator-method">${method}</ol>` : ""}
@@ -6782,7 +6824,7 @@ function renderEstimateurView() {
   const intro = `
     <p class="estimateur-intro">
       Estimation indicative à partir des <strong>ventes DVF réelles</strong> (Etalab) sur le secteur,
-      ajustée selon le bien — première passe type Meilleurs Agents.
+      comparables DVF filtrés (surface, rayon, IQR) — rapprochée de Meilleurs Agents.
     </p>`;
 
   if (mode === "new") {
@@ -7039,6 +7081,16 @@ function buildEstimationDossierHtml(lead, est, profile) {
     </section>
     ${adjRows ? `<section><h2>Ajustements appliqués</h2><table class="est-adj"><tbody>${adjRows}</tbody></table></section>` : ""}
     ${method ? `<section><h2>Méthodologie</h2><ol class="est-method">${method}</ol></section>` : ""}
+    ${
+      est.comparables?.length
+        ? `<section><h2>Ventes comparables DVF</h2><table class="est-comparables"><thead><tr><th>Date</th><th>Adresse</th><th>m²</th><th>Prix</th><th>€/m²</th></tr></thead><tbody>${est.comparables
+            .map(
+              (c) =>
+                `<tr><td>${escapeHtml(c.date || "—")}</td><td>${escapeHtml(c.address || "—")}</td><td class="num">${c.surface ?? "—"}</td><td class="num">${c.price != null ? fmtEuro(c.price) : "—"}</td><td class="num">${c.price_m2 != null ? Number(c.price_m2).toLocaleString("fr-FR") : "—"}</td></tr>`,
+            )
+            .join("")}</tbody></table></section>`
+        : ""
+    }
     <p class="est-disclaimer">${escapeHtml(est.disclaimer || "")}</p>
     <div class="est-sig">
       <div><span>Le propriétaire</span></div>

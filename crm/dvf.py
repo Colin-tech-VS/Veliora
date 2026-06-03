@@ -14,6 +14,7 @@ import csv
 import io
 import json
 import logging
+import math
 import re
 import statistics
 from datetime import date, datetime, timedelta, timezone
@@ -29,6 +30,14 @@ DVF_APP_URL = "https://app.dvf.etalab.gouv.fr/"
 
 # Ventes DVF prises en compte (récentes = plus représentatives du marché actuel)
 DVF_MAX_AGE_MONTHS = 24
+
+# Comparables type Meilleurs Agents (filtrage + repli géographique)
+DVF_MIN_COMPARABLES = 8
+DVF_SURFACE_TOLERANCE = 0.30
+DVF_RADIUS_URBAN_M = 500
+DVF_RADIUS_EXPAND_M = 600
+DVF_IQR_FACTOR = 1.5
+DVF_COMPARABLES_DISPLAY_MAX = 12
 
 # Alsace-Moselle + Mayotte : hors DVF DGFiP
 DVF_EXCLUDED_DEPTS = frozenset({"57", "67", "68", "976"})
@@ -247,69 +256,80 @@ def _session() -> requests.Session:
     return s
 
 
-def geocode_address(address: str, city: str = "") -> dict | None:
-    """Géocode une adresse (API Adresse.data.gouv.fr)."""
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6_371_000
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _geocode_from_features(feats: list, loc: dict) -> dict | None:
+    if not feats:
+        return None
+    props = feats[0].get("properties") or {}
+    citycode = props.get("citycode") or loc.get("arrondissement_code")
+    return {
+        "label": props.get("label"),
+        "citycode": citycode,
+        "postcode": props.get("postcode") or loc.get("postcode"),
+        "city": props.get("city") or loc.get("city"),
+        "lon": (feats[0].get("geometry") or {}).get("coordinates", [None, None])[0],
+        "lat": (feats[0].get("geometry") or {}).get("coordinates", [None, None])[1],
+    }
+
+
+def _geocode_fallback_loc(loc: dict, label: str = "") -> dict | None:
+    if not loc.get("arrondissement_code"):
+        return None
+    return {
+        "label": label,
+        "citycode": loc["arrondissement_code"],
+        "postcode": loc["postcode"],
+        "city": loc["city"],
+        "lon": None,
+        "lat": None,
+    }
+
+
+def geocode_address(address: str, city: str = "", *, prefer_street: bool = False) -> dict | None:
+    """Géocode une adresse (API Adresse.data.gouv.fr).
+
+    Si prefer_street=True, tente d'abord l'adresse complète (rue + ville) pour
+    affiner le rayon de comparables DVF.
+    """
     loc = parse_location_hint(address, city)
+    addr_clean = (address or "").strip()
+    if addr_clean in ("—", "-", ""):
+        addr_clean = ""
+    street_q = ", ".join(p for p in (addr_clean, (city or "").strip()) if p).strip()
+    queries: list[str] = []
+    if prefer_street and street_q and len(street_q) >= 8:
+        queries.append(street_q)
     if loc["postcode"] and loc["city"]:
-        q = f"{loc['postcode']} {loc['city']}"
+        queries.append(f"{loc['postcode']} {loc['city']}")
     elif loc["city"]:
-        q = loc["city"]
+        queries.append(loc["city"])
     elif loc["postcode"]:
-        q = loc["postcode"]
-    else:
-        q = ", ".join(p for p in (address, city) if p).strip()
-    if not q or len(q) < 3:
-        if loc["arrondissement_code"]:
-            return {
-                "label": q,
-                "citycode": loc["arrondissement_code"],
-                "postcode": loc["postcode"],
-                "city": loc["city"],
-                "lon": None,
-                "lat": None,
-            }
-        return None
-    try:
-        r = _session().get(
-            GEO_SEARCH,
-            params={"q": q, "limit": 1},
-            timeout=12,
-        )
-        r.raise_for_status()
-        feats = r.json().get("features") or []
-        if not feats:
-            if loc["arrondissement_code"]:
-                return {
-                    "label": q,
-                    "citycode": loc["arrondissement_code"],
-                    "postcode": loc["postcode"],
-                    "city": loc["city"],
-                    "lon": None,
-                    "lat": None,
-                }
-            return None
-        props = feats[0].get("properties") or {}
-        citycode = props.get("citycode") or loc["arrondissement_code"]
-        return {
-            "label": props.get("label"),
-            "citycode": citycode,
-            "postcode": props.get("postcode") or loc["postcode"],
-            "city": props.get("city") or loc["city"],
-            "lon": (feats[0].get("geometry") or {}).get("coordinates", [None, None])[0],
-            "lat": (feats[0].get("geometry") or {}).get("coordinates", [None, None])[1],
-        }
-    except requests.RequestException as exc:
-        logger.warning("Geocoding failed: %s", exc)
-        if loc["arrondissement_code"]:
-            return {
-                "label": q,
-                "citycode": loc["arrondissement_code"],
-                "postcode": loc["postcode"],
-                "city": loc["city"],
-                "lon": None,
-                "lat": None,
-            }
-        return None
+        queries.append(loc["postcode"])
+    elif street_q:
+        queries.append(street_q)
+    seen_q: set[str] = set()
+    for q in queries:
+        q = q.strip()
+        if not q or len(q) < 3 or q in seen_q:
+            continue
+        seen_q.add(q)
+        try:
+            r = _session().get(GEO_SEARCH, params={"q": q, "limit": 1}, timeout=12)
+            r.raise_for_status()
+            hit = _geocode_from_features(r.json().get("features") or [], loc)
+            if hit and (hit.get("lat") is not None or not prefer_street):
+                return hit
+        except requests.RequestException as exc:
+            logger.warning("Geocoding failed (%s): %s", q[:40], exc)
+    return _geocode_fallback_loc(loc, street_q or queries[0] if queries else "")
 
 
 def resolve_commune_code(city: str, postcode: str | None = None) -> dict | None:
@@ -347,51 +367,295 @@ def resolve_commune_code(city: str, postcode: str | None = None) -> dict | None:
         return None
 
 
+def _format_sale_address(row: dict) -> str:
+    num = (row.get("adresse_numero") or "").strip()
+    suffix = (row.get("adresse_suffixe") or "").strip()
+    voie = (row.get("adresse_nom_voie") or "").strip()
+    parts = [p for p in (f"{num}{suffix}".strip(), voie) if p]
+    return " ".join(parts) if parts else voie or "—"
+
+
+def _parse_dvf_sale_row(
+    row: dict,
+    *,
+    code_commune: str | None = None,
+    type_local: str | None = None,
+    cutoff: date,
+    years: set[int],
+) -> dict | None:
+    if row.get("nature_mutation") != "Vente":
+        return None
+    tlocal = row.get("type_local") or ""
+    if tlocal not in ("Appartement", "Maison"):
+        return None
+    if type_local and tlocal != type_local:
+        return None
+    if code_commune and row.get("code_commune") != code_commune:
+        return None
+    dm = (row.get("date_mutation") or "").strip()
+    sale_date = dm[:10] if dm else None
+    if sale_date:
+        try:
+            d = date.fromisoformat(sale_date)
+            if d < cutoff:
+                return None
+            years.add(d.year)
+        except ValueError:
+            sale_date = None
+    try:
+        vf = float(row.get("valeur_fonciere") or 0)
+        surf = float(row.get("surface_reelle_bati") or 0)
+        lat = float(row.get("latitude") or 0)
+        lon = float(row.get("longitude") or 0)
+    except (TypeError, ValueError):
+        return None
+    if vf < 10_000 or surf < 9:
+        return None
+    pm2 = vf / surf
+    if pm2 < 500 or pm2 > 25_000:
+        return None
+    lat_ok = -90 < lat < 90 and abs(lat) > 0.01
+    lon_ok = -180 < lon < 180 and abs(lon) > 0.01
+    return {
+        "price_m2": round(pm2, 2),
+        "price": int(round(vf)),
+        "surface": round(surf, 1),
+        "postcode": (row.get("code_postal") or "").strip(),
+        "lat": lat if lat_ok else None,
+        "lon": lon if lon_ok else None,
+        "date": sale_date,
+        "address": _format_sale_address(row),
+        "type_local": tlocal,
+    }
+
+
+def _sales_from_csv_rows(
+    raw: str,
+    *,
+    code_commune: str | None = None,
+    type_local: str | None = None,
+    max_age_months: int = DVF_MAX_AGE_MONTHS,
+) -> tuple[list[dict], list[int]]:
+    sales: list[dict] = []
+    years: set[int] = set()
+    cutoff = date.today() - timedelta(days=30 * max(1, max_age_months))
+    reader = csv.DictReader(io.StringIO(raw))
+    for row in reader:
+        sale = _parse_dvf_sale_row(
+            row,
+            code_commune=code_commune,
+            type_local=type_local,
+            cutoff=cutoff,
+            years=years,
+        )
+        if sale:
+            sales.append(sale)
+    return sales, sorted(years)
+
+
 def _prices_from_csv_rows(
     raw: str,
     *,
     code_commune: str | None = None,
     type_local: str | None = None,
     max_age_months: int = DVF_MAX_AGE_MONTHS,
-) -> tuple[list[float], list[int]]:
-    prices: list[float] = []
-    postcodes: list[str] = []
-    years: set[int] = set()
-    cutoff = date.today() - timedelta(days=30 * max(1, max_age_months))
-    reader = csv.DictReader(io.StringIO(raw))
-    for row in reader:
-        if row.get("nature_mutation") != "Vente":
-            continue
-        tlocal = row.get("type_local") or ""
-        if tlocal not in ("Appartement", "Maison"):
-            continue
-        if type_local and tlocal != type_local:
-            continue
-        if code_commune and row.get("code_commune") != code_commune:
-            continue
-        dm = (row.get("date_mutation") or "").strip()
-        if dm:
-            try:
-                d = date.fromisoformat(dm[:10])
-                if d < cutoff:
-                    continue
-                years.add(d.year)
-            except ValueError:
-                pass
-        try:
-            vf = float(row.get("valeur_fonciere") or 0)
-            surf = float(row.get("surface_reelle_bati") or 0)
-        except (TypeError, ValueError):
-            continue
-        if vf < 10_000 or surf < 9:
-            continue
-        pm2 = vf / surf
-        if 500 <= pm2 <= 25_000:
-            prices.append(pm2)
-            # Code postal de la vente : permet d'affiner la médiane au CP exact
-            # (bien plus précis que la commune entière, comme Meilleurs Agents).
-            postcodes.append((row.get("code_postal") or "").strip())
-    return prices, sorted(years), postcodes
+) -> tuple[list[float], list[int], list[str]]:
+    sales, years = _sales_from_csv_rows(
+        raw,
+        code_commune=code_commune,
+        type_local=type_local,
+        max_age_months=max_age_months,
+    )
+    return [s["price_m2"] for s in sales], years, [s["postcode"] for s in sales]
+
+
+def _surface_in_band(surface: float, subject: float, tolerance: float = DVF_SURFACE_TOLERANCE) -> bool:
+    if subject <= 0 or surface <= 0:
+        return True
+    lo = subject * (1 - tolerance)
+    hi = subject * (1 + tolerance)
+    return lo <= surface <= hi
+
+
+def _surface_band_label(subject: float, tolerance: float = DVF_SURFACE_TOLERANCE) -> str:
+    lo = max(9, int(subject * (1 - tolerance)))
+    hi = int(subject * (1 + tolerance))
+    return f"{lo}–{hi} m²"
+
+
+def _sale_distance_m(sale: dict, lat: float, lon: float) -> float | None:
+    slat, slon = sale.get("lat"), sale.get("lon")
+    if slat is None or slon is None:
+        return None
+    return _haversine_m(lat, lon, slat, slon)
+
+
+def _iqr_filter_sales(sales: list[dict]) -> list[dict]:
+    if len(sales) < 4:
+        return sales
+    vals = sorted(s["price_m2"] for s in sales)
+    q1 = statistics.quantiles(vals, n=4)[0]
+    q3 = statistics.quantiles(vals, n=4)[2]
+    iqr = q3 - q1
+    lo = q1 - DVF_IQR_FACTOR * iqr
+    hi = q3 + DVF_IQR_FACTOR * iqr
+    return [s for s in sales if lo <= s["price_m2"] <= hi]
+
+
+def _filter_sales_pool(
+    sales: list[dict],
+    *,
+    subject_surface: float | None = None,
+    subject_lat: float | None = None,
+    subject_lon: float | None = None,
+    postcode: str | None = None,
+    radius_m: int | None = None,
+) -> list[dict]:
+    pool = sales
+    if subject_surface and subject_surface > 0:
+        pool = [s for s in pool if _surface_in_band(s["surface"], subject_surface)]
+    if radius_m and subject_lat is not None and subject_lon is not None:
+        pool = [
+            s
+            for s in pool
+            if _sale_distance_m(s, subject_lat, subject_lon) is not None
+            and _sale_distance_m(s, subject_lat, subject_lon) <= radius_m
+        ]
+    elif postcode:
+        pc = postcode.strip()
+        if len(pc) == 5 and pc.isdigit():
+            pool = [s for s in pool if s.get("postcode") == pc]
+    return _iqr_filter_sales(pool)
+
+
+def _pick_comparable_pool(
+    sales: list[dict],
+    *,
+    subject_surface: float | None = None,
+    subject_lat: float | None = None,
+    subject_lon: float | None = None,
+    postcode: str | None = None,
+) -> tuple[list[dict], str, str]:
+    """Sélectionne les ventes comparables (repli rayon → CP → commune)."""
+    if subject_lat is not None and subject_lon is not None:
+        for radius in (DVF_RADIUS_URBAN_M, DVF_RADIUS_EXPAND_M):
+            pool = _filter_sales_pool(
+                sales,
+                subject_surface=subject_surface,
+                subject_lat=subject_lat,
+                subject_lon=subject_lon,
+                radius_m=radius,
+            )
+            if len(pool) >= DVF_MIN_COMPARABLES:
+                return pool, f"radius_{radius}m", f"ventes à ≤{radius} m (surface ±{int(DVF_SURFACE_TOLERANCE * 100)} %)"
+
+    norm_pc = (postcode or "").strip()
+    if len(norm_pc) == 5 and norm_pc.isdigit():
+        pool = _filter_sales_pool(
+            sales,
+            subject_surface=subject_surface,
+            postcode=norm_pc,
+        )
+        if len(pool) >= DVF_MIN_COMPARABLES:
+            return pool, "postcode", f"ventes au CP {norm_pc} (surface ±{int(DVF_SURFACE_TOLERANCE * 100)} %)"
+
+    if subject_surface and subject_surface > 0:
+        pool = _filter_sales_pool(sales, subject_surface=subject_surface)
+        if len(pool) >= DVF_MIN_COMPARABLES:
+            return pool, "commune_surface", f"commune, surface ±{int(DVF_SURFACE_TOLERANCE * 100)} %"
+
+    pool = _iqr_filter_sales(sales)
+    return pool, "commune", "commune (toutes surfaces récentes)"
+
+
+def _comparables_for_display(
+    pool: list[dict],
+    *,
+    subject_lat: float | None = None,
+    subject_lon: float | None = None,
+    limit: int = DVF_COMPARABLES_DISPLAY_MAX,
+) -> list[dict]:
+    enriched: list[dict] = []
+    for s in pool:
+        dist = None
+        if subject_lat is not None and subject_lon is not None:
+            dist = _sale_distance_m(s, subject_lat, subject_lon)
+        enriched.append({**s, "_dist": dist if dist is not None else 999_999})
+    enriched.sort(key=lambda x: (x["_dist"], x.get("date") or ""), reverse=False)
+    out: list[dict] = []
+    for s in enriched[:limit]:
+        item = {
+            "date": s.get("date"),
+            "price": s.get("price"),
+            "surface": s.get("surface"),
+            "price_m2": s.get("price_m2"),
+            "address": s.get("address"),
+            "postcode": s.get("postcode"),
+        }
+        if s.get("_dist", 999_999) < 900_000:
+            item["distance_m"] = int(round(s["_dist"]))
+        out.append(item)
+    return out
+
+
+def _stats_from_sales(
+    pool: list[dict],
+    *,
+    geo_level: str,
+    filter_detail: str,
+    source_detail: str,
+    stats_code: str,
+    type_local: str,
+    norm_postcode: str,
+    sale_years: list[int],
+    subject_surface: float | None = None,
+    subject_lat: float | None = None,
+    subject_lon: float | None = None,
+) -> dict:
+    pm2_vals = [s["price_m2"] for s in pool]
+    median = statistics.median(pm2_vals)
+    surface_band = _surface_band_label(subject_surface) if subject_surface and subject_surface > 0 else None
+    return {
+        "available": True,
+        "code_commune": stats_code,
+        "type_local": type_local,
+        "median_m2": round(median, 0),
+        "mean_m2": round(statistics.mean(pm2_vals), 0),
+        "sample_count": len(pool),
+        "geo_level": geo_level,
+        "filter_detail": filter_detail,
+        "surface_band": surface_band,
+        "postcode": norm_postcode or None,
+        "reference_period": _format_dvf_period(sale_years),
+        "reference_months": DVF_MAX_AGE_MONTHS,
+        "source": "etalab_geo_dvf",
+        "source_detail": source_detail,
+        "dvf_app_url": DVF_APP_URL,
+        "updated_at": _now(),
+        "comparables": _comparables_for_display(
+            pool,
+            subject_lat=subject_lat,
+            subject_lon=subject_lon,
+        ),
+        "comparables_total": len(pool),
+    }
+
+
+def _compact_sales_for_cache(sales: list[dict], limit: int = 800) -> list[dict]:
+    return [
+        {
+            "price_m2": s["price_m2"],
+            "price": s["price"],
+            "surface": s["surface"],
+            "postcode": s.get("postcode"),
+            "lat": s.get("lat"),
+            "lon": s.get("lon"),
+            "date": s.get("date"),
+            "address": s.get("address"),
+            "type_local": s.get("type_local"),
+        }
+        for s in sales[:limit]
+    ]
 
 
 def _format_dvf_period(years: list[int]) -> str | None:
@@ -508,23 +772,33 @@ def compute_price_stats(
     filter_type: bool = True,
     postcode: str | None = None,
     arrondissement_code: str | None = None,
+    subject_surface: float | None = None,
+    subject_lat: float | None = None,
+    subject_lon: float | None = None,
 ) -> dict | None:
     """
-    Médiane et échantillon DVF pour une commune.
+    Médiane DVF et comparables filtrés (type, surface ±30 %, IQR, rayon/CP).
     Repli : arrondissements (Paris/Lyon/Marseille) puis médiane départementale.
     """
     if not code_commune:
         return None
 
     base_cache = arrondissement_code or _postcode_to_arrondissement(postcode) or code_commune
-    # Cache distinct par code postal : deux quartiers d'une même commune n'ont
-    # pas la même médiane → ne pas servir l'un pour l'autre.
     norm_postcode = (postcode or "").strip()
     norm_postcode = norm_postcode if (len(norm_postcode) == 5 and norm_postcode.isdigit()) else ""
     cache_key = f"{base_cache}|cp{norm_postcode}" if norm_postcode else base_cache
     cached = _load_cached_stats(cache_key, type_local)
-    if cached:
-        return cached
+    sales: list[dict] | None = None
+    sale_years: list[int] = []
+    source_detail = "commune"
+    stats_code = base_cache
+
+    if cached and cached.get("raw_sales"):
+        sales = cached["raw_sales"]
+        sale_years = cached.get("sale_years") or []
+        source_detail = cached.get("source_detail") or source_detail
+        stats_code = cached.get("code_commune") or stats_code
+
     dept = _dept_from_insee(code_commune)
     if dept in DVF_EXCLUDED_DEPTS:
         return {
@@ -540,114 +814,105 @@ def compute_price_stats(
         postcode=postcode,
         arrondissement_code=arrondissement_code,
     )
-    prices: list[float] = []
-    prices_postcodes: list[str] = []
-    sale_years: list[int] = []
-    source_detail = "commune"
-    stats_code = base_cache
 
-    def _merge_csv_prices(raw: str, cc: str) -> tuple[list[float], list[int], list[str]]:
-        p, y, pcs = _prices_from_csv_rows(raw, code_commune=cc, type_local=tlocal)
-        return p, y, pcs
+    def _merge_csv_sales(raw: str, cc: str) -> tuple[list[dict], list[int]]:
+        return _sales_from_csv_rows(raw, code_commune=cc, type_local=tlocal)
 
-    for cc in candidates:
-        for year in ("2025", "2024", "2023"):
-            raw = _fetch_commune_csv(cc, year)
-            if not raw:
-                continue
-            rows_prices, rows_years, rows_pcs = _merge_csv_prices(raw, cc)
-            if len(rows_prices) >= 8:
-                prices = rows_prices
-                prices_postcodes = rows_pcs
-                sale_years = rows_years
-                stats_code = cc
-                source_detail = f"commune_{year}" if cc == code_commune else f"arrondissement_{cc}_{year}"
+    if sales is None:
+        for cc in candidates:
+            for year in ("2025", "2024", "2023"):
+                raw = _fetch_commune_csv(cc, year)
+                if not raw:
+                    continue
+                rows_sales, rows_years = _merge_csv_sales(raw, cc)
+                if len(rows_sales) >= DVF_MIN_COMPARABLES:
+                    sales = rows_sales
+                    sale_years = rows_years
+                    stats_code = cc
+                    source_detail = f"commune_{year}" if cc == code_commune else f"arrondissement_{cc}_{year}"
+                    break
+            if sales and len(sales) >= DVF_MIN_COMPARABLES:
                 break
-        if len(prices) >= 8:
-            break
 
-    if len(prices) < 15 and code_commune in MERGED_COMMUNE_ARRONDISSEMENTS:
-        merged_prices: list[float] = []
-        merged_years: set[int] = set()
-        for cc in MERGED_COMMUNE_ARRONDISSEMENTS[code_commune]:
-            raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
-            if not raw:
-                continue
-            chunk, chunk_years, _chunk_pcs = _merge_csv_prices(raw, cc)
-            merged_prices.extend(chunk)
-            merged_years.update(chunk_years)
-            if len(merged_prices) >= 120:
-                break
-        if len(merged_prices) >= 20:
-            prices = merged_prices
-            prices_postcodes = []  # repli multi-communes : pas de filtre CP fiable
-            sale_years = sorted(merged_years)
-            stats_code = code_commune
-            source_detail = f"ville_{code_commune}"
+        if (not sales or len(sales) < 15) and code_commune in MERGED_COMMUNE_ARRONDISSEMENTS:
+            merged_sales: list[dict] = []
+            merged_years: set[int] = set()
+            for cc in MERGED_COMMUNE_ARRONDISSEMENTS[code_commune]:
+                raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
+                if not raw:
+                    continue
+                chunk, chunk_years = _merge_csv_sales(raw, cc)
+                merged_sales.extend(chunk)
+                merged_years.update(chunk_years)
+                if len(merged_sales) >= 120:
+                    break
+            if len(merged_sales) >= 20:
+                sales = merged_sales
+                sale_years = sorted(merged_years)
+                stats_code = code_commune
+                source_detail = f"ville_{code_commune}"
 
-    if len(prices) < 15:
-        dept_prices: list[float] = []
-        dept_years: set[int] = set()
-        skip = set(candidates)
-        for cc in _fetch_dept_commune_codes(dept, limit=80):
-            if cc in skip:
-                continue
-            raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
-            if not raw:
-                continue
-            chunk, chunk_years, _chunk_pcs = _merge_csv_prices(raw, cc)
-            dept_prices.extend(chunk)
-            dept_years.update(chunk_years)
-            if len(dept_prices) >= 120:
-                break
-        if len(dept_prices) >= 20:
-            prices = dept_prices
-            prices_postcodes = []  # repli départemental : pas de filtre CP
-            sale_years = sorted(dept_years)
-            stats_code = code_commune
-            source_detail = f"departement_{dept}"
+        if not sales or len(sales) < 15:
+            dept_sales: list[dict] = []
+            dept_years: set[int] = set()
+            skip = set(candidates)
+            for cc in _fetch_dept_commune_codes(dept, limit=80):
+                if cc in skip:
+                    continue
+                raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
+                if not raw:
+                    continue
+                chunk, chunk_years = _merge_csv_sales(raw, cc)
+                dept_sales.extend(chunk)
+                dept_years.update(chunk_years)
+                if len(dept_sales) >= 120:
+                    break
+            if len(dept_sales) >= 20:
+                sales = dept_sales
+                sale_years = sorted(dept_years)
+                stats_code = code_commune
+                source_detail = f"departement_{dept}"
 
-    if len(prices) < 8:
-        result = {
+    if not sales or len(sales) < DVF_MIN_COMPARABLES:
+        return {
             "available": False,
             "reason": "Pas assez de ventes DVF récentes sur la zone",
             "code_commune": code_commune,
             "source": "etalab_geo_dvf",
             "dvf_app_url": DVF_APP_URL,
         }
-        return result
 
-    # Affinage au code postal : si on connaît le CP du bien et qu'on a assez de
-    # ventes au MÊME CP, on restreint la médiane à ce CP (granularité quartier,
-    # bien plus proche de Meilleurs Agents que la médiane communale entière).
-    geo_level = "commune"
-    if norm_postcode and len(prices_postcodes) == len(prices):
-        cp_prices = [pm for pm, pc in zip(prices, prices_postcodes) if pc == norm_postcode]
-        if len(cp_prices) >= 8:
-            prices = cp_prices
-            source_detail = f"{source_detail}+cp{norm_postcode}"
-            geo_level = "postcode"
+    pool, geo_level, filter_detail = _pick_comparable_pool(
+        sales,
+        subject_surface=subject_surface,
+        subject_lat=subject_lat,
+        subject_lon=subject_lon,
+        postcode=norm_postcode or postcode,
+    )
+    if len(pool) < DVF_MIN_COMPARABLES:
+        pool = _iqr_filter_sales(sales)
+        geo_level = "commune"
+        filter_detail = "commune (repli — peu de ventes filtrées)"
 
-    median = statistics.median(prices)
-    reference_period = _format_dvf_period(sale_years)
-    result = {
-        "available": True,
-        "code_commune": stats_code,
-        "type_local": type_local,
-        "median_m2": round(median, 0),
-        "mean_m2": round(statistics.mean(prices), 0),
-        "sample_count": len(prices),
-        "geo_level": geo_level,
-        "postcode": norm_postcode or None,
-        "reference_period": reference_period,
-        "reference_months": DVF_MAX_AGE_MONTHS,
-        "source": "etalab_geo_dvf",
-        "source_detail": source_detail,
-        "dvf_app_url": DVF_APP_URL,
-        "updated_at": _now(),
-    }
+    result = _stats_from_sales(
+        pool,
+        geo_level=geo_level,
+        filter_detail=filter_detail,
+        source_detail=source_detail,
+        stats_code=stats_code,
+        type_local=type_local,
+        norm_postcode=norm_postcode,
+        sale_years=sale_years,
+        subject_surface=subject_surface,
+        subject_lat=subject_lat,
+        subject_lon=subject_lon,
+    )
+    result["raw_sales"] = _compact_sales_for_cache(sales)
+    result["sale_years"] = sale_years
     _save_cached_stats(cache_key, type_local, result)
-    return result
+    # Ne pas renvoyer toute la base brute au client
+    payload = {k: v for k, v in result.items() if k != "raw_sales"}
+    return payload
 
 
 def compare_listing_to_dvf(
@@ -688,7 +953,7 @@ def compare_listing_to_dvf(
     if not sector and address:
         sector = extract_listing_location(address, None, city).get("sector")
 
-    geo = geocode_address(address, city or "")
+    geo = geocode_address(address, city or "", prefer_street=bool(address and address.strip() not in ("—", "-")))
     code_commune = geo.get("citycode") if geo else arrondissement
     commune_name = geo.get("city") if geo else city
     if geo and geo.get("postcode"):
@@ -714,11 +979,16 @@ def compare_listing_to_dvf(
         }
 
     tlocal = type_local or _guess_type_local(surface, address)
+    subj_lat = geo.get("lat") if geo else None
+    subj_lon = geo.get("lon") if geo else None
     stats = compute_price_stats(
         code_commune,
         tlocal,
         postcode=postcode,
         arrondissement_code=arrondissement,
+        subject_surface=float(surface) if surface else None,
+        subject_lat=float(subj_lat) if subj_lat is not None else None,
+        subject_lon=float(subj_lon) if subj_lon is not None else None,
     )
     if not stats or not stats.get("available"):
         return {**(stats or {}), "listing_m2": round(price / surface, 0)}
@@ -763,6 +1033,10 @@ def compare_listing_to_dvf(
         "dvf_mean_m2": stats.get("mean_m2"),
         "dvf_sample_count": stats.get("sample_count"),
         "dvf_geo_level": stats.get("geo_level") or "commune",
+        "dvf_filter_detail": stats.get("filter_detail"),
+        "dvf_surface_band": stats.get("surface_band"),
+        "dvf_comparables": stats.get("comparables") or [],
+        "dvf_comparables_total": stats.get("comparables_total") or stats.get("sample_count"),
         "dvf_reference_period": stats.get("reference_period"),
         "dvf_reference_months": stats.get("reference_months"),
         "delta_pct": delta_pct,

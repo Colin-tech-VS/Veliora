@@ -690,6 +690,10 @@ def init_db() -> None:
             ensure_lead_image_schema()
         except Exception:
             logger.exception("ensure_map_schema / lead images")
+        try:
+            prune_crawl_logs()
+        except Exception:
+            logger.debug("prune_crawl_logs au démarrage ignoré", exc_info=True)
         logger.info("Base Supabase Veliora prête")
         return
     _init_sqlite()

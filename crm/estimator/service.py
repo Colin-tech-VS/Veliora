@@ -68,6 +68,10 @@ _FEATURES: list[tuple[str, str, float]] = [
 _DEFAULT_COMMISSION_PCT = 5.0
 _MAX_COMMISSION_PCT = 12.0
 
+# Plafond des ajustements cumulés (évite +15–20 % mécaniques sur cases cochées).
+_MAX_POSITIVE_ADJ = 0.12
+_MAX_NEGATIVE_ADJ = -0.18
+
 
 def _guess_property_type(lead: dict, override: str | None) -> str:
     if override and override in {p[0] for p in _PROPERTY_TYPES}:
@@ -146,6 +150,26 @@ def _confidence_label(sample_count: int, has_address: bool) -> tuple[str, str]:
     if sample_count >= 15:
         return "moyenne", "medium"
     return "faible", "low"
+
+
+def _cap_adjustment_total(raw_total: float) -> tuple[float, bool]:
+    """Limite la somme des ajustements pour rester crédible vs le marché."""
+    if raw_total > _MAX_POSITIVE_ADJ:
+        return _MAX_POSITIVE_ADJ, True
+    if raw_total < _MAX_NEGATIVE_ADJ:
+        return _MAX_NEGATIVE_ADJ, True
+    return raw_total, False
+
+
+def _geo_level_label(geo_level: str | None) -> str:
+    labels = {
+        "radius_500m": "rayon 500 m autour du bien",
+        "radius_600m": "rayon 600 m (élargi)",
+        "postcode": "même code postal",
+        "commune_surface": "commune, surfaces comparables",
+        "commune": "commune entière",
+    }
+    return labels.get(geo_level or "", geo_level or "commune")
 
 
 def _spread_pct(confidence: str, sample_count: int) -> float:
@@ -264,6 +288,9 @@ def build_price_estimate(lead: dict, inputs: dict | None = None) -> dict:
         if data.get(key) in (True, "true", "1", 1, "on", "yes"):
             _add(key, label, pct)
 
+    raw_adj = total_adj
+    total_adj, adjustments_capped = _cap_adjustment_total(raw_adj)
+
     # Prix net vendeur = base DVF (valeur acté du bien) ajustée des critères.
     net_vendeur = base_total * (1 + total_adj)
     conf_label, conf_key = _confidence_label(sample_count, bool(address and address != "—"))
@@ -308,7 +335,9 @@ def build_price_estimate(lead: dict, inputs: dict | None = None) -> dict:
         "listing_price": listing_price or None,
         "delta_vs_estimate_pct": delta_listing,
         "adjustments": adjustments,
+        "adjustments_raw_total_pct": round(raw_adj * 100, 1),
         "adjustments_total_pct": round(total_adj * 100, 1),
+        "adjustments_capped": adjustments_capped,
         "confidence": conf_key,
         "confidence_label": conf_label,
         "sample_count": sample_count,
@@ -327,26 +356,83 @@ def build_price_estimate(lead: dict, inputs: dict | None = None) -> dict:
         "dvf_verdict_label": comp.get("verdict_label"),
         "dvf_delta_pct": comp.get("delta_pct"),
         "dvf_geo_level": comp.get("dvf_geo_level") or "commune",
+        "dvf_filter_detail": comp.get("dvf_filter_detail"),
+        "dvf_surface_band": comp.get("dvf_surface_band"),
+        "comparables": comp.get("dvf_comparables") or [],
+        "comparables_total": comp.get("dvf_comparables_total") or sample_count,
         "dvf_app_url": DVF_APP_URL,
         "disclaimer": (
-            "Estimation indicative Veliora — médiane des ventes DVF (Etalab) sur le secteur, "
-            "ajustée selon vos critères. Le prix net vendeur correspond à la valeur actée du bien "
-            "(comparable à un avis Meilleurs Agents) ; le prix FAI inclut les honoraires d'agence. "
-            "Ne remplace pas une visite, un diagnostic ni un avis de valeur certifié."
+            "Estimation indicative Veliora — comparables DVF (Etalab) filtrés par type, "
+            "surface proche, exclusion des valeurs aberrantes (IQR), et zone géographique "
+            "(rayon 500–600 m si adresse précise, sinon code postal ou commune). "
+            "Le net vendeur est ajusté selon vos critères (plafonné à +12 % / −18 % cumulés). "
+            "Données annonces / réseau agences : enrichissement prévu — Meilleurs Agents dispose "
+            "d'un historique propriétaire plus large. Ne remplace pas une visite ni un avis certifié."
         ),
-        "methodology": [
-            (
-                f"Médiane DVF {'au code postal ' + str(comp.get('postcode')) if comp.get('dvf_geo_level') == 'postcode' else 'communale'} : "
-                f"{int(round(median_m2)):,} €/m² ({sample_count} ventes, {comp.get('dvf_reference_period') or 'période récente'})"
-            ).replace(",", " "),
-            f"Surface retenue : {surface:g} m² → base {int(round(base_total)):,} €".replace(",", " "),
-            "Ajustements cumulés : "
-            + (f"{round(total_adj * 100, 1):+}% ({len(adjustments)} critère(s))" if adjustments else "aucun"),
+        "methodology": _build_methodology_lines(
+            comp=comp,
+            median_m2=median_m2,
+            sample_count=sample_count,
+            surface=surface,
+            base_total=base_total,
+            adjustments=adjustments,
+            raw_adj=raw_adj,
+            total_adj=total_adj,
+            adjustments_capped=adjustments_capped,
+            net_vendeur=net_vendeur,
+            fai=fai,
+            commission_pct=commission_pct,
+            spread=spread,
+            conf_label=conf_label,
+        ),
+    }
+
+
+def _build_methodology_lines(
+    *,
+    comp: dict,
+    median_m2: float,
+    sample_count: int,
+    surface: float,
+    base_total: float,
+    adjustments: list,
+    raw_adj: float,
+    total_adj: float,
+    adjustments_capped: bool,
+    net_vendeur: float,
+    fai: float,
+    commission_pct: float,
+    spread: float,
+    conf_label: str,
+) -> list[str]:
+    geo = comp.get("dvf_geo_level") or "commune"
+    band = comp.get("dvf_surface_band")
+    filter_detail = comp.get("dvf_filter_detail") or _geo_level_label(geo)
+    lines = [
+        (
+            f"Médiane DVF ({_geo_level_label(geo)}) : "
+            f"{int(round(median_m2)):,} €/m² — {sample_count} vente(s) comparable(s), "
+            f"{comp.get('dvf_reference_period') or '24 derniers mois'}"
+        ).replace(",", " "),
+        f"Filtre : {filter_detail}"
+        + (f" · tranche {band}" if band else ""),
+        f"Surface du bien : {surface:g} m² → base {int(round(base_total)):,} € (médiane × surface)".replace(",", " "),
+    ]
+    if adjustments:
+        adj_txt = f"{round(total_adj * 100, 1):+}% ({len(adjustments)} critère(s))"
+        if adjustments_capped:
+            adj_txt += f", plafonné (brut {round(raw_adj * 100, 1):+} %)"
+        lines.append(f"Ajustements : {adj_txt}")
+    else:
+        lines.append("Ajustements : aucun")
+    lines.extend(
+        [
             f"Net vendeur (acté) : {int(round(net_vendeur)):,} €".replace(",", " "),
             f"FAI = net vendeur + {commission_pct:g}% honoraires → {int(round(fai)):,} €".replace(",", " "),
             f"Fourchette ±{int(spread * 100)}% (confiance {conf_label})",
-        ],
-    }
+        ]
+    )
+    return lines
 
 
 def estimator_form_schema() -> dict:
