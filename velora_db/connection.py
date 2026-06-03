@@ -30,6 +30,12 @@ _pg_pool_failed = False
 # Cache de résolution IPv4 par hôte — getaddrinfo n'est appelé qu'une fois.
 _ipv4_cache: dict[str, str] = {}
 
+# Pics transitoires : un crawl en arrière-plan relâche ses connexions en
+# continu, donc une file pleine (`TooManyRequests`) se vide souvent en
+# quelques centaines de ms. On réessaie quelques fois avant d'abandonner.
+_POOL_ACQUIRE_RETRIES = int(os.getenv("DATABASE_POOL_ACQUIRE_RETRIES", "3"))
+_POOL_ACQUIRE_BACKOFF = float(os.getenv("DATABASE_POOL_ACQUIRE_BACKOFF", "0.35"))
+
 
 def _dns_a_lookup(host: str, dns_server: str = "1.1.1.1") -> list[str]:
     """Recherche le ou les enregistrements A via un DNS public.
@@ -323,14 +329,21 @@ def _get_postgres_pool():
             )
         scalingo = bool(os.getenv("SCALINGO_APP", "").strip())
         if is_session_mode:
+            # Pooler Supabase en mode session : plafond strict, on reste bas.
             default_pool_max = "3"
         elif scalingo:
-            default_pool_max = "6"
+            # Transaction pooler (port 6543) : on peut élargir sans risque.
+            # Le pool était à 6 alors que gunicorn tourne avec 8 threads web
+            # PLUS des threads de fond (crawl, DVF, scoring, maps) : 6 était
+            # systématiquement saturé. On élargit pour absorber la concurrence.
+            default_pool_max = "12"
         else:
             default_pool_max = "8"
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
-        pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "40"))
+        # File d'attente bornée : au-delà on échoue vite (503 propre + retry
+        # côté client) plutôt que d'empiler 40 requêtes et d'exploser la latence.
+        pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "20"))
         # `hostaddr` injecté pour court-circuiter la résolution DNS IPv6 sur
         # les hébergeurs sans IPv6 sortant (Scalingo, Heroku, certains conteneurs).
         ipv4_kwargs = _resolve_ipv4_hostaddr(url)
@@ -393,27 +406,63 @@ def _postgres_connection() -> DbConnection:
     return DbConnection(raw, postgres=True)
 
 
+def _is_pool_saturation(exc: BaseException) -> bool:
+    """Vrai si l'exception traduit un pool saturé (file pleine ou attente expirée)."""
+    name = type(exc).__name__
+    return name in ("TooManyRequests", "PoolTimeout") or "PoolTimeout" in name
+
+
+def _enter_pool_connection(pool):
+    """Entre dans ``pool.connection()`` en absorbant les pics transitoires.
+
+    Deux saturations *temporaires* peuvent survenir quand un crawl tourne en
+    arrière-plan et monopolise des connexions :
+
+    * ``TooManyRequests`` — la file d'attente du pool est pleine (échec
+      immédiat) ; on patiente brièvement puis on réessaie, la file se
+      vidant en continu.
+    * ``PoolTimeout`` — l'attente a déjà expiré (on a donc déjà bloqué
+      ``timeout`` secondes) ; inutile de re-bloquer, on abandonne
+      proprement en ``DatabaseBusyError``.
+
+    Renvoie ``(context_manager, raw_connection)``. L'appelant DOIT fermer le
+    context_manager (``__exit__``) pour rendre la connexion au pool.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(max(1, _POOL_ACQUIRE_RETRIES)):
+        cm = pool.connection()
+        try:
+            raw = cm.__enter__()
+            return cm, raw
+        except BaseException as exc:
+            if not _is_pool_saturation(exc):
+                raise
+            last_exc = exc
+            # PoolTimeout : on a déjà attendu, on ne re-bloque pas.
+            if type(exc).__name__ != "TooManyRequests":
+                break
+            if attempt < _POOL_ACQUIRE_RETRIES - 1:
+                time.sleep(_POOL_ACQUIRE_BACKOFF * (attempt + 1))
+    raise DatabaseBusyError(
+        "Connexions base saturées — réessayez dans quelques secondes"
+    ) from last_exc
+
+
 @contextmanager
 def get_connection():
     if is_postgres():
         pool = _get_postgres_pool()
         if pool is not None:
+            cm, raw = _enter_pool_connection(pool)
+            conn = DbConnection(raw, postgres=True)
             try:
-                with pool.connection() as raw:
-                    conn = DbConnection(raw, postgres=True)
-                    try:
-                        yield conn
-                        conn.commit()
-                    except BaseException:
-                        conn.rollback()
-                        raise
-            except Exception as exc:
-                name = type(exc).__name__
-                if name == "PoolTimeout" or "PoolTimeout" in name:
-                    raise DatabaseBusyError(
-                        "Connexions base saturées — réessayez dans quelques secondes"
-                    ) from exc
+                yield conn
+                conn.commit()
+            except BaseException as exc:
+                conn.rollback()
+                cm.__exit__(type(exc), exc, exc.__traceback__)
                 raise
+            cm.__exit__(None, None, None)
             return
         conn = _postgres_connection()
         try:

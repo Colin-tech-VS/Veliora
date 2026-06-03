@@ -143,6 +143,11 @@ def register_agency(
 
 def login_user(email: str, password: str) -> dict | None:
     email = (email or "").strip().lower()
+
+    # 1) Lecture courte : on relâche la connexion AVANT de vérifier le hash.
+    #    `check_password_hash` (bcrypt/scrypt) coûte ~100-250 ms de CPU ;
+    #    le faire en gardant une connexion du pool sature les ~12 connexions
+    #    disponibles dès qu'une poignée de logins arrivent en parallèle.
     with get_connection() as conn:
         row = conn.execute(
             """SELECT u.*, a.name AS agency_name, a.slug AS agency_slug
@@ -151,10 +156,14 @@ def login_user(email: str, password: str) -> dict | None:
                WHERE u.email = ? AND u.active = 1""",
             (email,),
         ).fetchone()
-        if not row or not check_password_hash(row["password_hash"], password):
-            return None
 
-        token = secrets.token_urlsafe(32)
+    # 2) Vérification du mot de passe HORS connexion (aucune connexion tenue).
+    if not row or not check_password_hash(row["password_hash"], password):
+        return None
+
+    # 3) Écriture de session : seconde connexion, brève.
+    token = secrets.token_urlsafe(32)
+    with get_connection() as conn:
         conn.execute(
             "UPDATE agency_users SET last_login_at = ? WHERE id = ?",
             (_now(), row["id"]),
