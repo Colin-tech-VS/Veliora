@@ -221,6 +221,7 @@ class CrawlerEngine:
                 target=self._run_job,
                 args=(job["id"], job_type, target_url, source_id, city, agency_id),
                 daemon=True,
+                name="veliora-crawl",
             )
             thread.start()
             return job

@@ -7,6 +7,7 @@ import logging
 import os
 import socket
 import sqlite3
+import threading
 import time
 import urllib.request
 from contextlib import contextmanager
@@ -35,6 +36,78 @@ _ipv4_cache: dict[str, str] = {}
 # quelques centaines de ms. On réessaie quelques fois avant d'abandonner.
 _POOL_ACQUIRE_RETRIES = int(os.getenv("DATABASE_POOL_ACQUIRE_RETRIES", "3"))
 _POOL_ACQUIRE_BACKOFF = float(os.getenv("DATABASE_POOL_ACQUIRE_BACKOFF", "0.35"))
+
+# --- Réservation de connexions pour le web pendant un crawl ----------------
+# Un crawl lance plusieurs threads de fond (moteur + DVF + rapprochement
+# d'adresse) qui martèlent la base. Sans garde-fou, ils consomment TOUT le
+# pool et les requêtes web échouent en « base saturée ». On borne donc le
+# nombre de connexions que ces threads de fond peuvent détenir EN MÊME TEMPS,
+# pour toujours laisser des créneaux libres au web.
+_BG_THREAD_PREFIXES = ("veliora-crawl", "veliora-dvf", "veliora-addr")
+_pg_pool_max = 0
+_bg_db_sem: threading.Semaphore | None = None
+_bg_db_lock = threading.Lock()
+_bg_db_local = threading.local()
+
+
+def _is_bg_db_thread() -> bool:
+    """Vrai si le thread courant est un thread de crawl en arrière-plan."""
+    return (threading.current_thread().name or "").startswith(_BG_THREAD_PREFIXES)
+
+
+def _get_bg_db_semaphore() -> threading.Semaphore | None:
+    """Sémaphore bornant les connexions détenues par les threads de crawl.
+
+    Capacité = pool_max − réservation web (≈40 %, min 2). Ainsi le web garde
+    toujours des connexions disponibles, même crawl à fond.
+    """
+    global _bg_db_sem
+    if _bg_db_sem is not None:
+        return _bg_db_sem
+    if _pg_pool_max <= 0:
+        return None
+    with _bg_db_lock:
+        if _bg_db_sem is None:
+            reserve_default = max(2, round(_pg_pool_max * 0.4))
+            reserve = int(os.getenv("DATABASE_WEB_RESERVE", str(reserve_default)))
+            cap = max(1, _pg_pool_max - max(0, reserve))
+            _bg_db_sem = threading.BoundedSemaphore(cap)
+            logger.info(
+                "Garde DB crawl active — %s connexion(s) max pour les threads de "
+                "fond (pool=%s, réserve web=%s)",
+                cap,
+                _pg_pool_max,
+                reserve,
+            )
+    return _bg_db_sem
+
+
+@contextmanager
+def _bg_db_slot():
+    """Réserve un créneau DB pour un thread de crawl (no-op sinon).
+
+    Ré-entrant par thread : un même thread qui imbrique deux ``get_connection``
+    ne prend qu'un seul jeton (évite l'auto-blocage).
+    """
+    sem = _get_bg_db_semaphore() if _is_bg_db_thread() else None
+    if sem is None:
+        yield
+        return
+    depth = getattr(_bg_db_local, "depth", 0)
+    if depth > 0:
+        _bg_db_local.depth = depth + 1
+        try:
+            yield
+        finally:
+            _bg_db_local.depth -= 1
+        return
+    sem.acquire()
+    _bg_db_local.depth = 1
+    try:
+        yield
+    finally:
+        _bg_db_local.depth = 0
+        sem.release()
 
 
 def _dns_a_lookup(host: str, dns_server: str = "1.1.1.1") -> list[str]:
@@ -340,6 +413,8 @@ def _get_postgres_pool():
         else:
             default_pool_max = "8"
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
+        global _pg_pool_max
+        _pg_pool_max = pool_max
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
         # File d'attente bornée : au-delà on échoue vite (503 propre + retry
         # côté client) plutôt que d'empiler 40 requêtes et d'exploser la latence.
@@ -383,9 +458,11 @@ def _reset_pool_after_fork() -> None:
     saturée »), et plus aucune donnée ne charge. On oublie le pool hérité pour
     qu'un pool propre au worker soit recréé à la demande.
     """
-    global _pg_pool, _pg_pool_failed
+    global _pg_pool, _pg_pool_failed, _bg_db_sem
     _pg_pool = None
     _pg_pool_failed = False
+    # Le sémaphore vit dans le process maître : on le recrée dans l'enfant.
+    _bg_db_sem = None
 
 
 try:
@@ -453,16 +530,19 @@ def get_connection():
     if is_postgres():
         pool = _get_postgres_pool()
         if pool is not None:
-            cm, raw = _enter_pool_connection(pool)
-            conn = DbConnection(raw, postgres=True)
-            try:
-                yield conn
-                conn.commit()
-            except BaseException as exc:
-                conn.rollback()
-                cm.__exit__(type(exc), exc, exc.__traceback__)
-                raise
-            cm.__exit__(None, None, None)
+            # Garde de concurrence : un thread de crawl attend ici qu'un créneau
+            # se libère plutôt que de vider le pool au détriment du web.
+            with _bg_db_slot():
+                cm, raw = _enter_pool_connection(pool)
+                conn = DbConnection(raw, postgres=True)
+                try:
+                    yield conn
+                    conn.commit()
+                except BaseException as exc:
+                    conn.rollback()
+                    cm.__exit__(type(exc), exc, exc.__traceback__)
+                    raise
+                cm.__exit__(None, None, None)
             return
         conn = _postgres_connection()
         try:
