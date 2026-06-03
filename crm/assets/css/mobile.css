@@ -527,6 +527,37 @@
     left: auto;
     width: auto;
     max-width: min(300px, calc(100vw - 1.3rem));
+    /* Plus de place en haut pour des boutons tactiles confortables. */
+    padding-top: 2.35rem;
+  }
+
+  /* Cibles tactiles ≥ 32px et croix alignée avec « Réduire + ». */
+  .crawl-dock-compact {
+    top: 0.5rem;
+    right: 3.15rem;
+    min-height: 32px;
+    font-size: 0.76rem;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .crawl-dock-compact:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .crawl-dock-compact:active {
+    background: rgba(59, 130, 246, 0.3);
+  }
+
+  .crawl-dock-close {
+    top: 0.5rem;
+    right: 0.55rem;
+    width: 32px;
+    height: 32px;
+    font-size: 1.35rem;
+  }
+
+  .crawl-dock.compact {
+    padding-top: 2.35rem;
   }
 
   .script-panel {
@@ -1162,22 +1193,52 @@
 
 .crawl-dock-compact {
   position: absolute;
-  top: 0.45rem;
-  right: 2.55rem;
+  top: 0.4rem;
+  right: 2.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.2rem 0.45rem;
+  line-height: 1;
+  padding: 0.25rem 0.6rem;
   cursor: pointer;
+  white-space: nowrap;
+  z-index: 2;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.crawl-dock-compact:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.crawl-dock-compact:active {
+  transform: scale(0.95);
+}
+
+.crawl-dock-compact:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.9);
+  outline-offset: 1px;
+}
+
+.crawl-dock-compact[aria-pressed="true"] {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.6);
 }
 
 .crawl-dock-close {
   position: absolute;
-  top: 0.35rem;
+  top: 0.4rem;
   right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
   border: none;
@@ -1188,6 +1249,20 @@
   line-height: 1;
   cursor: pointer;
   z-index: 2;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.crawl-dock-close:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.crawl-dock-close:active {
+  transform: scale(0.92);
+}
+
+.crawl-dock-close:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.9);
+  outline-offset: 1px;
 }
 
 .crawl-dock.open {
