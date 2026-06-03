@@ -80,6 +80,14 @@ scalingo --app veliora env-set FLASK_SECRET_KEY="$(openssl rand -hex 32)"
 | `CRAWL_PROXY_ROTATE_EACH_CRAWL` | `true` | Nouvelle IP en début de job / portail |
 | `CRAWL_PROXY_ROTATE_ON_BLOCK` | `true` | Nouvelle IP si anti-bot / Cloudflare |
 | `CRAWL_AUTO_FREE_PROXIES` | `true` | Sans `CRAWL_PROXIES`, charge au 1ᵉʳ blocage un pool de proxies publics testés pour tourner l'IP (best-effort, gratuit) |
+| `CRAWL_AUTO_START` | `true` | Veille portails + recrawl prospects au redémarrage du serveur |
+| `CRAWL_BACKGROUND_INTERVAL_SEC` | `300` | Délai entre deux passages « tous portails » (secondes, min. 60) |
+| `CRAWL_LEAD_REFRESH_ENABLED` | `true` | Mise à jour auto des fiches prospects (prix, contacts) |
+| `CRAWL_LEAD_REFRESH_INTERVAL_SEC` | `3600` | Délai entre deux cycles de recrawl prospects |
+| `CRAWL_LEAD_REFRESH_STALE_HOURS` | `24` | Fiches non touchées depuis N h → candidates au recrawl |
+| `CRAWL_LEAD_REFRESH_MAX_PER_RUN` | `15` | Max fiches recrawlées par agence et par cycle |
+| `CRAWL_INCLUDE_CUSTOM_IN_AUTO` | `true` | URLs personnalisées incluses dans la veille auto |
+| `CRAWL_ANTIBOT_PORTALS_ENABLED` | `false` | Forcer LBC/PAP/SeLoger… (nécessite Playwright + proxies en prod) |
 
 ### Proxies (rotation IP — fortement recommandé en prod)
 

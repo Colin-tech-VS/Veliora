@@ -104,6 +104,8 @@ class CrawlerEngine:
         self._address_queue = None  # AddressMatchQueue | None
         self.running = False
         self._thread: threading.Thread | None = None
+        self._lead_refresh_thread: threading.Thread | None = None
+        self._bg_interval_sec = 300
         self._lock = threading.Lock()
         self._job_lock = threading.Lock()
 
@@ -1975,51 +1977,157 @@ class CrawlerEngine:
             listings_total=1,
         )
 
-    def start_background(self, interval: int = 300) -> None:
+    def start_background(self, interval: int | None = None) -> None:
+        from crawler.config import (
+            CRAWL_BACKGROUND_INTERVAL_SEC,
+            CRAWL_LEAD_REFRESH_ENABLED,
+        )
+
+        interval = max(60, int(interval or CRAWL_BACKGROUND_INTERVAL_SEC))
         with self._lock:
             if self.running:
+                self._bg_interval_sec = interval
                 return
             self.running = True
+            self._bg_interval_sec = interval
             self._thread = threading.Thread(
                 target=self._background_loop,
                 args=(interval,),
                 daemon=True,
+                name="veliora-crawl-bg",
             )
             self._thread.start()
-            add_activity("crawl", "Crawler automatique démarré")
+            if CRAWL_LEAD_REFRESH_ENABLED:
+                self._lead_refresh_thread = threading.Thread(
+                    target=self._lead_refresh_loop,
+                    daemon=True,
+                    name="veliora-lead-refresh-bg",
+                )
+                self._lead_refresh_thread.start()
+            add_activity("crawl", f"Veille auto démarrée (toutes les {interval // 60} min)")
 
     def stop_background(self) -> None:
         with self._lock:
             self.running = False
-            add_activity("crawl", "Crawler automatique en pause")
+            add_activity("crawl", "Veille automatique en pause")
 
     def _background_loop(self, interval: int) -> None:
-        from crawler.storage import list_agency_ids, get_agency_primary_city
+        from crawler.storage import (
+            get_agency_primary_city,
+            get_pending_or_running_crawl_job,
+            list_agency_ids,
+        )
 
         while self.running:
             try:
                 for agency_id in list_agency_ids():
-                    # Crawl exclusivement local : on n'enqueue que les agences ayant
-                    # une ville enregistrée (aucun crawl national).
+                    if not self.running:
+                        break
                     city = get_agency_primary_city(agency_id)
                     if not city:
+                        continue
+                    if get_pending_or_running_crawl_job(agency_id):
+                        logger.debug(
+                            "Veille auto — job déjà actif pour %s, passage suivant",
+                            agency_id,
+                        )
                         continue
                     self.enqueue_job("all_sources", city=city, agency_id=agency_id)
             except Exception as exc:
                 logger.exception("Background crawl: %s", exc)
-            for _ in range(interval):
+            wait = self._bg_interval_sec if self.running else interval
+            for _ in range(wait):
                 if not self.running:
                     break
                 time.sleep(1)
 
+    def _lead_refresh_loop(self) -> None:
+        from crawler.config import CRAWL_LEAD_REFRESH_INTERVAL_SEC
+
+        while self.running:
+            try:
+                self._run_lead_refresh_pass()
+            except Exception as exc:
+                logger.exception("Lead refresh background: %s", exc)
+            for _ in range(CRAWL_LEAD_REFRESH_INTERVAL_SEC):
+                if not self.running:
+                    break
+                time.sleep(1)
+
+    def _run_lead_refresh_pass(self) -> None:
+        from crawler.config import (
+            CRAWL_LEAD_REFRESH_MAX_PER_RUN,
+            CRAWL_LEAD_REFRESH_STALE_HOURS,
+        )
+        from crawler.storage import (
+            get_crawl_job,
+            get_leads_stale_for_refresh,
+            get_pending_or_running_crawl_job,
+            list_agency_ids,
+        )
+
+        for agency_id in list_agency_ids():
+            if not self.running:
+                break
+            if get_pending_or_running_crawl_job(agency_id):
+                continue
+            stale = get_leads_stale_for_refresh(
+                agency_id,
+                limit=CRAWL_LEAD_REFRESH_MAX_PER_RUN,
+                stale_hours=CRAWL_LEAD_REFRESH_STALE_HOURS,
+            )
+            for row in stale:
+                if not self.running:
+                    break
+                if get_pending_or_running_crawl_job(agency_id):
+                    break
+                lead_id = row.get("id")
+                if not lead_id:
+                    continue
+                try:
+                    job = self.refresh_lead(int(lead_id), agency_id=agency_id)
+                except Exception as exc:
+                    logger.warning("refresh_lead %s: %s", lead_id, exc)
+                    continue
+                job_id = (job or {}).get("id")
+                if not job_id:
+                    continue
+                for _ in range(180):
+                    if not self.running:
+                        break
+                    j = get_crawl_job(job_id, agency_id)
+                    if not j:
+                        break
+                    st = (j.get("status") or "").lower()
+                    if st in ("completed", "failed", "cancelled"):
+                        break
+                    time.sleep(2)
+
     def status(self) -> dict:
+        from crawler.config import background_crawl_config
         from crawler.storage import get_active_crawl_job
+
         active = get_active_crawl_job()
         return {
             "running": self.running,
             "active_job": active,
             "is_crawling": active is not None,
+            "background_interval_sec": self._bg_interval_sec,
+            **background_crawl_config(),
         }
+
+
+def bootstrap_background_services() -> None:
+    """Démarre la veille auto au boot si CRAWL_AUTO_START=true (idempotent)."""
+    from crawler.config import CRAWL_AUTO_START
+
+    if not CRAWL_AUTO_START:
+        logger.info("Veille auto au boot désactivée (CRAWL_AUTO_START=false)")
+        return
+    if engine.running:
+        return
+    engine.start_background()
+    logger.info("Veille auto démarrée au boot")
 
 
 engine = CrawlerEngine()

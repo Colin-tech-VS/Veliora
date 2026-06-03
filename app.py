@@ -312,6 +312,9 @@ def api_health():
         "crawl_speed_profile": __import__("crawler.config", fromlist=["CRAWL_SPEED_PROFILE"]).CRAWL_SPEED_PROFILE,
         "proxies_enabled": __import__("crawler.config", fromlist=["proxies_enabled"]).proxies_enabled(),
         "proxy_count": len(__import__("crawler.config", fromlist=["CRAWL_PROXIES"]).CRAWL_PROXIES),
+        "background_crawl": __import__(
+            "crawler.config", fromlist=["background_crawl_config"]
+        ).background_crawl_config(),
         "dvf_app": "https://app.dvf.etalab.gouv.fr/",
         "vitrine": "/",
         "vitrine_ok": VITRINE_INDEX.is_file(),
@@ -1701,7 +1704,14 @@ def api_cancel_job(job_id):
 
 @app.route("/api/crawler/start", methods=["POST"])
 def api_crawler_start():
-    engine.start_background()
+    data = request.get_json(silent=True) or {}
+    interval = data.get("interval_sec") or data.get("interval")
+    if interval is not None:
+        try:
+            interval = int(interval)
+        except (TypeError, ValueError):
+            interval = None
+    engine.start_background(interval=interval)
     return jsonify({"ok": True, **engine.status()})
 
 
@@ -2723,6 +2733,12 @@ def main():
     from crawler.storage import mark_crawl_jobs_interrupted_on_startup
 
     mark_crawl_jobs_interrupted_on_startup()
+    try:
+        from crawler.engine import bootstrap_background_services
+
+        bootstrap_background_services()
+    except Exception:
+        logging.exception("Veille auto — échec au démarrage local")
     atexit.register(checkpoint_database)
     port = int(os.getenv("PORT", "8000"))
     if VITRINE_INDEX.is_file():

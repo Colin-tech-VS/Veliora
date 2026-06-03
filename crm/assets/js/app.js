@@ -36,6 +36,7 @@ const state = {
   selectedLead: null,
   drawerEditExpanded: false,
   crawlerRunning: false,
+  backgroundCrawl: null,
   loading: false,
   pendingCrawlUrl: null,
   sourceCityPreview: {},
@@ -714,6 +715,7 @@ function applyBootstrapPayload(data) {
   SOURCE_STATS = data.source_stats || [];
   if (data.crawler && typeof data.crawler === "object") {
     state.crawlerRunning = !!data.crawler.running;
+    state.backgroundCrawl = data.crawler;
   }
   if (data.settings && typeof data.settings === "object") {
     state.settings = normalizeSettingsPayload({ settings: data.settings });
@@ -768,6 +770,7 @@ async function loadDataCore() {
 
   if (crawlerResult.status === "fulfilled") {
     state.crawlerRunning = crawlerResult.value.running;
+    state.backgroundCrawl = crawlerResult.value;
   } else {
     console.warn("État crawl indisponible", crawlerResult.reason);
   }
@@ -4674,15 +4677,34 @@ function syncCrawlerUI() {
   const btn = document.getElementById("crawler-toggle");
   const dot = document.querySelector(".sidebar-footer .status-dot");
   const label = document.querySelector(".sidebar-footer .status-row p");
+  const footerCount = document.querySelector(".sidebar-footer .crawler-status-mini > p:last-child");
+  const cfg = state.backgroundCrawl || {};
+  const intervalMin = Math.max(1, Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60));
 
   if (state.crawlerRunning) {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
     dot?.classList.remove("paused");
-    if (label) label.textContent = "Veille auto active";
+    if (label) {
+      label.textContent = cfg.lead_refresh_enabled
+        ? `Veille auto · ~${intervalMin} min`
+        : "Veille auto active";
+    }
   } else {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Démarrer`;
     dot?.classList.add("paused");
     if (label) label.textContent = "Veille auto en pause";
+  }
+  if (footerCount && cfg.auto_start) {
+    const extra = cfg.lead_refresh_enabled ? " · fiches ≥24h" : "";
+    footerCount.title = `Relance auto toutes les ${intervalMin} min${extra}`;
+  }
+  const autoHint = document.getElementById("crawler-auto-hint");
+  if (autoHint && cfg.interval_sec != null) {
+    const mins = Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60);
+    const lead = cfg.lead_refresh_enabled
+      ? ` · fiches prospects rafraîchies toutes les ${Math.round((cfg.lead_refresh_interval_sec || 3600) / 60)} min`
+      : "";
+    autoHint.textContent = `Veille automatique : portails toutes les ${mins} min${lead}. Utilisez Pause pour arrêter.`;
   }
 }
 
@@ -7710,6 +7732,7 @@ async function runBackgroundPoll() {
 
     const status = await api("/crawler/status");
     state.crawlerRunning = status.running;
+    state.backgroundCrawl = status;
     syncCrawlerUI();
 
     if (crawlState.active) {

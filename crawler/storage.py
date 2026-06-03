@@ -799,14 +799,50 @@ def is_recommended_crawl_source(src: dict) -> bool:
 
 
 def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
-    """Portails recommandés activés — pour « Crawler tout ».
+    """Portails activés pour la veille auto « tous portails »."""
+    from crawler.config import CRAWL_INCLUDE_CUSTOM_IN_AUTO
 
-    Les portails protégés (anti-bot) et les sites personnalisés sont exclus :
-    les protégés sont classés « Bientôt disponible » (crawl pas encore activé).
-    """
     seed_default_sources_for_agency(agency_id)
-    sources = [s for s in get_sources(agency_id) if is_recommended_crawl_source(s)]
+    sources: list[dict] = []
+    for s in get_sources(agency_id):
+        if is_recommended_crawl_source(s):
+            sources.append(s)
+            continue
+        if not CRAWL_INCLUDE_CUSTOM_IN_AUTO:
+            continue
+        if not s.get("enabled") or not s.get("is_custom"):
+            continue
+        if is_antibot_source(s):
+            continue
+        url = (s.get("search_url") or s.get("base_url") or "").strip()
+        if url.startswith("http"):
+            sources.append(s)
     return sorted(sources, key=_source_sort_key)
+
+
+def get_leads_stale_for_refresh(
+    agency_id: str,
+    *,
+    limit: int = 15,
+    stale_hours: int = 24,
+) -> list[dict]:
+    """Prospects actifs avec URL, non rafraîchis depuis stale_hours (les plus anciens d'abord)."""
+    limit = max(1, int(limit))
+    stale_hours = max(1, int(stale_hours))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT id, source_url, updated_at, created_at, status
+               FROM leads
+               WHERE agency_id = ?
+                 AND COALESCE(status, 'nouveau') != 'retire'
+                 AND TRIM(COALESCE(source_url, '')) != ''
+                 AND datetime(COALESCE(updated_at, created_at))
+                     < datetime('now', ?)
+               ORDER BY datetime(COALESCE(updated_at, created_at)) ASC
+               LIMIT ?""",
+            (agency_id, f"-{stale_hours} hours", limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ─── Crawl jobs ───

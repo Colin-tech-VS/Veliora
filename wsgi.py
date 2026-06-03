@@ -25,5 +25,12 @@ def _bootstrap_db() -> None:
 
 _bootstrap_db()
 
+try:
+    from crawler.engine import bootstrap_background_services
+
+    bootstrap_background_services()
+except Exception:
+    logging.exception("Veille auto — échec au démarrage WSGI")
+
 # Workers Gunicorn (--preload) : une seule init DB partagée
 application.config["PRELOADED"] = True

@@ -302,3 +302,62 @@ PRICE_MAX_RENT_EUR = 50_000
 PRICE_MIN_EUR = PRICE_MIN_SALE_EUR
 PRICE_MAX_EUR = PRICE_MAX_SALE_EUR
 PRICE_TYPICAL_MAX_EUR = 3_000_000
+
+# ─── Veille automatique (portails + prospects) ───
+
+def _env_bool(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes")
+
+
+# Démarre la veille auto au boot (wsgi / python app.py). Désactiver : CRAWL_AUTO_START=false
+CRAWL_AUTO_START = _env_bool("CRAWL_AUTO_START", "true")
+
+# Intervalle entre deux passages « tous portails » (secondes). Défaut 300 = 5 min.
+CRAWL_BACKGROUND_INTERVAL_SEC = max(
+    60,
+    int(os.getenv("CRAWL_BACKGROUND_INTERVAL_SEC", "300") or "300"),
+)
+
+# Inclure les portails personnalisés (URL ajoutée) dans la veille auto all_sources
+CRAWL_INCLUDE_CUSTOM_IN_AUTO = _env_bool("CRAWL_INCLUDE_CUSTOM_IN_AUTO", "true")
+
+# Recrawl périodique des fiches prospects (prix / contacts à jour)
+CRAWL_LEAD_REFRESH_ENABLED = _env_bool("CRAWL_LEAD_REFRESH_ENABLED", "true")
+CRAWL_LEAD_REFRESH_INTERVAL_SEC = max(
+    300,
+    int(os.getenv("CRAWL_LEAD_REFRESH_INTERVAL_SEC", "3600") or "3600"),
+)
+CRAWL_LEAD_REFRESH_STALE_HOURS = max(
+    1,
+    int(os.getenv("CRAWL_LEAD_REFRESH_STALE_HOURS", "24") or "24"),
+)
+CRAWL_LEAD_REFRESH_MAX_PER_RUN = max(
+    1,
+    int(os.getenv("CRAWL_LEAD_REFRESH_MAX_PER_RUN", "15") or "15"),
+)
+
+
+def antibot_portals_crawl_enabled() -> bool:
+    """Leboncoin, PAP, SeLoger… : activables si Playwright + proxies (ou forçage explicite)."""
+    raw = (os.getenv("CRAWL_ANTIBOT_PORTALS_ENABLED") or "").strip().lower()
+    if raw in ("1", "true", "yes"):
+        return True
+    if raw in ("0", "false", "no"):
+        return False
+    if not CRAWL_PLAYWRIGHT_ENABLED:
+        return False
+    return proxies_enabled() or CRAWL_AUTO_FREE_PROXIES
+
+
+def background_crawl_config() -> dict:
+    """Exposé API / health pour le CRM."""
+    return {
+        "auto_start": CRAWL_AUTO_START,
+        "interval_sec": CRAWL_BACKGROUND_INTERVAL_SEC,
+        "include_custom_portals": CRAWL_INCLUDE_CUSTOM_IN_AUTO,
+        "lead_refresh_enabled": CRAWL_LEAD_REFRESH_ENABLED,
+        "lead_refresh_interval_sec": CRAWL_LEAD_REFRESH_INTERVAL_SEC,
+        "lead_refresh_stale_hours": CRAWL_LEAD_REFRESH_STALE_HOURS,
+        "lead_refresh_max_per_run": CRAWL_LEAD_REFRESH_MAX_PER_RUN,
+        "antibot_portals_enabled": antibot_portals_crawl_enabled(),
+    }

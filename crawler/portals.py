@@ -80,6 +80,10 @@ def portal_supports_city_search(source_id: str | None) -> bool:
 
 def is_coming_soon_portal(portal_id: str | None) -> bool:
     """Portail anti-bot non encore crawlé (classé « Bientôt disponible »)."""
+    from crawler.config import antibot_portals_crawl_enabled
+
+    if antibot_portals_crawl_enabled():
+        return False
     base = resolve_base_portal_id(portal_id or "")
     return bool(base and base in COMING_SOON_PORTAL_IDS)
 
