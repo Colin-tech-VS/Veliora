@@ -4698,14 +4698,52 @@ function syncCrawlerUI() {
     const extra = cfg.lead_refresh_enabled ? " · fiches ≥24h" : "";
     footerCount.title = `Relance auto toutes les ${intervalMin} min${extra}`;
   }
+  updateCrawlerVeilleHint(cfg);
+}
+
+function updateCrawlerVeilleHint(status) {
   const autoHint = document.getElementById("crawler-auto-hint");
-  if (autoHint && cfg.interval_sec != null) {
-    const mins = Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60);
-    const lead = cfg.lead_refresh_enabled
-      ? ` · fiches prospects rafraîchies toutes les ${Math.round((cfg.lead_refresh_interval_sec || 3600) / 60)} min`
-      : "";
-    autoHint.textContent = `Veille automatique : portails toutes les ${mins} min${lead}. Utilisez Pause pour arrêter.`;
+  if (!autoHint) return;
+  const cfg = status || state.backgroundCrawl || {};
+  const veille = cfg.veille || {};
+  const mins = Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60);
+  const lines = [];
+
+  if (state.crawlerRunning) {
+    lines.push(`Veille active — passage portails environ toutes les ${mins} min.`);
+  } else {
+    lines.push("Veille en pause — cliquez Démarrer pour relancer la détection automatique.");
   }
+
+  if (veille.blockers?.length) {
+    lines.push(`À corriger : ${veille.blockers.join(" · ")}`);
+  } else if (veille.ready) {
+    const names = (veille.portails_veille_names || []).slice(0, 4).join(", ");
+    lines.push(
+      `Portails suivis : ${veille.portails_veille_count}${names ? ` (${names}…)` : ""} · ville ${veille.city || "—"}.`,
+    );
+  }
+
+  const job = veille.last_job;
+  if (job) {
+    const when = (job.finished_at || job.created_at || "").slice(0, 16).replace("T", " ");
+    const saved = job.leads_saved || 0;
+    const updated = job.leads_updated || 0;
+    const st = job.status === "completed" ? "OK" : "échec";
+    if (saved || updated) {
+      lines.push(
+        `Dernier passage (${when}) : ${saved} nouveau(x), ${updated} mis à jour — ${job.message || st}.`,
+      );
+    } else {
+      lines.push(
+        `Dernier passage (${when}) : aucun prospect enregistré — ${job.message || st}. Vérifiez les URLs de recherche.`,
+      );
+    }
+  } else if (veille.ready && state.crawlerRunning) {
+    lines.push("Premier passage en cours ou pas encore terminé — revenez dans quelques minutes.");
+  }
+
+  autoHint.textContent = lines.join(" ");
 }
 
 async function refreshStats() {
@@ -7733,6 +7771,7 @@ async function runBackgroundPoll() {
     const status = await api("/crawler/status");
     state.crawlerRunning = status.running;
     state.backgroundCrawl = status;
+    updateCrawlerVeilleHint(status);
     syncCrawlerUI();
 
     if (crawlState.active) {

@@ -1047,6 +1047,40 @@ def get_active_crawl_job(agency_id: str | None = None) -> dict | None:
         return _row_to_job(row) if row else None
 
 
+def get_last_crawl_job(agency_id: str) -> dict | None:
+    """Dernier job terminé (ou échoué) — pour afficher si la veille produit des résultats."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM crawl_jobs
+               WHERE agency_id = ?
+                 AND status IN ('completed', 'failed', 'cancelled')
+               ORDER BY COALESCE(finished_at, created_at) DESC
+               LIMIT 1""",
+            (agency_id,),
+        ).fetchone()
+    return _row_to_job(row) if row else None
+
+
+def crawl_veille_readiness(agency_id: str) -> dict:
+    """Prérequis veille auto : ville, portails, dernier résultat."""
+    city = (get_agency_primary_city(agency_id) or "").strip()
+    portails = get_sources_for_full_crawl(agency_id)
+    last = get_last_crawl_job(agency_id)
+    blockers: list[str] = []
+    if not city:
+        blockers.append("Ville non renseignée (Territoire ou fiche agence)")
+    if not portails:
+        blockers.append("Aucun portail recommandé activé avec une URL de recherche")
+    return {
+        "city": city or None,
+        "portails_veille_count": len(portails),
+        "portails_veille_names": [p.get("name") for p in portails[:6]],
+        "blockers": blockers,
+        "ready": not blockers,
+        "last_job": last,
+    }
+
+
 def _json_job_field(raw, default=None):
     default = default if default is not None else []
     if raw is None or raw == "":

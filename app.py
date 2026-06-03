@@ -1621,19 +1621,21 @@ def _job_response(job: dict) -> dict:
 
 @app.route("/api/crawler/status")
 def api_crawler_status():
-    from crawler.storage import expire_stale_crawl_jobs
+    from crawler.storage import crawl_veille_readiness, expire_stale_crawl_jobs
 
     expire_stale_crawl_jobs()
     agency_id = _aid()
     status = engine.status()
     stats = get_stats(agency_id)
     sources = get_sources(agency_id, sync=False, live_counts=False)
+    veille = crawl_veille_readiness(agency_id)
     return jsonify({
         **status,
         "found_today": sum(s.get("leads_updated_today", s.get("today", 0)) for s in sources),
         "active_sources": sum(1 for s in sources if s["enabled"]),
         "total_leads": stats["total"],
         "prospects_in_db": stats["total"],
+        "veille": veille,
     })
 
 
