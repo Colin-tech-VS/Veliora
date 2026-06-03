@@ -36,6 +36,8 @@ DATABASE_URL=postgresql://postgres.xxxx:PASSWORD@....pooler.supabase.com:6543/po
 ```
 
 - Mode **Transaction** pooler, port **6543** (pas 5432 direct en prod Scalingo)
+- Host **Shared Pooler** : `….pooler.supabase.com` (IPv4 Scalingo) — pas le Dedicated `db….supabase.co` si « Not IPv4 compatible »
+- Veliora désactive les prepared statements psycopg (`prepare_threshold=None`) — requis avec ce pooler (sinon erreur `_pg3_0 already exists`)
 - **Sans** `DATABASE_URL` → SQLite local `data/propscout.db`
 
 Scalingo :
@@ -169,6 +171,7 @@ python scripts/migrate_sqlite_to_supabase.py
 | Quota Storage / « image » | Vider buckets Storage ; pas SQL seul |
 | DB > 500 Mo | `supabase_maintenance.sql` + Pro ou purge |
 | `connection refused` | URI pooler 6543, mot de passe |
+| `DuplicatePreparedStatement` / `_pg3_0` | Pooler 6543 + code récent (`prepare_threshold=None` dans `velora_db/connection.py`) |
 | `relation does not exist` | `postgres_schema.sql` |
 | Retour SQLite | Retirer `DATABASE_URL` |
 

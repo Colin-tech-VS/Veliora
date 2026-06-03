@@ -297,6 +297,23 @@ def _resolve_ipv4_hostaddr(url: str | None) -> dict[str, str]:
     return {"hostaddr": ipv4}
 
 
+def _postgres_driver_kwargs(url: str | None = None) -> dict:
+    """Kwargs psycopg3 pour Veliora (pool + connexions directes).
+
+    Le pooler Supabase en mode *transaction* (port 6543 / PgBouncer) ne gère pas
+    les prepared statements nommés (_pg3_0, …) réutilisés entre transactions :
+    sans ``prepare_threshold=None`` → DuplicatePreparedStatement.
+    """
+    from psycopg.rows import dict_row
+
+    u = url or database_url() or ""
+    return {
+        "row_factory": dict_row,
+        "prepare_threshold": None,
+        **_resolve_ipv4_hostaddr(u),
+    }
+
+
 class DbCursor:
     """Curseur unifié (fetchone / fetchall / lastrowid / rowcount)."""
 
@@ -387,7 +404,6 @@ def _get_postgres_pool():
     if _pg_pool is not None:
         return _pg_pool
     try:
-        from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
         url = database_url()
@@ -419,16 +435,13 @@ def _get_postgres_pool():
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "10"))
         # File courte : 503 + retry client plutôt que 20 requêtes bloquées.
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "8"))
-        # `hostaddr` injecté pour court-circuiter la résolution DNS IPv6 sur
-        # les hébergeurs sans IPv6 sortant (Scalingo, Heroku, certains conteneurs).
-        ipv4_kwargs = _resolve_ipv4_hostaddr(url)
         _pg_pool = ConnectionPool(
             url,
             min_size=0,
             max_size=pool_max,
             timeout=pool_timeout,
             max_waiting=pool_waiting,
-            kwargs={"row_factory": dict_row, **ipv4_kwargs},
+            kwargs=_postgres_driver_kwargs(url),
             open=True,
         )
         logger.info(
@@ -473,13 +486,11 @@ except (AttributeError, ValueError):  # plateformes sans fork (Windows)
 
 def _postgres_connection() -> DbConnection:
     import psycopg
-    from psycopg.rows import dict_row
 
     url = database_url()
     if not url:
         raise RuntimeError("DATABASE_URL manquant pour Supabase")
-    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
-    raw = psycopg.connect(url, row_factory=dict_row, autocommit=False, **ipv4_kwargs)
+    raw = psycopg.connect(url, autocommit=False, **_postgres_driver_kwargs(url))
     return DbConnection(raw, postgres=True)
 
 
@@ -669,12 +680,10 @@ def init_postgres_schema() -> None:
     schema_path = Path(__file__).resolve().parent / "postgres_schema.sql"
     sql = schema_path.read_text(encoding="utf-8")
     import psycopg
-    from psycopg.rows import dict_row
 
     url = database_url()
     statements = _split_sql_script(sql)
-    ipv4_kwargs = _resolve_ipv4_hostaddr(url)
-    with psycopg.connect(url, row_factory=dict_row, **ipv4_kwargs) as conn:
+    with psycopg.connect(url, **_postgres_driver_kwargs(url)) as conn:
         with conn.cursor() as cur:
             for stmt in statements:
                 cur.execute(stmt)
