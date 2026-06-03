@@ -1,19 +1,28 @@
-"""Qualité d'adresse crawl — rue réelle vs libellé approximatif obligatoire."""
+"""Qualité d'adresse — le champ `address` ne contient que des voies (jamais ville/CP seuls)."""
 
 from __future__ import annotations
 
+import logging
 import re
 
 from crawler.hub_detection import is_hub_listing_address
 
+logger = logging.getLogger(__name__)
+
 APPROX_MARKER = "(approx.)"
+_MIN_STREET_CANDIDATE_SCORE = 35
 
 _STREET_IN_ADDRESS_RE = re.compile(
-    r"\b\d{1,4}\s+(?:rue|avenue|av\.?|bd|boulevard|chemin|impasse|route|allée|place|cours|quai)\b",
+    r"\b\d{1,4}\s+(?:rue|avenue|av\.?|bd|boulevard|chemin|impasse|route|allée|place|cours|quai|allées|sentier|passage|square|villa|lotissement)\b",
     re.IGNORECASE,
 )
 _CITY_ONLY_PAREN_RE = re.compile(r"^[A-Za-zÀ-ÿ\s\-']+\s*\(\d{5}\)\s*$")
 _LEADING_STREET_NUM_RE = re.compile(r"^\d{1,4}\s*[,]?\s*\S")
+_STREET_NAME_RE = re.compile(
+    r"(?:^|\b)\d{1,4}\s+\S|"
+    r"(?:^|\b)(?:rue|avenue|boulevard|chemin|impasse|route|allée|place|cours|quai|sentier|passage)\b",
+    re.IGNORECASE,
+)
 
 
 def is_city_only_address(
@@ -31,11 +40,13 @@ def is_city_only_address(
         return False
     if _LEADING_STREET_NUM_RE.match(a) and "," in a:
         return False
+    if _STREET_NAME_RE.search(a) and not re.match(rf"^{re.escape((city or '').strip())}\b", a, re.I):
+        return False
     c = (city or "").strip()
     pc = (postcode or "").strip()
     if c and re.match(rf"^{re.escape(c)}\b", a, re.I):
         return True
-    if pc and pc in a:
+    if pc and pc in a and len(a) < 24:
         return True
     if _CITY_ONLY_PAREN_RE.match(a):
         return True
@@ -52,6 +63,43 @@ def is_street_level_address(
     if not _address_ok(address):
         return False
     return not is_city_only_address(address, city, postcode)
+
+
+def has_approximate_address_marker(address: str | None) -> bool:
+    return APPROX_MARKER in (address or "").lower()
+
+
+def extract_street_from_ban_label(
+    label: str | None,
+    city: str | None = None,
+    postcode: str | None = None,
+) -> str | None:
+    """Extrait une voie depuis un label BAN complet (« 8 rue … 56100 Lorient »)."""
+    raw = (label or "").strip()
+    if not raw or is_hub_listing_address(raw):
+        return None
+    out = raw
+    pc = (postcode or "").strip()
+    ct = (city or "").strip()
+    if pc:
+        out = re.sub(rf"\s*{re.escape(pc)}\s*", " ", out, flags=re.I)
+    if ct:
+        out = re.sub(rf",?\s*{re.escape(ct)}\s*$", "", out, flags=re.I)
+    out = re.sub(r"\s+", " ", out).strip(" ,")
+    if not out or is_city_only_address(out, ct, pc):
+        return None
+    if is_street_level_address(out, ct, pc):
+        return out
+    return None
+
+
+def mark_approximate_street(address: str, *, high_confidence: bool = False) -> str:
+    a = (address or "").strip()
+    if not a:
+        return a
+    if high_confidence or has_approximate_address_marker(a):
+        return a
+    return f"{a} {APPROX_MARKER}"
 
 
 def pick_best_address(
@@ -75,7 +123,6 @@ def pick_best_address(
     if f_ok and not e_ok:
         return f if is_street_level_address(f, fresh_city, fresh_postcode) else None
     if e_ok and not f_ok:
-        # Recrawl sans nouvelle rue : effacer l'ancien placeholder ville en base.
         return e if is_street_level_address(e, existing_city, existing_postcode) else None
     f_street = is_street_level_address(f, fresh_city, fresh_postcode)
     e_street = is_street_level_address(e, existing_city, existing_postcode)
@@ -85,103 +132,110 @@ def pick_best_address(
         return e
     if f_street and e_street:
         return f if len(f) >= len(e) else e
-    # Les deux sont ville-only : ne pas conserver « Ville (CP) » dans address
-    if is_city_only_address(f, fresh_city, fresh_postcode) and is_city_only_address(
-        e, existing_city, existing_postcode
-    ):
-        return None
-    if f and is_street_level_address(f, fresh_city, fresh_postcode):
-        return f
-    if e and is_street_level_address(e, existing_city, existing_postcode):
-        return e
     return None
 
 
-def format_approximate_address_label(
-    city: str | None,
-    postcode: str | None,
-    *,
-    reverse_label: str | None = None,
-) -> str | None:
-    """Libellé minimal pour carte / CRM quand la voie n'est pas connue.
-
-    Priorité : libellé BAN inversé (rue quartier) > « Ville (CP) (approx.) ».
-    """
-    rev = (reverse_label or "").strip()
-    if rev and not is_hub_listing_address(rev):
-        base = rev if APPROX_MARKER in rev.lower() else f"{rev} {APPROX_MARKER}"
-        return base.strip()
-    ct = (city or "").strip()
-    pc = (postcode or "").strip()
-    if ct and pc:
-        return f"{ct} ({pc}) {APPROX_MARKER}"
-    if ct:
-        return f"{ct} {APPROX_MARKER}"
-    if pc:
-        return f"{pc} {APPROX_MARKER}"
-    return None
-
-
-def has_approximate_address_marker(address: str | None) -> bool:
-    return APPROX_MARKER in (address or "").lower()
-
-
-def address_needs_approximate_fill(
-    address: str | None,
+def street_from_resolution(
+    resolution: dict,
     city: str | None = None,
     postcode: str | None = None,
-) -> bool:
-    """True si on doit poser ou compléter un libellé (approx.)."""
-    from crawler.validation import _address_ok
+) -> str | None:
+    if not resolution or not resolution.get("ok"):
+        return None
+    probable = (resolution.get("adresse_probable") or "").strip()
+    score = int(resolution.get("score_confiance") or 0)
+    if probable and is_street_level_address(probable, city, postcode):
+        return mark_approximate_street(probable, high_confidence=score >= 70)
+    best_addr = None
+    best_score = 0
+    for c in resolution.get("candidats") or []:
+        addr = (c.get("adresse") or "").strip()
+        sc = int(c.get("score") or 0)
+        if sc < _MIN_STREET_CANDIDATE_SCORE:
+            continue
+        if addr and is_street_level_address(addr, city, postcode) and sc > best_score:
+            best_addr = addr
+            best_score = sc
+    if best_addr:
+        return mark_approximate_street(best_addr, high_confidence=best_score >= 70)
+    return None
 
-    city = city if city is not None else None
-    postcode = postcode if postcode is not None else None
-    a = (address or "").strip()
-    if not (city or "").strip() and not (postcode or "").strip():
-        return False
-    if not _address_ok(a):
-        return True
-    if has_approximate_address_marker(a):
-        return False
-    if is_street_level_address(a, city, postcode):
-        return False
-    return is_city_only_address(a, city, postcode)
+
+def _street_from_ban_geocode(lead) -> str | None:
+    city = getattr(lead, "city", None)
+    postcode = getattr(lead, "postcode", None)
+    lat = getattr(lead, "latitude", None)
+    lng = getattr(lead, "longitude", None)
+
+    try:
+        from crm.maps.service import _reverse_geocode_ban, geocode_query
+
+        if lat is not None and lng is not None:
+            label = _reverse_geocode_ban(float(lat), float(lng))
+            street = extract_street_from_ban_label(label, city, postcode)
+            if street:
+                return mark_approximate_street(street)
+        if city or postcode:
+            q = ", ".join(p for p in ((postcode or "").strip(), (city or "").strip()) if p)
+            coords = geocode_query(q)
+            if coords:
+                label = _reverse_geocode_ban(coords[0], coords[1])
+                street = extract_street_from_ban_label(label, city, postcode)
+                if street:
+                    return mark_approximate_street(street)
+    except Exception as exc:
+        logger.debug("BAN street infer: %s", str(exc)[:120])
+    return None
 
 
-def ensure_minimum_approximate_address(lead, *, reverse_label: str | None = None) -> bool:
-    """Garantit une adresse en base : rue réelle ou libellé approximatif (ville/CP)."""
+def infer_street_address_from_collected_data(lead, *, run_full_match: bool = True) -> str | None:
+    """Analyse DPE/BAN/collecte — jamais « Ville (CP) » dans le résultat."""
     city = getattr(lead, "city", None)
     postcode = getattr(lead, "postcode", None)
     addr = getattr(lead, "address", None)
 
-    if not address_needs_approximate_fill(addr, city, postcode):
-        return False
+    if is_street_level_address(addr, city, postcode):
+        return (addr or "").strip()
 
-    label = format_approximate_address_label(city, postcode, reverse_label=reverse_label)
-    if not label:
-        return False
-    lead.address = label
-    return True
+    if run_full_match:
+        try:
+            from crawler.address_match.resolver import resolve_address_for_lead
+
+            res = resolve_address_for_lead(lead)
+            street = street_from_resolution(res, city, postcode)
+            if street:
+                return street
+        except Exception as exc:
+            logger.debug("address match infer: %s", str(exc)[:120])
+
+    return _street_from_ban_geocode(lead)
+
+
+def ensure_street_address_from_data(lead, *, run_full_match: bool = True) -> bool:
+    """Pose une voie réelle ou laisse `address` vide (ville/CP restent sur city/postcode)."""
+    street = infer_street_address_from_collected_data(lead, run_full_match=run_full_match)
+    if street:
+        lead.address = street
+        return True
+    lead.address = None
+    return False
 
 
 def scrub_lead_address_for_storage(lead) -> None:
-    """Retire titre/hub ; ville seule → libellé (approx.), pas d'adresse vide."""
+    """Retire titres, hubs et libellés ville-seuls du champ `address`."""
     from crawler.validation import _LISTING_TITLE_ADDR_RE
 
     addr = (getattr(lead, "address", None) or "").strip()
     if not addr:
-        ensure_minimum_approximate_address(lead)
         return
     if _LISTING_TITLE_ADDR_RE.search(addr):
         lead.address = None
-        ensure_minimum_approximate_address(lead)
         return
     try:
         from crawler.storage import _looks_like_listing_title
 
         if _looks_like_listing_title(addr):
             lead.address = None
-            ensure_minimum_approximate_address(lead)
             return
     except Exception:
         pass
@@ -190,10 +244,4 @@ def scrub_lead_address_for_storage(lead) -> None:
         getattr(lead, "city", None),
         getattr(lead, "postcode", None),
     ):
-        if not has_approximate_address_marker(addr):
-            approx = format_approximate_address_label(
-                getattr(lead, "city", None),
-                getattr(lead, "postcode", None),
-            )
-            lead.address = approx
-        return
+        lead.address = None

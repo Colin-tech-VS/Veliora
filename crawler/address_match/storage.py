@@ -156,22 +156,7 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
     """
     if not resolution or not resolution.get("ok"):
         return False
-    probable = (resolution.get("adresse_probable") or "").strip()
-    if not probable:
-        return False
-
-    # Coordonnées du candidat correspondant à l'adresse probable (le mieux classé).
     cands = resolution.get("candidats") or []
-    top = next((c for c in cands if (c.get("adresse") or "") == probable), None)
-    if top is None and cands:
-        top = cands[0]
-    lat = lng = None
-    if top and top.get("latitude") is not None and top.get("longitude") is not None:
-        try:
-            lat = float(top["latitude"])
-            lng = float(top["longitude"])
-        except (TypeError, ValueError):
-            lat = lng = None
 
     at = _now()
     try:
@@ -196,21 +181,43 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
                 cur_lat = row[3] if len(row) > 3 else None
                 cur_lng = row[4] if len(row) > 4 else None
 
+            from crawler.address_quality import street_from_resolution
+
+            street_addr = street_from_resolution(resolution, row_city, row_pc)
+            if not street_addr:
+                return False
+
+            base_street = street_addr.split("(approx.)")[0].strip()
+            top = next(
+                (c for c in cands if (c.get("adresse") or "").strip() == base_street),
+                None,
+            )
+            if top is None and cands:
+                top = cands[0]
+            lat = lng = None
+            if top and top.get("latitude") is not None and top.get("longitude") is not None:
+                try:
+                    lat = float(top["latitude"])
+                    lng = float(top["longitude"])
+                except (TypeError, ValueError):
+                    lat = lng = None
+
             sets: list[str] = []
             params: list = []
             addr_l = cur_addr.strip().lower()
             from crawler.address_quality import is_city_only_address
 
-            from crawler.address_quality import has_approximate_address_marker
+            from crawler.address_quality import has_approximate_address_marker, is_street_level_address
 
             addr_is_replaceable = (
                 addr_l in _ADDR_BAD
                 or has_approximate_address_marker(cur_addr)
                 or is_city_only_address(cur_addr, row_city, row_pc)
+                or not is_street_level_address(cur_addr, row_city, row_pc)
             )
             if addr_is_replaceable:
                 sets.append("address = ?")
-                params.append(probable)
+                params.append(street_addr)
             if lat is not None and lng is not None and (cur_lat is None or cur_lng is None):
                 sets.append("latitude = ?")
                 sets.append("longitude = ?")

@@ -376,21 +376,21 @@ def _save_lead_coords(lead_id: int, agency_id: str, lat: float, lng: float) -> N
         conn.commit()
 
 
-def _approx_address_label(postcode: str | None, city: str | None) -> str:
-    from crawler.address_quality import format_approximate_address_label
-
-    return format_approximate_address_label(city, postcode) or ""
-
-
-def _save_lead_approx_address(
+def _save_lead_street_address(
     lead_id: int,
     agency_id: str,
-    approx_address: str,
+    street_address: str,
 ) -> None:
-    if not approx_address:
-        return
-    from crawler.address_quality import has_approximate_address_marker
+    """Persiste une voie (BAN) — jamais ville/CP seuls dans `leads.address`."""
+    from crawler.address_quality import (
+        has_approximate_address_marker,
+        is_city_only_address,
+        is_street_level_address,
+    )
 
+    street = (street_address or "").strip()
+    if not street:
+        return
     with get_connection() as conn:
         row = conn.execute(
             "SELECT address, city, postcode FROM leads WHERE id = ? AND agency_id = ?",
@@ -398,16 +398,14 @@ def _save_lead_approx_address(
         ).fetchone()
         if not row:
             return
-        cur = (row["address"] or "").strip()
-        if cur and has_approximate_address_marker(cur):
+        city = row["city"]
+        pc = row["postcode"]
+        if not is_street_level_address(street, city, pc):
             return
-        from crawler.address_quality import address_needs_approximate_fill
-
-        if not address_needs_approximate_fill(
-            cur,
-            row["city"],
-            row["postcode"],
-        ):
+        cur = (row["address"] or "").strip()
+        if cur and is_street_level_address(cur, city, pc) and not has_approximate_address_marker(cur):
+            return
+        if cur and not is_city_only_address(cur, city, pc) and not has_approximate_address_marker(cur):
             return
         conn.execute(
             """
@@ -415,21 +413,24 @@ def _save_lead_approx_address(
                SET address = ?, updated_at = ?
              WHERE id = ? AND agency_id = ?
             """,
-            (approx_address, _now(), lead_id, agency_id),
+            (street, _now(), lead_id, agency_id),
         )
         conn.commit()
 
 
-def _best_approx_address(
+def _best_street_from_coords(
     lat: float,
     lng: float,
     postcode: str | None,
     city: str | None,
-) -> str:
-    reverse_label = _reverse_geocode_ban(lat, lng)
-    if reverse_label:
-        return f"{reverse_label} (approx.)"
-    return _approx_address_label(postcode, city)
+) -> str | None:
+    from crawler.address_quality import extract_street_from_ban_label, mark_approximate_street
+
+    label = _reverse_geocode_ban(lat, lng)
+    street = extract_street_from_ban_label(label, city, postcode)
+    if street:
+        return mark_approximate_street(street)
+    return None
 
 
 def build_agency_map_point(agency_id: str) -> dict | None:
@@ -527,9 +528,9 @@ def build_map_payload(agency_id: str) -> dict:
             needs_background_geocode.append((int(row["id"]), line))
             pending += 1
             continue
-        approx_address = _best_approx_address(coords[0], coords[1], postcode, city)
-        if (not address or str(address).strip() in _ADDRESS_BAD) and approx_address:
-            _save_lead_approx_address(int(row["id"]), agency_id, approx_address)
+        street = _best_street_from_coords(coords[0], coords[1], postcode, city)
+        if (not address or str(address).strip() in _ADDRESS_BAD) and street:
+            _save_lead_street_address(int(row["id"]), agency_id, street)
 
         from crawler.hub_detection import parse_property_label
 
@@ -637,8 +638,9 @@ def schedule_map_geocode_batch(
                     coords = geocode_query(line)
                     if coords:
                         _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
-                        approx = _best_approx_address(coords[0], coords[1], None, None)
-                        _save_lead_approx_address(lead_id, agency_id, approx)
+                        street = _best_street_from_coords(coords[0], coords[1], None, None)
+                        if street:
+                            _save_lead_street_address(lead_id, agency_id, street)
                     # Throttle léger : BAN (FR) n'a pas la limite 1 req/s de Nominatim.
                     time.sleep(0.12)
                 except Exception:
@@ -712,8 +714,9 @@ def schedule_lead_geocode(
             coords = geocode_query(line)
             if coords:
                 _save_lead_coords(lead_id, agency_id, coords[0], coords[1])
-                approx = _best_approx_address(coords[0], coords[1], postcode, city)
-                _save_lead_approx_address(lead_id, agency_id, approx)
+                street = _best_street_from_coords(coords[0], coords[1], postcode, city)
+                if street:
+                    _save_lead_street_address(lead_id, agency_id, street)
         except Exception:
             logger.exception("schedule_lead_geocode %s", lead_id)
 

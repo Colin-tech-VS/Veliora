@@ -1582,11 +1582,12 @@ class CrawlerEngine:
             except Exception:
                 pass
 
-        from crawler.address_quality import ensure_minimum_approximate_address
-
         if lead.address and not _address_ok(lead.address):
             lead.address = None
-        ensure_minimum_approximate_address(lead)
+        else:
+            from crawler.address_quality import is_city_only_address, scrub_lead_address_for_storage
+
+            scrub_lead_address_for_storage(lead)
 
     def _process_listing(
         self,

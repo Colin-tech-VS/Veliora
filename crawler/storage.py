@@ -1769,9 +1769,11 @@ def save_lead(
         getattr(lead, "city", None),
         getattr(lead, "postcode", None),
     )
-    from crawler.address_quality import ensure_minimum_approximate_address
+    from crawler.address_quality import ensure_street_address_from_data
+    from crawler.config import ADDRESS_MATCH_DURING_CRAWL
 
-    ensure_minimum_approximate_address(lead)
+    # Voie via DPE/BAN (sync si pas de file parallèle, sinon la file post-crawl).
+    ensure_street_address_from_data(lead, run_full_match=not ADDRESS_MATCH_DURING_CRAWL)
     stored_pub = existing_row.get("published_at") if existing_row else None
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
