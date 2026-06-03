@@ -159,6 +159,15 @@ def city_search_url_candidates(
     if not city:
         return [search_url] if search_url else []
 
+    from crawler.immobilier_catalog import (
+        catalog_city_search_candidates,
+        resolve_catalog_id,
+    )
+
+    cat_id = resolve_catalog_id(source_id)
+    if cat_id:
+        return catalog_city_search_candidates(cat_id, search_url, city, postcode)
+
     portal = resolve_base_portal_id(source_id) or (source_id or "").lower()
     slug = _slug(city)
     path_slug = _city_path_slug(city, postcode)
@@ -389,12 +398,28 @@ def build_city_seed_urls(
     for u in city_search_url_candidates(search_url, source_id, city)[:3]:
         _add(u)
 
+    from crawler.immobilier_catalog import resolve_catalog_id
+
     portal = resolve_base_portal_id(source_id)
-    if portal:
+    if portal or resolve_catalog_id(source_id):
         return out
 
-    # 2) Site custom : ne pas ouvrir des dizaines de /acheter-ville (404 → pages blanches Chrome)
-    return out
+    # Site perso : chemins ville limités (évite rafales de 404)
+    parsed = urlparse(base_url or search_url)
+    if parsed.scheme and parsed.netloc:
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        ps = _city_path_slug(city)
+        sl = _slug(city)
+        for tpl in (
+            f"/annonces/{sl}",
+            f"/vente/{sl}",
+            f"/immobilier/{ps}",
+            f"/{ps}",
+        ):
+            u = f"{origin}{tpl}"
+            if u not in out:
+                out.append(u)
+    return out[:8]
 
 
 def preview_search_urls_for_sources(

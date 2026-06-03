@@ -50,7 +50,7 @@ def ensure_estimate_schema() -> bool:
         return False
 
 
-def save_lead_estimate(lead_id: int, agency_id: str, estimate: dict) -> str | None:
+def save_lead_estimate(lead_id: int, agency_id: str | None, estimate: dict) -> str | None:
     """Enregistre/écrase l'estimation du lead. Renvoie l'horodatage ISO, ou None."""
     if not estimate or not estimate.get("ok"):
         return None
@@ -95,7 +95,11 @@ def get_lead_estimate(lead_id: int, agency_id: str) -> tuple[dict | None, str | 
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT payload, updated_at FROM lead_estimates WHERE lead_id = ? AND agency_id = ?",
+                """SELECT payload, updated_at FROM lead_estimates
+                   WHERE lead_id = ?
+                   AND (agency_id IS NULL OR TRIM(COALESCE(agency_id, '')) = '' OR agency_id = ?)
+                   ORDER BY CASE WHEN agency_id IS NULL OR TRIM(COALESCE(agency_id, '')) = '' THEN 0 ELSE 1 END
+                   LIMIT 1""",
                 (lead_id, agency_id),
             ).fetchone()
     except Exception:
@@ -105,6 +109,31 @@ def get_lead_estimate(lead_id: int, agency_id: str) -> tuple[dict | None, str | 
     payload = row["payload"] if not isinstance(row, (tuple, list)) else row[0]
     at = row["updated_at"] if not isinstance(row, (tuple, list)) else row[1]
     return _parse(payload), at
+
+
+def get_estimates_for_lead_ids(lead_ids: list[int]) -> dict[int, tuple[dict | None, str | None]]:
+    """Estimations du pool partagé pour une liste de fiches."""
+    if not lead_ids or not ensure_estimate_schema():
+        return {}
+    out: dict[int, tuple[dict | None, str | None]] = {}
+    placeholders = ",".join("?" * len(lead_ids))
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                f"""SELECT lead_id, payload, updated_at FROM lead_estimates
+                   WHERE lead_id IN ({placeholders})
+                   AND (agency_id IS NULL OR TRIM(COALESCE(agency_id, '')) = '')""",
+                tuple(int(i) for i in lead_ids),
+            ).fetchall()
+    except Exception:
+        return {}
+    for r in rows:
+        if isinstance(r, (tuple, list)):
+            lid, payload, at = r[0], r[1], r[2]
+        else:
+            lid, payload, at = r["lead_id"], r["payload"], r["updated_at"]
+        out[int(lid)] = (_parse(payload), at)
+    return out
 
 
 def get_estimates_for_agency(agency_id: str) -> dict[int, tuple[dict | None, str | None]]:

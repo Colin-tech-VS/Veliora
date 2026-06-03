@@ -1,0 +1,170 @@
+/* Portail annonces vitrine */
+
+.v-annonces-main {
+  max-width: var(--v-max);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 2.5rem) clamp(1rem, 4vw, 2rem) 4rem;
+}
+
+.v-annonces-hero {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.v-annonces-hero h1 {
+  font-family: var(--v-serif);
+  font-size: clamp(1.85rem, 4vw, 2.5rem);
+  color: var(--v-navy);
+  margin: 0 0 0.75rem;
+}
+
+.v-annonces-lead {
+  max-width: 40rem;
+  margin: 0 auto 1.25rem;
+  color: var(--v-ink-soft, #4a5f6d);
+}
+
+.v-annonces-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.v-annonces-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--v-white);
+  border: 1px solid var(--v-border);
+  border-radius: 12px;
+}
+
+.v-annonces-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.v-annonces-filter input,
+.v-annonces-filter select {
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--v-border);
+  border-radius: 8px;
+}
+
+.v-ann-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1.25rem;
+}
+
+.v-ann-card {
+  background: var(--v-white);
+  border: 1px solid var(--v-border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(21, 42, 54, 0.06);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.v-ann-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(21, 42, 54, 0.1);
+}
+
+.v-ann-card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.v-ann-card-img img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+}
+
+.v-ann-card-placeholder {
+  height: 160px;
+  background: linear-gradient(135deg, var(--v-cream), #dde5ea);
+}
+
+.v-ann-card-body {
+  padding: 1rem;
+}
+
+.v-ann-card-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--v-brass);
+}
+
+.v-ann-card h3 {
+  font-size: 1rem;
+  margin: 0.35rem 0;
+  color: var(--v-navy);
+}
+
+.v-ann-card-price {
+  font-weight: 700;
+  color: var(--v-navy);
+  margin: 0.25rem 0;
+}
+
+.v-ann-card-meta,
+.v-ann-card-loc {
+  font-size: 0.82rem;
+  color: var(--v-muted);
+  margin: 0;
+}
+
+.v-annonces-publish {
+  margin-top: 3rem;
+  padding: 1.5rem;
+  background: var(--v-white);
+  border: 1px solid var(--v-border);
+  border-radius: 16px;
+}
+
+.v-annonces-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.v-annonces-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.v-annonces-form-grid input,
+.v-annonces-form-grid select,
+.v-annonces-form-grid textarea {
+  font: inherit;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--v-border);
+  border-radius: 8px;
+}
+
+.v-annonces-wide {
+  grid-column: 1 / -1;
+}
+
+.v-annonces-loading,
+.v-annonces-empty,
+.v-annonces-error {
+  text-align: center;
+  color: var(--v-muted);
+  padding: 2rem;
+}

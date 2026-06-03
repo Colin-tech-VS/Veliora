@@ -201,9 +201,11 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
             addr_l = cur_addr.strip().lower()
             from crawler.address_quality import is_city_only_address
 
+            from crawler.address_quality import has_approximate_address_marker
+
             addr_is_replaceable = (
                 addr_l in _ADDR_BAD
-                or "(approx." in addr_l
+                or has_approximate_address_marker(cur_addr)
                 or is_city_only_address(cur_addr, row_city, row_pc)
             )
             if addr_is_replaceable:

@@ -98,6 +98,10 @@ const viewTitles = {
     title: "Estimateur de prix",
     subtitle: "Fourchette indicative DVF (ventes réelles) + critères du bien",
   },
+  portail: {
+    title: "Portail annonces",
+    subtitle: "Publiez vos biens sur veliora.fr/annonces",
+  },
   mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
   clients: {
     title: "Acheteurs / Locataires",
@@ -220,7 +224,6 @@ function leadIsFromEstimation(lead) {
   if (!lead) return false;
   const src = (lead.source || "").toLowerCase();
   return (
-    src === "estimation" ||
     src.includes("estimation") ||
     String(lead.source_id || "").toLowerCase().endsWith(":estimation") ||
     String(lead.source_url || "").startsWith("estimation://")
@@ -948,7 +951,7 @@ function countEnabledCrawlSources(list = SOURCES) {
   ).length;
 }
 
-/** Portails recommandés — seuls inclus dans « Crawler tout ». */
+/** Portails + sites catalogue (_net_*) — inclus dans « Crawler tout ». */
 function countRecommendedCrawlSources(list = SOURCES) {
   return (list || []).filter(
     (s) =>
@@ -5089,6 +5092,9 @@ function renderView(view = state.currentView) {
     case "estimateur":
       renderEstimateurView();
       break;
+    case "portail":
+      if (typeof renderPortalView === "function") renderPortalView();
+      break;
     default:
       break;
   }
@@ -6277,6 +6283,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
             ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
             ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Bientôt disponible</span>' : ""}
             ${s.is_default_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Recommandé</span>' : ""}
+            ${s.is_catalog && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Réseau / annonces</span>' : ""}
             ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur veille</span>' : ""}
             ${saved ? '<span class="source-status-badge source-status-badge--ok">Lien enregistré</span>' : ""}
           </div>
@@ -6287,7 +6294,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
             <span class="toggle-slider"></span>
           </label>
           ${
-            s.is_default_portal
+            s.is_default_portal || s.is_catalog
               ? ""
               : `<button type="button" class="btn btn-ghost source-delete-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" title="Supprimer la source">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/></svg>
@@ -6911,27 +6918,26 @@ function renderEstimatorNewLeadFormHtml(prefix = "tab-est-new") {
     <form id="${prefix}-form" class="drawer-estimator-form drawer-estimator-form--new" onsubmit="return false">
       <div class="drawer-estimator-owner-title">Le bien</div>
       ${estimatorCriteriaGridHtml(blank, prefix, null)}
-      <details class="drawer-estimator-owner-details">
-        <summary>+ Ajouter le propriétaire <span class="drawer-estimator-optional">(optionnel)</span></summary>
-        <div class="drawer-estimator-grid">
-          <label class="drawer-estimator-field">
-            <span>Prénom</span>
-            <input type="text" id="${prefix}-first_name" placeholder="Prénom">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Nom</span>
-            <input type="text" id="${prefix}-last_name" placeholder="Nom">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Téléphone</span>
-            <input type="tel" id="${prefix}-phone" placeholder="06…">
-          </label>
-          <label class="drawer-estimator-field">
-            <span>Email</span>
-            <input type="email" id="${prefix}-email" placeholder="email@…">
-          </label>
-        </div>
-      </details>
+      <div class="drawer-estimator-owner-title">Propriétaire <span class="drawer-estimator-optional">(obligatoire)</span></div>
+      <div class="drawer-estimator-grid">
+        <label class="drawer-estimator-field">
+          <span>Prénom</span>
+          <input type="text" id="${prefix}-first_name" required minlength="2" placeholder="Prénom">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Nom</span>
+          <input type="text" id="${prefix}-last_name" required minlength="2" placeholder="Nom">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Téléphone</span>
+          <input type="tel" id="${prefix}-phone" placeholder="06…">
+        </label>
+        <label class="drawer-estimator-field">
+          <span>Email</span>
+          <input type="email" id="${prefix}-email" placeholder="email@…">
+        </label>
+      </div>
+      <p class="form-hint">Téléphone ou email requis pour enregistrer le prospect.</p>
       <button type="button" class="btn btn-primary" id="${prefix}-create-btn">Créer le prospect &amp; estimer</button>
     </form>
     <div id="${prefix}-result" class="drawer-estimator-result-wrap"></div>`;
@@ -6970,6 +6976,14 @@ function resolveEstimatorLead() {
   return vente[0];
 }
 
+function vitrineEstimatorLinkHtml() {
+  const origin = window.location.origin || "";
+  const url = `${origin}/estimation`;
+  const cities = (state.settings?.target_cities || []).filter(Boolean);
+  const terr = cities.length ? escapeHtml(cities.join(", ")) : "vos villes (Territoire)";
+  return `<p class="form-hint estimateur-vitrine-link">Lien public estimateur : <a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a> — les demandes sont en base partagée ; vous voyez celles de <strong>${terr}</strong>.</p>`;
+}
+
 function renderEstimateurView() {
   const root = document.getElementById("estimateur-root");
   if (!root) return;
@@ -6991,7 +7005,8 @@ function renderEstimateurView() {
           ${intro}
           <div class="estimateur-newlead-note">
             <strong>Nouveau bien à estimer</strong>
-            <p class="form-hint">Renseignez juste le bien : il sera enregistré comme prospect avec le badge <span class="origin-badge origin-badge-est">📋 Estimation</span>. Le propriétaire reste optionnel.</p>
+            <p class="form-hint">Propriétaire + bien enregistrés comme prospect <span class="origin-badge origin-badge-est">📋 Estimation</span>.</p>
+            ${vitrineEstimatorLinkHtml()}
           </div>
           ${vente.length ? `<button type="button" class="btn btn-ghost btn-sm" id="tab-est-back-btn">← Estimer un prospect existant</button>` : ""}
         </aside>
@@ -7119,6 +7134,18 @@ async function createEstimatorLead(prefix = "tab-est-new") {
     return;
   }
   const val = (id) => form.querySelector(`#${prefix}-${id}`)?.value?.trim() || "";
+  const first = val("first_name");
+  const last = val("last_name");
+  const phone = val("phone");
+  const email = val("email");
+  if (first.length < 2 || last.length < 2) {
+    showToast("Prénom et nom du propriétaire requis", "warning");
+    return;
+  }
+  if (!phone && !email) {
+    showToast("Téléphone ou email du propriétaire requis", "warning");
+    return;
+  }
   const payload = {
     first_name: val("first_name"),
     last_name: val("last_name"),

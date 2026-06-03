@@ -377,10 +377,9 @@ def _save_lead_coords(lead_id: int, agency_id: str, lat: float, lng: float) -> N
 
 
 def _approx_address_label(postcode: str | None, city: str | None) -> str:
-    pc = (postcode or "").strip()
-    ct = (city or "").strip()
-    tail = " ".join(p for p in (pc, ct) if p)
-    return f"{tail} (approx.)" if tail else ""
+    from crawler.address_quality import format_approximate_address_label
+
+    return format_approximate_address_label(city, postcode) or ""
 
 
 def _save_lead_approx_address(
@@ -390,16 +389,31 @@ def _save_lead_approx_address(
 ) -> None:
     if not approx_address:
         return
+    from crawler.address_quality import has_approximate_address_marker
+
     with get_connection() as conn:
+        row = conn.execute(
+            "SELECT address, city, postcode FROM leads WHERE id = ? AND agency_id = ?",
+            (lead_id, agency_id),
+        ).fetchone()
+        if not row:
+            return
+        cur = (row["address"] or "").strip()
+        if cur and has_approximate_address_marker(cur):
+            return
+        from crawler.address_quality import address_needs_approximate_fill
+
+        if not address_needs_approximate_fill(
+            cur,
+            row["city"],
+            row["postcode"],
+        ):
+            return
         conn.execute(
             """
             UPDATE leads
                SET address = ?, updated_at = ?
              WHERE id = ? AND agency_id = ?
-               AND (
-                 address IS NULL OR TRIM(address) = ''
-                 OR LOWER(TRIM(address)) IN ('—', '-', 'n/a', 'non renseigné')
-               )
             """,
             (approx_address, _now(), lead_id, agency_id),
         )

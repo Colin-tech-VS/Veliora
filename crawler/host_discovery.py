@@ -12,6 +12,16 @@ LISTING_CDN_HOST_MARKERS = (
     "hektor.io",
 )
 
+# Thèmes WordPress immo courants (RealHomes, Houzez, WpResidence…)
+WORDPRESS_IMMO_PATTERNS = [
+    r"/property/[^/\"'\s]+",
+    r"/properties/[^/\"'\s]+",
+    r"/listing/[^/\"'\s]+",
+    r"/listings/[^/\"'\s]+",
+    r"/annonce[s]?/[^/\"'\s]+",
+    r"\?post_type=(?:property|immobilier|annonce)",
+]
+
 IMMObilIER_FRANCE_PATTERNS = [
     r"staticlbi\.com/[^\"'\s]+",
     r"[a-z0-9-]+\.staticlbi\.com/[^\"'\s]+",
@@ -67,6 +77,12 @@ def extra_patterns_for_host(base_url: str, search_url: str = "") -> list[str]:
             r"/ref[_-]?\d{5,}",
         ]
     )
+    if any(
+        x in host
+        for x in ("wordpress", "wp-content", "immobilier", "agence", "immo")
+    ):
+        patterns.extend(WORDPRESS_IMMO_PATTERNS)
+    patterns.extend(WORDPRESS_IMMO_PATTERNS[:4])
     return list(dict.fromkeys(patterns))
 
 

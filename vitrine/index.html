@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="Veliora — pour agences immobilières : veille portails, Score Mandat™, CRM mandats, comparatif DVF. Priorités dans le CRM. 500 € HT/mois.">
+  <meta name="description" content="Veliora — CRM mandats pour agences. Propriétaires : estimation gratuite DVF (ventes réelles). Publication d'annonces réservée aux agences via le CRM.">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://veliora.fr/">
   <meta property="og:type" content="website">
@@ -15,9 +15,9 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#152a36">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
-  <title>Veliora — Radar mandats pour agences immobilières</title>
+  <title>Veliora — CRM mandats pour agences · Estimation gratuite vendeurs</title>
   <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=2">
-  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=38">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=44">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -52,38 +52,39 @@
       <button type="button" class="v-nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
-      <nav class="v-nav-links" id="nav-links">
-        <a href="#agences">Agences</a>
-        <a href="#produit">Produit</a>
-        <a href="#score-mandat">Score Mandat™</a>
-        <a href="#comment">Mise en route</a>
+      <nav class="v-nav-links" id="nav-links" aria-label="Navigation principale">
+        <a href="/#agences">Agences</a>
+        <a href="/#produit">Produit</a>
         <a href="/offre">Tarifs</a>
-        <a href="#faq">FAQ</a>
-        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion</a>
-        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Essayer Veliora</a>
+        <a href="/estimation" class="v-nav-estimation">Estimation gratuite</a>
+        <a href="/annonces">Catalogue</a>
+        <a href="/#faq">FAQ</a>
+        <span class="v-nav-divider v-nav-divider--end" aria-hidden="true"></span>
+        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion pro</a>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Espace agence</a>
       </nav>
     </div>
   </header>
 
   <main>
-    <!-- Hero -->
+    <!-- Hero agences -->
     <section class="v-hero v-reveal" aria-labelledby="hero-title">
       <div class="v-hero-grid">
         <div class="v-hero-copy">
-          <p class="v-eyebrow">Agences immobilières · Vente & location</p>
+          <p class="v-eyebrow">Agences immobilières · Vente &amp; location</p>
           <h1 id="hero-title">La liste des vendeurs à appeler,<br><em>priorisée dans votre radar.</em></h1>
           <p class="v-lead">
-            Veliora surveille vos portails, classe les opportunités mandat et centralise le suivi dans un seul espace.
-            Vous gagnez du temps sur la veille — vous concentrez vos appels là où un mandat est réaliste.
+            Veliora surveille vos portails, classe les opportunités mandat et centralise le suivi dans un seul CRM.
+            Vous concentrez vos appels là où un mandat est réaliste.
           </p>
-          <p class="v-hero-quote">«&nbsp;Qui appeler en premier, et pourquoi&nbsp;» — score, DVF (vente) et synthèse d’appel sur chaque fiche, visibles dans le CRM.</p>
+          <p class="v-hero-quote">Publication de vos mandats sur le catalogue Veliora — <strong>depuis le CRM uniquement</strong> (onglet Portail annonces).</p>
           <div class="v-hero-price">
             <span class="v-hero-price-num"><span id="home-hero-price-ht">500</span> €</span>
             <span class="v-hero-price-meta">HT / mois / agence · collaborateurs illimités · <a href="/offre">Détail de l’offre</a></span>
           </div>
           <div class="v-hero-actions">
             <a href="/crm/auth?tab=register" class="v-btn v-btn-primary v-btn-lg">Créer mon espace agence</a>
-            <a href="/offre" class="v-btn v-btn-secondary v-btn-lg">Tarifs & inclus</a>
+            <a href="/offre" class="v-btn v-btn-secondary v-btn-lg">Tarifs &amp; inclus</a>
           </div>
           <ul class="v-hero-chips" aria-label="Fonctionnalités clés">
             <li>Leboncoin, PAP, SeLoger…</li>
@@ -95,6 +96,19 @@
           <img src="/vitrine/assets/img/hero-facade.jpg" alt="Façade d'immeuble — le marché immobilier de votre secteur" width="1200" height="800" loading="eager" decoding="async" fetchpriority="high">
           <figcaption>Votre secteur, vos portails, vos priorités d’appel.</figcaption>
         </figure>
+      </div>
+    </section>
+
+    <!-- Propriétaires — estimation seule -->
+    <section class="v-owner-strip v-reveal" id="proprietaires" aria-labelledby="owner-strip-title">
+      <div class="v-owner-strip-inner">
+        <div class="v-owner-strip-copy">
+          <span class="v-label">Propriétaires vendeurs</span>
+          <h2 id="owner-strip-title">Vous vendez votre bien&nbsp;? Une seule démarche gratuite.</h2>
+          <p><strong>Estimation indicative</strong> (données DVF, ventes réelles de votre commune) — sans compte, sans paiement. Les agences de votre secteur peuvent voir votre demande dans leur espace pro.</p>
+          <p class="v-owner-strip-note">La publication d’annonces en ligne n’est pas ouverte aux particuliers : seules les <strong>agences abonnées</strong> publient via le CRM.</p>
+        </div>
+        <a href="/estimation" class="v-btn v-btn-primary v-btn-lg">Estimer mon bien gratuitement</a>
       </div>
     </section>
 
@@ -122,13 +136,13 @@
         <span class="v-label">Pour les agences</span>
         <h2>Conçu pour les directeurs et négociateurs qui cherchent des mandats</h2>
         <p>
-          Indépendants, réseaux ou franchises : Veliora transforme la masse d’annonces en file d’appels utile.
-          Complète Hektor ou Apimo pour la relation client — se concentre sur la <strong>prospection mandat</strong>.
+          Veliora est un <strong>CRM mandats</strong> : veille portails, scoring, pipeline et scripts.
+          Complète Hektor ou Apimo — il se concentre sur la <strong>prospection vendeur</strong>.
         </p>
         <ul class="v-check-list">
           <li>Équipes de 2 à 30 collaborateurs sur un même compte</li>
-          <li>Vente et location · secteurs et villes cibles</li>
-          <li>Données strictement isolées par agence</li>
+          <li><strong>Publiez vos mandats</strong> sur le catalogue public depuis le CRM (onglet Portail annonces)</li>
+          <li>Données isolées par agence · territoire par ville</li>
         </ul>
       </div>
     </section>
@@ -324,6 +338,32 @@
       </div>
     </section>
 
+    <!-- CTA estimation vendeur → LP /estimation -->
+    <section class="v-est-promo v-reveal" id="estimateur" aria-labelledby="estimateur-title">
+      <div class="v-est-promo-wrap">
+        <article class="v-est-promo-card">
+          <div class="v-est-promo-visual" aria-hidden="true">
+            <img src="/vitrine/assets/img/apartment-interior.jpg" alt="" width="560" height="400" loading="lazy" decoding="async">
+            <span class="v-est-promo-badge">Gratuit · 2 min</span>
+          </div>
+          <div class="v-est-promo-body">
+            <span class="v-label">Propriétaires</span>
+            <h2 id="estimateur-title">Estimez la valeur de votre bien</h2>
+            <p class="v-est-promo-lead">Fourchette indicative basée sur les <strong>ventes réelles</strong> (DVF) de votre commune. Sans engagement — votre demande est visible par les agences de votre secteur.</p>
+            <ul class="v-est-promo-points">
+              <li><span class="v-est-promo-check" aria-hidden="true"></span>Données officielles Etalab</li>
+              <li><span class="v-est-promo-check" aria-hidden="true"></span>100 % gratuit &amp; confidentiel</li>
+              <li><span class="v-est-promo-check" aria-hidden="true"></span>Résultat immédiat en ligne</li>
+            </ul>
+            <div class="v-est-promo-actions">
+              <a href="/estimation" class="v-btn v-btn-primary v-btn-lg">Lancer mon estimation</a>
+              <span class="v-est-promo-meta">Formulaire guidé · sliders · DPE &amp; atouts</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <!-- Support -->
     <section class="v-section v-support-block v-reveal" id="support">
       <div class="v-support-grid">
@@ -366,6 +406,14 @@
           <summary>Tarif HT ou TTC ?</summary>
           <p><strong><span id="trial-price-ht">500</span> € HT / mois</strong> par agence. TVA selon votre statut.<span id="trial-line"></span> <a href="/offre">Voir l’offre →</a></p>
         </details>
+        <details>
+          <summary>Je suis propriétaire : puis-je publier une annonce ?</summary>
+          <p>Non. Les particuliers utilisent uniquement l’<a href="/estimation">estimation gratuite</a>. La publication sur le catalogue Veliora est réservée aux <strong>agences connectées</strong> (menu CRM → Portail annonces).</p>
+        </details>
+        <details>
+          <summary>Comment contacter une agence pour vendre ?</summary>
+          <p>Après votre estimation, les agences de votre ville qui utilisent Veliora peuvent consulter votre demande. Vous pouvez aussi consulter le <a href="/annonces">catalogue des annonces publiées par les agences</a>.</p>
+        </details>
       </div>
     </section>
 
@@ -393,6 +441,8 @@
         <a href="#produit">Fonctionnalités</a>
         <a href="#comment">Mise en route</a>
         <a href="/offre">Tarifs</a>
+        <a href="/estimation">Estimation vendeur</a>
+        <a href="/annonces">Catalogue agences</a>
       </div>
       <div>
         <strong>Accès</strong>
@@ -410,7 +460,8 @@
     <p class="v-footer-copy">© 2026 Veliora · Données DVF : DGFiP / Etalab</p>
   </footer>
 
-  <script src="/vitrine/assets/js/vitrine.js?v=32" defer></script>
+  <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.getRegistrations().then((regs) => {

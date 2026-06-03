@@ -11,9 +11,13 @@ timeout /t 2 /nobreak >nul
 echo  Verification : http://localhost:8000/api/health doit afficher api_version 7 et radar_analyze_url true
 echo  Demarrage Flask (app.py)...
 echo.
-echo  Accueil   : http://localhost:8000/
-echo  Connexion : http://localhost:8000/crm/auth
-echo  CRM       : http://localhost:8000/crm
+echo  Accueil     : http://localhost:8000/
+echo  Estimation  : http://localhost:8000/estimation
+echo  Catalogue   : http://localhost:8000/annonces  (lecture seule, agences)
+echo  Connexion   : http://localhost:8000/crm/auth
+echo  CRM         : http://localhost:8000/crm
+echo.
+echo  IMPORTANT : utilisez ces URLs (Flask). Pas Live Server / fichier HTML seul.
 echo  Ctrl+C pour arreter.
 echo.
 python app.py

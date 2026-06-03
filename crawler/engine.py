@@ -466,7 +466,10 @@ class CrawlerEngine:
         if len(sources) > 4:
             names_preview += f" +{len(sources) - 4}"
         extra = f" ({added} site(s) ajouté(s))" if added else ""
-        scope = f"Veille {city}" if city and veille_mode else (f"Crawl {city}" if city else "Crawl portails")
+        if city:
+            scope = f"Veille {city}" if veille_mode else f"Crawl {city}"
+        else:
+            scope = "Veille nationale" if veille_mode else "Crawl national"
         update_crawl_job(
             job_id,
             progress=10,
@@ -654,7 +657,7 @@ class CrawlerEngine:
         from crawler.storage import get_lead_by_source_url
 
         url = self._normalize_url(url)
-        row = get_lead_by_source_url(url, self._agency_id) if self._agency_id else None
+        row = get_lead_by_source_url(url, None)
         label = (row or {}).get("owner") or "Prospect"
         update_crawl_job(
             job_id,
@@ -737,12 +740,13 @@ class CrawlerEngine:
             adapter.config.base_url or search_url, search_url, source_id, city
         )
         portal_seeds = get_portal_discover_urls(source_id, adapter, search_url)
+        from crawler.immobilier_catalog import resolve_catalog_id
         from crawler.portals import resolve_base_portal_id
 
         if city:
             # Pas de seeds nationaux bruts : pages vides / hors-zone. Uniquement URLs filtrées ville.
             extra_portal: list[str] = []
-            if resolve_base_portal_id(source_id):
+            if resolve_base_portal_id(source_id) or resolve_catalog_id(source_id):
                 extra_portal = [
                     apply_city_to_search_url(u, source_id, city)
                     for u in portal_seeds[:5]
@@ -953,7 +957,7 @@ class CrawlerEngine:
                     )
                 if i < len(targets) - 1 and result.can_process_more_listings():
                     listing_delay(
-                        is_recrawl=get_lead_by_source_url(listing_url, self._agency_id) is not None,
+                        is_recrawl=get_lead_by_source_url(listing_url, None) is not None,
                     )
         else:
             issue = CrawlError.issue(CrawlError.NO_LISTINGS, url=url)
@@ -1578,18 +1582,11 @@ class CrawlerEngine:
             except Exception:
                 pass
 
-        if lead.address and not _address_ok(lead.address):
-            # Pas de placeholder « Ville (CP) » : ville/CP restent sur city/postcode.
-            lead.address = None
-        else:
-            from crawler.address_quality import is_city_only_address
+        from crawler.address_quality import ensure_minimum_approximate_address
 
-            if is_city_only_address(
-                lead.address,
-                getattr(lead, "city", None),
-                getattr(lead, "postcode", None),
-            ):
-                lead.address = None
+        if lead.address and not _address_ok(lead.address):
+            lead.address = None
+        ensure_minimum_approximate_address(lead)
 
     def _process_listing(
         self,
@@ -1638,7 +1635,7 @@ class CrawlerEngine:
             update_crawl_job(job_id, message=load_msg)
 
         existing_row = (
-            get_lead_by_source_url(url, self._agency_id) if self._agency_id else None
+            get_lead_by_source_url(url, None)
         )
         is_recrawl = existing_row is not None
         if not skip_city_check and self._veille_mode:
@@ -1792,7 +1789,7 @@ class CrawlerEngine:
                 job_id=job_id,
             )
         if not coherent:
-            existing_row = get_lead_by_source_url(url, self._agency_id)
+            existing_row = get_lead_by_source_url(url, None)
             was_retired = (existing_row or {}).get("status") == "retire"
             lead, fetched, coherent, coh_reason = self._try_repair_incoherent_listing(
                 url,
@@ -2123,7 +2120,7 @@ class CrawlerEngine:
                     crawl_related=False,
                 )
                 if result.can_process_more_listings():
-                    listing_delay(is_recrawl=get_lead_by_source_url(rel_url, self._agency_id) is not None)
+                    listing_delay(is_recrawl=get_lead_by_source_url(rel_url, None) is not None)
 
     def scan_source(
         self, source_id: str, city: str | None = None, *, agency_id: str | None = None
@@ -2223,9 +2220,7 @@ class CrawlerEngine:
                 for agency_id in list_agency_ids():
                     if not self.running:
                         break
-                    city = get_agency_primary_city(agency_id)
-                    if not city:
-                        continue
+                    city = (get_agency_primary_city(agency_id) or "").strip() or None
                     if get_pending_or_running_crawl_job(agency_id, lane="portal"):
                         logger.debug(
                             "Veille portails — job déjà actif pour %s",

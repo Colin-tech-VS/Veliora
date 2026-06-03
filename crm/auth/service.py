@@ -109,9 +109,13 @@ def register_agency(
         )
         conn.commit()
 
+    from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO
+    from crawler.immobilier_catalog import sync_immobilier_catalog_for_agency
     from crawler.storage import seed_default_sources_for_agency, upsert_agency_settings
 
     seed_default_sources_for_agency(agency_id)
+    if CRAWL_INCLUDE_CATALOG_IN_AUTO:
+        sync_immobilier_catalog_for_agency(agency_id)
     # Ville de l'agence : sert de filtre par défaut à tous les crawls (crawl local).
     upsert_agency_settings(agency_id, {"target_cities": [city]})
 

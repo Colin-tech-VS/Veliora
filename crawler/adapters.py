@@ -555,6 +555,29 @@ def build_adapters(db_sources: list[dict] | None = None) -> dict[str, BaseAdapte
             )
             cls = ADAPTER_CLASSES[base]
         else:
+            from crawler.immobilier_catalog import (
+                catalog_site_for_id,
+                resolve_catalog_id,
+            )
+
+            cat_id = resolve_catalog_id(sid)
+            cat_site = catalog_site_for_id(cat_id) if cat_id else None
+            if cat_site:
+                patterns = list(
+                    dict.fromkeys(
+                        list(cat_site.listing_patterns) + GenericAdapter().config.listing_patterns
+                    )
+                )[:45]
+                cfg = AdapterConfig(
+                    id=sid,
+                    name=src.get("name") or cat_site.name,
+                    base_url=src.get("base_url") or cat_site.base_url,
+                    search_url=_best_search_url(src.get("search_url"), cat_site.search_url),
+                    listing_patterns=patterns,
+                )
+                cls = GenericAdapter
+                adapters[sid] = cls(cfg)
+                continue
             generic_patterns = GenericAdapter().config.listing_patterns
             search_url = src.get("search_url") or src.get("base_url") or ""
             cfg = AdapterConfig(

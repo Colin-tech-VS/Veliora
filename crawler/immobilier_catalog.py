@@ -1,0 +1,472 @@
+"""Catalogue sites immobiliers : réseaux d'agences, petites annonces, moteurs agence.
+
+Synchronisés par agence (`{agency_id}_net_{id}`) — même moteur que les portails :
+rotation IP, extraction générique (m², adresse, tel, email, agence/particulier),
+veille avec recrawl de toutes les fiches existantes + découverte de nouvelles.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+from urllib.parse import quote, urlparse
+
+from crawler.fr_communes import path_slug_for_city, slugify
+
+SiteKind = Literal["network", "classified", "annonces"]
+
+# Motifs d'URL fiche fréquents (réseaux + WordPress + moteurs agence)
+_COMMON_LISTING_PATTERNS = [
+    r"/annonce[s]?/[^/\"'\s]+-\d{4,}",
+    r"/annonce[s]?/\d{5,}",
+    r"/bien[s]?/[^/\"'\s]+-\d{4,}",
+    r"/property/[^/\"'\s]+",
+    r"/fiche[s]?/[^/\"'\s]*\d{4,}",
+    r"/detail[s]?/[^/\"'\s]*\d{4,}",
+    r"/ref[_-]?\d{5,}",
+    r"/\d{5,}(?:[/?]|$|\.html?)",
+    r"staticlbi\.com/[^\"'\s]+",
+]
+
+
+@dataclass(frozen=True)
+class CatalogSite:
+    id: str
+    name: str
+    kind: SiteKind
+    base_url: str
+    search_url: str
+    listing_patterns: tuple[str, ...] = ()
+    city_path_templates: tuple[str, ...] = ()
+    enabled: bool = True
+
+
+def _host_pat(host: str) -> str:
+    h = host.replace("www.", "").replace(".", r"\.")
+    return rf"{h}/[^\"'\s]*\d{{4,}}"
+
+
+CATALOG_SITES: tuple[CatalogSite, ...] = (
+    # ─── Réseaux nationaux / franchises ───
+    CatalogSite(
+        "laforet",
+        "La Forêt",
+        "network",
+        "https://www.laforet.com",
+        "https://www.laforet.com/achat",
+        (_host_pat("laforet.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}", "/achat/appartement/{slug}", "/achat/maison/{slug}"),
+    ),
+    CatalogSite(
+        "guy_hoquet",
+        "Guy Hoquet",
+        "network",
+        "https://www.guy-hoquet.com",
+        "https://www.guy-hoquet.com/achat",
+        (_host_pat("guy-hoquet.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}", "/immobilier/{slug}"),
+    ),
+    CatalogSite(
+        "clic_et_bien",
+        "Clic et Bien",
+        "network",
+        "https://www.clicetbien.com",
+        "https://www.clicetbien.com/vente",
+        (_host_pat("clicetbien.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/vente/{slug}", "/annonces/{slug}"),
+    ),
+    CatalogSite(
+        "century21",
+        "Century 21",
+        "network",
+        "https://www.century21.fr",
+        "https://www.century21.fr/acheter/",
+        (r"century21\.fr/[^\"'\s]+/detail/\d+",) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/annonces/{slug}"),
+    ),
+    CatalogSite(
+        "orpi",
+        "ORPI",
+        "network",
+        "https://www.orpi.com",
+        "https://www.orpi.com/achat",
+        (r"orpi\.com/[^\"'\s]+/annonce/\d+",) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}", "/recherche?ville={slug}"),
+    ),
+    CatalogSite(
+        "foncia",
+        "Foncia",
+        "network",
+        "https://www.foncia.com",
+        "https://www.foncia.com/achat",
+        (_host_pat("foncia.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}",),
+    ),
+    CatalogSite(
+        "safti",
+        "SAFTI",
+        "network",
+        "https://www.safti.fr",
+        "https://www.safti.fr/achat",
+        (_host_pat("safti.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}", "/recherche/{slug}"),
+    ),
+    CatalogSite(
+        "iad",
+        "IAD France",
+        "network",
+        "https://www.iadfrance.fr",
+        "https://www.iadfrance.fr/annonces/achat",
+        (_host_pat("iadfrance.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/annonces/achat/{slug}",),
+    ),
+    CatalogSite(
+        "stephane_plaza",
+        "Stéphane Plaza Immobilier",
+        "network",
+        "https://www.stephaneplazaimmobilier.com",
+        "https://www.stephaneplazaimmobilier.com/annonces/achat",
+        (_host_pat("stephaneplazaimmobilier.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/annonces/achat/{slug}",),
+    ),
+    CatalogSite(
+        "capifrance",
+        "Capifrance",
+        "network",
+        "https://www.capifrance.fr",
+        "https://www.capifrance.fr/recherche",
+        (_host_pat("capifrance.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "optimhome",
+        "Optimhome",
+        "network",
+        "https://www.optimhome.com",
+        "https://www.optimhome.com/fr/achat",
+        (_host_pat("optimhome.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/fr/achat/{slug}",),
+    ),
+    CatalogSite(
+        "efficity",
+        "Efficity",
+        "network",
+        "https://www.efficity.com",
+        "https://www.efficity.com/achat",
+        (_host_pat("efficity.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "proprietes_privees",
+        "Propriétés Privées",
+        "network",
+        "https://www.proprietes-privees.com",
+        "https://www.proprietes-privees.com/annonces",
+        (_host_pat("proprietes-privees.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "era",
+        "ERA Immobilier",
+        "network",
+        "https://www.era-immobilier.fr",
+        "https://www.era-immobilier.fr/achat",
+        (_host_pat("era-immobilier.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "human_immobilier",
+        "Human Immobilier",
+        "network",
+        "https://www.human-immobilier.fr",
+        "https://www.human-immobilier.fr/achat",
+        (_host_pat("human-immobilier.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "bsk",
+        "BSK Immobilier",
+        "network",
+        "https://www.bskimmobilier.com",
+        "https://www.bskimmobilier.com/achat",
+        (_host_pat("bskimmobilier.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "nexity",
+        "Nexity",
+        "network",
+        "https://www.nexity.fr",
+        "https://www.nexity.fr/achat",
+        (_host_pat("nexity.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        enabled=False,
+    ),
+    CatalogSite(
+        "green_acres",
+        "Green-Acres",
+        "network",
+        "https://www.green-acres.com",
+        "https://www.green-acres.fr/immobilier",
+        (_host_pat("green-acres"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "immobilier_fr",
+        "Immobilier-France (moteur agence)",
+        "network",
+        "https://www.immobilier-france.fr",
+        "https://www.immobilier-france.fr/vente",
+        (
+            r"immobilier-france\.fr/[^\"'\s]*\d{4,}",
+            r"staticlbi\.com/[^\"'\s]+",
+        )
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/vente/{slug}", "/vente-maison/{slug}", "/vente-appartement/{slug}"),
+    ),
+    CatalogSite(
+        "hektor_demo",
+        "Sites Hektor / Netty (générique)",
+        "network",
+        "https://www.hektor.fr",
+        "https://www.hektor.fr",
+        (r"hektor\.fr/[^\"'\s]*\d{4,}", r"netty\.fr/[^\"'\s]*\d{4,}")
+        + tuple(_COMMON_LISTING_PATTERNS),
+        enabled=False,
+    ),
+    # ─── Petites annonces / particuliers ───
+    CatalogSite(
+        "entreparticuliers",
+        "Entre Particuliers",
+        "classified",
+        "https://www.entreparticuliers.com",
+        "https://www.entreparticuliers.com/immobilier/vente",
+        (_host_pat("entreparticuliers.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/immobilier/vente/{slug}",),
+    ),
+    CatalogSite(
+        "topannonces",
+        "Top Annonces",
+        "classified",
+        "https://www.topannonces.fr",
+        "https://www.topannonces.fr/Immobilier/",
+        (_host_pat("topannonces.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "vivastreet_immo",
+        "Vivastreet Immobilier",
+        "classified",
+        "https://www.vivastreet.com",
+        "https://www.vivastreet.com/immobilier/vente",
+        (r"vivastreet\.com/[^\"'\s]+/immobilier/[^\"'\s]+\d{5,}",)
+        + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "immojeune",
+        "Immojeune",
+        "classified",
+        "https://www.immojeune.com",
+        "https://www.immojeune.com/location-vente",
+        (_host_pat("immojeune.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "bienveo",
+        "Bien'Veo",
+        "classified",
+        "https://www.bienveo.com",
+        "https://www.bienveo.com/vente",
+        (_host_pat("bienveo.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "immovision",
+        "Immovision",
+        "annonces",
+        "https://www.immovision.com",
+        "https://www.immovision.com/vente",
+        (_host_pat("immovision.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "belles_demeures",
+        "Belles Demeures",
+        "network",
+        "https://www.bellesdemeures.com",
+        "https://www.bellesdemeures.com/achat",
+        (_host_pat("bellesdemeures.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "lux_residence",
+        "Lux Residence",
+        "network",
+        "https://www.lux-residence.com",
+        "https://www.lux-residence.com/fr/vente",
+        (_host_pat("lux-residence.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "la_residence",
+        "La Résidence",
+        "network",
+        "https://www.la-residence.fr",
+        "https://www.la-residence.fr/achat",
+        (_host_pat("la-residence.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "square_habitat",
+        "Square Habitat",
+        "network",
+        "https://www.squarehabitat.fr",
+        "https://www.squarehabitat.fr/achat",
+        (_host_pat("squarehabitat.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "credit_agricole_immo",
+        "Crédit Agricole Immobilier",
+        "network",
+        "https://www.ca-immobilier.fr",
+        "https://www.ca-immobilier.fr/achat",
+        (_host_pat("ca-immobilier.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "barnes",
+        "Barnes",
+        "network",
+        "https://www.barnes-international.com",
+        "https://www.barnes-international.com/fr/properties/sale",
+        (_host_pat("barnes-international.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "engelvoelkers",
+        "Engel & Völkers France",
+        "network",
+        "https://www.engelvoelkers.com",
+        "https://www.engelvoelkers.com/fr/fr/immobilier/acheter",
+        (_host_pat("engelvoelkers.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+)
+
+CATALOG_BY_ID = {s.id: s for s in CATALOG_SITES}
+CATALOG_IDS = tuple(s.id for s in CATALOG_SITES)
+
+
+def catalog_scoped_id(agency_id: str, catalog_id: str) -> str:
+    return f"{agency_id}_net_{catalog_id}"
+
+
+def resolve_catalog_id(source_id: str | None) -> str | None:
+    """`abc_net_laforet` ou `abc123_net_century21` → `laforet`."""
+    sid = (source_id or "").lower().strip()
+    if not sid:
+        return None
+    marker = "_net_"
+    if marker in sid:
+        tail = sid.split(marker, 1)[-1]
+        if tail in CATALOG_BY_ID:
+            return tail
+    if sid.startswith("net_"):
+        tail = sid[4:]
+        if tail in CATALOG_BY_ID:
+            return tail
+    return None
+
+
+def catalog_site_for_id(catalog_id: str) -> CatalogSite | None:
+    return CATALOG_BY_ID.get(catalog_id)
+
+
+def is_catalog_source(src: dict) -> bool:
+    return resolve_catalog_id(src.get("id") or "") is not None
+
+
+def _slug(city: str) -> str:
+    return slugify(city) or city.lower().strip().replace(" ", "-")
+
+
+def catalog_city_search_candidates(
+    catalog_id: str,
+    search_url: str,
+    city: str,
+    postcode: str | None = None,
+) -> list[str]:
+    """URLs de liste ciblant une ville pour un site du catalogue."""
+    site = CATALOG_BY_ID.get(catalog_id)
+    if not site:
+        return [search_url] if search_url else []
+
+    city = (city or "").strip()
+    if not city:
+        return [site.search_url or site.base_url]
+
+    slug = _slug(city)
+    path_slug = path_slug_for_city(city, postcode)
+    q_city = quote(city)
+    out: list[str] = []
+
+    def _add(u: str | None) -> None:
+        if u and u.startswith("http") and u not in out:
+            out.append(u.split("#")[0].rstrip("/") or u)
+
+    parsed = urlparse(site.base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    for tpl in site.city_path_templates:
+        path = tpl.format(slug=slug, path_slug=path_slug, city=q_city)
+        if path.startswith("http"):
+            _add(path)
+        else:
+            _add(f"{origin}{path}")
+
+    base = (search_url or site.search_url or site.base_url).rstrip("/")
+    for suffix in (
+        f"/{slug}",
+        f"/{path_slug}",
+        f"/ville-{slug}",
+        f"/immobilier-{path_slug}",
+    ):
+        _add(f"{base}{suffix}")
+
+    sep = "&" if "?" in base else "?"
+    _add(f"{base}{sep}ville={q_city}&city={q_city}&localite={q_city}")
+    _add(site.search_url)
+    return out or [site.search_url]
+
+
+def sync_immobilier_catalog_for_agency(agency_id: str) -> int:
+    """Ajoute / met à jour les sites catalogue pour l'agence (veille + crawl tout)."""
+    from crawler.storage import get_connection, _now
+
+    now = _now()
+    touched = 0
+    with get_connection() as conn:
+        for site in CATALOG_SITES:
+            sid = catalog_scoped_id(agency_id, site.id)
+            enabled = 1 if site.enabled else 0
+            row = conn.execute(
+                "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
+                (sid, agency_id),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    """UPDATE sources SET name = ?, base_url = ?, search_url = ?,
+                       enabled = ?, is_custom = 0, updated_at = ?
+                       WHERE id = ? AND agency_id = ?""",
+                    (
+                        site.name,
+                        site.base_url,
+                        site.search_url,
+                        enabled,
+                        now,
+                        sid,
+                        agency_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO sources
+                       (id, name, base_url, search_url, enabled, is_custom,
+                        agency_id, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                    (
+                        sid,
+                        site.name,
+                        site.base_url,
+                        site.search_url,
+                        enabled,
+                        agency_id,
+                        now,
+                        now,
+                    ),
+                )
+            touched += 1
+        conn.commit()
+    return touched

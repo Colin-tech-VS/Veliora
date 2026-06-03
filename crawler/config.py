@@ -327,6 +327,9 @@ CRAWL_BACKGROUND_INTERVAL_SEC = max(
 # Inclure les portails personnalisés (URL ajoutée) dans la veille auto all_sources
 CRAWL_INCLUDE_CUSTOM_IN_AUTO = _env_bool("CRAWL_INCLUDE_CUSTOM_IN_AUTO", "true")
 
+# Réseaux agences + petites annonces (La Forêt, ORPI, Entre Particuliers, etc.)
+CRAWL_INCLUDE_CATALOG_IN_AUTO = _env_bool("CRAWL_INCLUDE_CATALOG_IN_AUTO", "true")
+
 # Recrawl périodique des fiches prospects (prix / contacts à jour)
 CRAWL_LEAD_REFRESH_ENABLED = _env_bool("CRAWL_LEAD_REFRESH_ENABLED", "true")
 CRAWL_LEAD_REFRESH_INTERVAL_SEC = max(
@@ -417,6 +420,7 @@ def background_crawl_config() -> dict:
         "auto_start": CRAWL_AUTO_START,
         "interval_sec": CRAWL_BACKGROUND_INTERVAL_SEC,
         "include_custom_portals": CRAWL_INCLUDE_CUSTOM_IN_AUTO,
+        "include_catalog_sites": CRAWL_INCLUDE_CATALOG_IN_AUTO,
         "lead_refresh_enabled": CRAWL_LEAD_REFRESH_ENABLED,
         "lead_refresh_interval_sec": CRAWL_LEAD_REFRESH_INTERVAL_SEC,
         "lead_refresh_stale_hours": CRAWL_LEAD_REFRESH_STALE_HOURS,

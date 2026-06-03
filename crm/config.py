@@ -32,6 +32,8 @@ def subscription_amount_ttc() -> int:
 
 
 def public_site_config() -> dict:
+    from crm.estimator.public_lead import vitrine_estimator_config
+
     return {
         "company_name": LEGAL_COMPANY_NAME,
         "support_email": SUPPORT_EMAIL,
@@ -59,4 +61,5 @@ def public_site_config() -> dict:
             "dpa": "/dpa",
             "index": "/legal",
         },
+        **vitrine_estimator_config(),
     }

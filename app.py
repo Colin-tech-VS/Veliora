@@ -62,6 +62,18 @@ DATA_DIR = BASE_DIR / "data"
 VITRINE_INDEX = VITRINE_DIR / "index.html"
 CRM_INDEX = CRM_DIR / "index.html"
 
+# Pages vitrine servies hors index (alias URL → fichier)
+VITRINE_PAGE_ALIASES: dict[str, str] = {
+    "estimation": "estimation.html",
+    "estimer": "estimation.html",
+    "estimer-votre-bien": "estimation.html",
+    "annonces": "annonces.html",
+    "portail": "annonces.html",
+    "publier-annonce": "estimation.html",
+}
+VITRINE_ESTIMATION_HTML = VITRINE_DIR / "estimation.html"
+VITRINE_ANNONCES_HTML = VITRINE_DIR / "annonces.html"
+
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -318,6 +330,10 @@ def api_health():
         "dvf_app": "https://app.dvf.etalab.gouv.fr/",
         "vitrine": "/",
         "vitrine_ok": VITRINE_INDEX.is_file(),
+        "estimation": "/estimation",
+        "estimation_ok": VITRINE_ESTIMATION_HTML.is_file(),
+        "annonces": "/annonces",
+        "annonces_ok": VITRINE_ANNONCES_HTML.is_file(),
         "home": "/",
         "auth_page": "/crm/auth",
         "auth_required": True,
@@ -350,11 +366,32 @@ def handle_not_found(e):
         p.startswith("/legal") or p in ("/cgv", "/mentions", "/mentions-legales", "/confidentialite", "/dpa")
     ):
         return _serve_legal_page()
+    slug = p.strip("/")
+    if p == "/vitrine/estimation.html":
+        resp = _estimation_page_response()
+        if resp is not None:
+            return resp
+    if p == "/vitrine/annonces.html":
+        resp = _annonces_page_response()
+        if resp is not None:
+            return resp
+    if slug in VITRINE_PAGE_ALIASES:
+        if slug in ("estimation", "estimer", "estimer-votre-bien"):
+            resp = _estimation_page_response()
+        else:
+            resp = _serve_vitrine_page(slug)
+        if resp is not None:
+            return resp
     hint = ""
     if request.path.startswith("/crm"):
         hint = " Relancez demarrer.bat (Ctrl+C puis python app.py) si vous venez de déplacer les fichiers."
     if p.startswith("/legal") or "cgv" in p or "confidentialite" in p:
         hint = " Lancez Veliora avec demarrer.bat ou python app.py (pas Live Server seul)."
+    if slug in VITRINE_PAGE_ALIASES:
+        hint = (
+            " Fichier vitrine manquant ou serveur non relancé."
+            " Lancez demarrer.bat (python app.py sur le port 8000), pas Live Server."
+        )
     return f"Not Found — {request.path}.{hint}", 404
 
 
@@ -402,6 +439,56 @@ def _serve_html_file(path: Path) -> object:
     return send_file(path, mimetype="text/html; charset=utf-8")
 
 
+def _serve_vitrine_page(slug: str):
+    """Renvoie la réponse HTML ou None si page absente."""
+    key = (slug or "").strip("/").lower()
+    filename = VITRINE_PAGE_ALIASES.get(key)
+    if not filename:
+        return None
+    path = VITRINE_DIR / filename
+    if path.is_file():
+        return _serve_html_file(path)
+    logging.warning("Page vitrine manquante : %s (attendu %s)", key, path)
+    return None
+
+
+def _estimation_page_response():
+    """Page LP estimation — chemin explicite pour éviter les échecs de résolution."""
+    if VITRINE_ESTIMATION_HTML.is_file():
+        return _serve_html_file(VITRINE_ESTIMATION_HTML)
+    page = _serve_vitrine_page("estimation")
+    if page is not None:
+        return page
+    return redirect("/#estimateur")
+
+
+def _annonces_page_response():
+    """Portail d'annonces public."""
+    if VITRINE_ANNONCES_HTML.is_file():
+        return _serve_html_file(VITRINE_ANNONCES_HTML)
+    page = _serve_vitrine_page("annonces")
+    if page is not None:
+        return page
+    return redirect("/")
+
+
+def _ensure_vitrine_public_routes() -> None:
+    """Ré-enregistre les pages vitrine au boot (process Flask pas redémarré)."""
+    rules = {r.rule for r in app.url_map.iter_rules()}
+    to_register = [
+        ("/estimation", _estimation_page_response),
+        ("/estimer", _estimation_page_response),
+        ("/estimer-votre-bien", _estimation_page_response),
+        ("/vitrine/estimation.html", _estimation_page_response),
+        ("/annonces", _annonces_page_response),
+        ("/portail", _annonces_page_response),
+        ("/vitrine/annonces.html", _annonces_page_response),
+    ]
+    for rule, handler in to_register:
+        if rule not in rules:
+            app.add_url_rule(rule, f"vitrine_page_{rule.replace('/', '_')}", handler)
+
+
 @app.route("/")
 @app.route("/accueil")
 @app.route("/vitrine")
@@ -414,6 +501,26 @@ def vitrine_home():
     if landing.is_file():
         return _serve_html_file(landing)
     return "Page d'accueil introuvable", 404
+
+
+@app.route("/estimation")
+@app.route("/estimer")
+@app.route("/estimer-votre-bien")
+@app.route("/vitrine/estimation.html")
+def vitrine_estimation():
+    return _estimation_page_response()
+
+
+@app.route("/publier-annonce")
+def vitrine_publier_annonce_redirect():
+    return redirect("/estimation", code=302)
+
+
+@app.route("/annonces")
+@app.route("/portail")
+@app.route("/vitrine/annonces.html")
+def vitrine_annonces():
+    return _annonces_page_response()
 
 
 @app.route("/offre")
@@ -443,7 +550,7 @@ Sitemap: {SITE_URL}/sitemap.xml
 def sitemap_xml():
     from crm.config import SITE_URL
 
-    pages = ["/", "/offre", "/legal"]
+    pages = ["/", "/offre", "/estimation", "/annonces", "/legal"]
     urls = "\n".join(
         f"  <url><loc>{SITE_URL}{p}</loc><changefreq>weekly</changefreq></url>"
         for p in pages
@@ -978,7 +1085,9 @@ def api_lead_price_estimate(lead_id):
         try:
             from crm.estimator.storage import save_lead_estimate
 
-            saved_at = save_lead_estimate(lead_id, agency_id, result)
+            from crm.leads.shared_pool import pool_agency_id
+
+            saved_at = save_lead_estimate(lead_id, pool_agency_id(), result)
             result["saved_at"] = saved_at
             result["lead"] = get_lead(lead_id, agency_id)
         except Exception:
@@ -988,89 +1097,24 @@ def api_lead_price_estimate(lead_id):
 
 @app.route("/api/leads/manual", methods=["POST"])
 def api_lead_manual_create():
-    """Crée un prospect saisi manuellement depuis l'estimateur.
-
-    Le bien est tagué source = « Estimation » (vs annonces crawlées « Détecté »)
-    et apparaît dans la liste des prospects. Une estimation est calculée et
-    persistée dans la foulée si des critères sont fournis.
-    """
-    from crawler.extractors import LeadData
-    from crawler.storage import save_lead
+    """Crée un prospect depuis l'estimateur CRM (propriétaire optionnel dans l'UI)."""
+    from crm.estimator.public_lead import create_prospect_from_estimate_form
 
     agency_id = _aid()
     data = request.get_json(silent=True) or {}
+    if data.get("inputs"):
+        data = {**data, **(data.get("inputs") or {})}
 
-    try:
-        surface = float(data.get("surface")) if data.get("surface") not in (None, "") else None
-    except (TypeError, ValueError):
-        surface = None
-    try:
-        price = int(float(data.get("price"))) if data.get("price") not in (None, "") else None
-    except (TypeError, ValueError):
-        price = None
-
-    address = (data.get("address") or "").strip() or None
-    city = (data.get("city") or "").strip() or None
-    if not (address or city):
-        return jsonify({"ok": False, "error": "Adresse ou ville requise."}), 400
-    if not surface or surface <= 0:
-        return jsonify({"ok": False, "error": "Surface (m²) requise."}), 400
-
-    prop_type = (data.get("property_type") or "appartement").strip().lower()
-    type_label = {
-        "appartement": "Appartement",
-        "maison": "Maison",
-        "studio": "Studio",
-        "terrain": "Terrain",
-    }.get(prop_type, "Bien")
-    title = (data.get("property_title") or "").strip() or (
-        f"{type_label} {surface:g} m²" + (f" — {city}" if city else "")
+    result = create_prospect_from_estimate_form(
+        data,
+        source_label="Estimation",
+        origin="crm",
+        require_owner=True,
+        discovering_agency_id=agency_id,
     )
-
-    lead = LeadData(
-        first_name=(data.get("first_name") or "").strip() or None,
-        last_name=(data.get("last_name") or "").strip() or None,
-        phone=(data.get("phone") or "").strip() or None,
-        email=(data.get("email") or "").strip() or None,
-        address=address,
-        city=city,
-        postcode=(data.get("postcode") or "").strip() or None,
-        surface=surface,
-        price=price,
-        transaction_type="vente",
-        source="Estimation",
-        source_url=f"estimation://{agency_id}/{uuid.uuid4().hex}",
-        type="particulier",
-    )
-    lead.raw_extras["listing_title"] = title
-
-    try:
-        saved = save_lead(lead, agency_id=agency_id, require_verification=False)
-    except Exception as exc:
-        logging.exception("POST /api/leads/manual save")
-        return jsonify({"ok": False, "error": str(exc)}), 500
-    if not saved or not saved.get("id"):
-        return jsonify({"ok": False, "error": "Création du prospect impossible."}), 500
-    lead_id = saved["id"]
-
-    full_lead = get_lead(lead_id, agency_id)
-    estimate = None
-    inputs = dict(data.get("inputs") or {})
-    inputs.setdefault("surface", surface)
-    inputs.setdefault("property_type", prop_type)
-    try:
-        from crm.estimator.service import build_price_estimate
-
-        estimate = build_price_estimate(full_lead, inputs)
-        if estimate.get("ok"):
-            from crm.estimator.storage import save_lead_estimate
-
-            save_lead_estimate(lead_id, agency_id, estimate)
-            full_lead = get_lead(lead_id, agency_id)
-    except Exception:
-        logging.exception("estimate after manual lead create %s", lead_id)
-
-    return jsonify({"ok": True, "lead": full_lead, "estimate": estimate}), 201
+    if not result.get("ok"):
+        return jsonify(result), 400
+    return jsonify(result), 201
 
 
 @app.route("/api/leads/<int:lead_id>/matches")
@@ -1185,7 +1229,7 @@ def _api_radar_analyze_url_impl():
 
     agency_id = _aid()
     norm = normalize_listing_url(url)
-    row = get_lead_by_source_url(norm, agency_id)
+    row = get_lead_by_source_url(norm, None)
     if not row:
         job = engine.import_listing_url(url, agency_id=agency_id)
         return jsonify({
@@ -1753,29 +1797,19 @@ def api_crawler_stop():
     return jsonify({"ok": True, **engine.status()})
 
 
-def _resolve_crawl_city(agency_id: str) -> str:
-    """Ville du crawl : celle de la requête sinon la ville enregistrée de l'agence.
-
-    Le crawl est exclusivement local (par ville) — aucun crawl national.
-    Lève ValueError si aucune ville n'est disponible.
-    """
+def _resolve_crawl_city(agency_id: str) -> str | None:
+    """Ville du crawl : requête explicite, sinon 1ʳᵉ ville territoire, sinon national (None)."""
     data = request.get_json(silent=True) or {}
-    city = (data.get("city") or data.get("ville") or "").strip()
-    if not city:
-        city = get_agency_primary_city(agency_id) or ""
-    if not city:
-        raise ValueError(
-            "Renseignez la ville de votre agence (Territoire) — le crawl se fait par ville."
-        )
-    return city
+    if "city" in data or "ville" in data:
+        raw = (data.get("city") or data.get("ville") or "").strip()
+        return raw or None
+    city = (get_agency_primary_city(agency_id) or "").strip()
+    return city or None
 
 
 @app.route("/api/crawler/scan", methods=["POST"])
 def api_crawler_scan():
-    try:
-        city = _resolve_crawl_city(_aid())
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    city = _resolve_crawl_city(_aid())
     job = engine.scan_all_enabled(city=city, agency_id=_aid())
     return jsonify(_job_response(job))
 
@@ -1788,10 +1822,7 @@ def api_crawler_scan_source(source_id):
     paid = _paid_portal_crawl_response(source=source)
     if paid:
         return paid
-    try:
-        city = _resolve_crawl_city(_aid())
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    city = _resolve_crawl_city(_aid())
     job = engine.scan_source(source_id, city=city, agency_id=_aid())
     return jsonify(_job_response(job))
 
@@ -1802,6 +1833,120 @@ def api_public_config():
     from crm.billing.config import public_stripe_config
 
     return jsonify({"ok": True, **public_site_config(), "stripe": public_stripe_config()})
+
+
+@app.route("/api/public/estimate/schema", methods=["GET"])
+def api_public_estimate_schema():
+    from crm.estimator.service import estimator_form_schema
+
+    return jsonify({"ok": True, "schema": estimator_form_schema()})
+
+
+@app.route("/api/public/estimate", methods=["POST"])
+def api_public_vitrine_estimate():
+    """Étape 1 vitrine : bien + détails → prospect pool + estimation (sans coordonnées)."""
+    from crm.estimator.public_lead import handle_public_vitrine_estimate
+
+    data = request.get_json(silent=True) or {}
+    if data.get("inputs") and isinstance(data.get("inputs"), dict):
+        data = {**data, **data["inputs"]}
+    if (data.get("website") or "").strip():
+        return jsonify({"ok": False, "error": "Requête refusée."}), 400
+
+    try:
+        out = handle_public_vitrine_estimate(data)
+    except Exception as exc:
+        logging.exception("POST /api/public/estimate")
+        return jsonify({"ok": False, "error": "Erreur serveur."}), 500
+
+    status = 201 if out.get("ok") else 400
+    return jsonify(out), status
+
+
+@app.route("/api/public/estimate/contact", methods=["POST"])
+def api_public_vitrine_estimate_contact():
+    """Étape 2 : souhaite vendre / contact agences du secteur ou prospect seul."""
+    from crm.estimator.public_lead import handle_public_vitrine_contact
+
+    data = request.get_json(silent=True) or {}
+    if (data.get("website") or "").strip():
+        return jsonify({"ok": False, "error": "Requête refusée."}), 400
+
+    try:
+        out = handle_public_vitrine_contact(data)
+    except Exception:
+        logging.exception("POST /api/public/estimate/contact")
+        return jsonify({"ok": False, "error": "Erreur serveur."}), 500
+
+    status = 200 if out.get("ok") else 400
+    return jsonify(out), status
+
+
+@app.route("/api/public/portal/listings", methods=["GET", "POST"])
+def api_public_portal_listings():
+    if request.method == "POST":
+        return jsonify({
+            "ok": False,
+            "error": "La publication d’annonces est réservée aux agences connectées au CRM.",
+        }), 403
+
+    from crm.portal.storage import list_listings, public_listing_payload
+
+    city = (request.args.get("city") or "").strip()
+    tx = (request.args.get("transaction_type") or "").strip().lower() or None
+    items = list_listings(
+        public_only=True,
+        publisher_type="agency",
+        city=city or None,
+        transaction_type=tx,
+        limit=80,
+    )
+    return jsonify({"ok": True, "listings": [public_listing_payload(x) for x in items]})
+
+
+@app.route("/api/public/portal/listings/<listing_id>", methods=["GET"])
+def api_public_portal_listing_detail(listing_id):
+    from crm.portal.storage import get_listing, public_listing_payload
+
+    item = get_listing(listing_id, public=True)
+    if not item:
+        return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
+    return jsonify({"ok": True, "listing": public_listing_payload(item)})
+
+
+@app.route("/api/portal/listings", methods=["GET", "POST"])
+def api_portal_listings():
+    from crm.portal.service import create_agency_listing
+    from crm.portal.storage import list_listings
+
+    aid = _aid()
+    if request.method == "GET":
+        status = (request.args.get("status") or "").strip() or None
+        items = list_listings(agency_id=aid, status=status, limit=120)
+        return jsonify({"ok": True, "listings": items})
+    data = request.get_json(silent=True) or {}
+    out = create_agency_listing(aid, data)
+    return jsonify(out), 201 if out.get("ok") else 400
+
+
+@app.route("/api/portal/listings/<listing_id>", methods=["GET", "PATCH", "DELETE"])
+def api_portal_listing(listing_id):
+    from crm.portal.service import update_agency_listing
+    from crm.portal.storage import delete_listing, get_listing
+
+    aid = _aid()
+    if request.method == "GET":
+        item = get_listing(listing_id, agency_id=aid)
+        if not item:
+            return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
+        return jsonify({"ok": True, "listing": item})
+    if request.method == "DELETE":
+        if delete_listing(listing_id, aid):
+            return jsonify({"ok": True})
+        return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
+    data = request.get_json(silent=True) or {}
+    out = update_agency_listing(aid, listing_id, data)
+    return jsonify(out), 200 if out.get("ok") else 400
 
 
 @app.route("/api/onboarding", methods=["GET", "PATCH"])
@@ -2773,10 +2918,19 @@ def main():
         logging.exception("Veille auto — échec au démarrage local")
     atexit.register(checkpoint_database)
     port = int(os.getenv("PORT", "8000"))
+    _ensure_vitrine_public_routes()
     if VITRINE_INDEX.is_file():
-        print(f"Page d'accueil : {VITRINE_INDEX}", flush=True)
+        print(f"Page d'accueil : http://localhost:{port}/", flush=True)
     else:
         print(f"ATTENTION — vitrine/index.html introuvable : {VITRINE_INDEX}", flush=True)
+    if VITRINE_ESTIMATION_HTML.is_file():
+        print(f"Estimation  : http://localhost:{port}/estimation", flush=True)
+    else:
+        print(f"ATTENTION — vitrine/estimation.html introuvable : {VITRINE_ESTIMATION_HTML}", flush=True)
+    if VITRINE_ANNONCES_HTML.is_file():
+        print(f"Annonces    : http://localhost:{port}/annonces", flush=True)
+    else:
+        print(f"ATTENTION — vitrine/annonces.html introuvable : {VITRINE_ANNONCES_HTML}", flush=True)
     if CRM_INDEX.is_file():
         print(f"CRM : http://localhost:{port}/crm  ({CRM_INDEX})", flush=True)
     else:

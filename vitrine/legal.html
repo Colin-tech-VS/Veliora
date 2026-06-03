@@ -17,18 +17,23 @@
     <div class="v-nav-inner">
       <a href="/" class="v-brand" aria-label="Veliora — accueil">
         <span class="v-logo-mark" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"/></svg>
         </span>
         Veliora
       </a>
       <button type="button" class="v-nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
-      <nav class="v-nav-links" id="nav-links">
-        <a href="/#tarifs">Tarifs</a>
+      <nav class="v-nav-links" id="nav-links" aria-label="Navigation principale">
+        <a href="/#agences">Agences</a>
+        <a href="/#produit">Produit</a>
+        <a href="/offre">Tarifs</a>
+        <a href="/estimation" class="v-nav-estimation">Estimation gratuite</a>
+        <a href="/annonces">Catalogue</a>
         <a href="/#faq">FAQ</a>
-        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion</a>
-        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Créer un compte</a>
+        <span class="v-nav-divider v-nav-divider--end" aria-hidden="true"></span>
+        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion pro</a>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Espace agence</a>
       </nav>
     </div>
   </header>
@@ -193,7 +198,8 @@
     <p class="v-footer-copy">© 2026 Veliora. Données DVF : DGFiP / Etalab.</p>
   </footer>
 
-  <script src="/vitrine/assets/js/vitrine.js?v=32" defer></script>
+  <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
   <script src="/vitrine/assets/js/legal.js?v=1" defer></script>
   <script>
     (function () {

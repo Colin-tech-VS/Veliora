@@ -11,6 +11,10 @@ from crm.auth.service import get_session_user
 PUBLIC_API_PATHS = frozenset({
     "/api/health",
     "/api/public/config",
+    "/api/public/estimate",
+    "/api/public/estimate/contact",
+    "/api/public/estimate/schema",
+    "/api/public/portal/listings",
     "/api/auth/register-agency",
     "/api/auth/login",
     "/api/auth/forgot-password",
@@ -52,6 +56,8 @@ def require_api_auth():
     if not request.path.startswith("/api/"):
         return None
     if request.path in PUBLIC_API_PATHS:
+        return None
+    if request.path.startswith("/api/public/portal/listings"):
         return None
     if request.path == "/api/auth/me":
         return None

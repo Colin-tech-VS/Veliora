@@ -256,9 +256,10 @@ def _attach_estimates(leads: list[dict], agency_id: str) -> None:
     if not leads:
         return
     try:
-        from crm.estimator.storage import get_estimates_for_agency
+        from crm.estimator.storage import get_estimates_for_lead_ids
 
-        est = get_estimates_for_agency(agency_id)
+        ids = [int(l["id"]) for l in leads if l.get("id") is not None]
+        est = get_estimates_for_lead_ids(ids)
         if not est:
             return
         for lead in leads:
@@ -770,8 +771,10 @@ def _init_sqlite() -> None:
 
         _migrate(conn)
         from crm.mandates.storage import ensure_mandate_tables
+        from crm.portal.storage import ensure_portal_tables
 
         ensure_mandate_tables(conn)
+        ensure_portal_tables(conn)
         conn.commit()
 
 
@@ -780,11 +783,13 @@ def init_db() -> None:
     if is_postgres():
         from velora_db.connection import init_postgres_schema
         from crm.mandates.storage import ensure_mandate_tables
+        from crm.portal.storage import ensure_portal_tables
 
         if os.getenv("VELIORA_AUTO_SCHEMA", "").lower() in ("1", "true", "yes"):
             init_postgres_schema()
         with get_connection() as conn:
             ensure_mandate_tables(conn)
+            ensure_portal_tables(conn)
         try:
             from crm.maps.service import ensure_map_schema
             from crm.leads.images import ensure_lead_image_schema
@@ -890,7 +895,7 @@ def _crawl_priority(src: dict) -> int:
 
 
 def is_recommended_crawl_source(src: dict) -> bool:
-    """Portail recommandé — inclus dans « Crawler tout » (hors anti-bot et sites perso)."""
+    """Portail ou site catalogue — inclus dans « Crawler tout » (hors anti-bot et perso)."""
     if not src.get("enabled"):
         return False
     if src.get("is_custom"):
@@ -898,14 +903,26 @@ def is_recommended_crawl_source(src: dict) -> bool:
     if is_antibot_source(src):
         return False
     url = (src.get("search_url") or src.get("base_url") or "").strip()
-    return url.startswith("http")
+    if not url.startswith("http"):
+        return False
+    from crawler.immobilier_catalog import resolve_catalog_id
+    from crawler.portals import resolve_base_portal_id
+
+    if resolve_catalog_id(src.get("id") or ""):
+        from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO
+
+        return CRAWL_INCLUDE_CATALOG_IN_AUTO
+    return resolve_base_portal_id(src.get("id") or "") is not None
 
 
 def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
-    """Portails activés pour la veille auto « tous portails »."""
-    from crawler.config import CRAWL_INCLUDE_CUSTOM_IN_AUTO
+    """Portails + réseaux agences + petites annonces pour la veille auto."""
+    from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO, CRAWL_INCLUDE_CUSTOM_IN_AUTO
+    from crawler.immobilier_catalog import sync_immobilier_catalog_for_agency
 
     seed_default_sources_for_agency(agency_id)
+    if CRAWL_INCLUDE_CATALOG_IN_AUTO:
+        sync_immobilier_catalog_for_agency(agency_id)
     sources: list[dict] = []
     for s in get_sources(agency_id):
         if is_recommended_crawl_source(s):
@@ -1276,7 +1293,10 @@ def crawl_veille_readiness(agency_id: str) -> dict:
     blockers: list[str] = []
     hints: list[str] = []
     if not city:
-        blockers.append("Ville non renseignée (Territoire ou fiche agence)")
+        hints.append(
+            "Aucune ville territoire : crawl national (toute la France) — "
+            "renseignez une ville pour filtrer localement."
+        )
     if not portails:
         blockers.append("Aucun portail recommandé activé avec une URL de recherche")
 
@@ -1720,11 +1740,18 @@ def save_lead(
         resolve_published_at,
     )
 
-    if not lead.source_url or not agency_id:
-        logger.warning("save_lead ignoré — source_url ou agency_id manquant")
+    if not lead.source_url:
+        logger.warning("save_lead ignoré — source_url manquant")
         return None
 
-    existing_row = get_lead_by_source_url(lead.source_url, agency_id)
+    discovering_agency_id = agency_id
+    from crm.leads.shared_pool import pool_agency_id
+
+    agency_id = pool_agency_id()
+    if discovering_agency_id:
+        lead.raw_extras.setdefault("discovered_by_agency", discovering_agency_id)
+
+    existing_row = get_lead_by_source_url(lead.source_url, None)
     created = existing_row is None
 
     if existing_row:
@@ -1742,6 +1769,9 @@ def save_lead(
         getattr(lead, "city", None),
         getattr(lead, "postcode", None),
     )
+    from crawler.address_quality import ensure_minimum_approximate_address
+
+    ensure_minimum_approximate_address(lead)
     stored_pub = existing_row.get("published_at") if existing_row else None
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
@@ -1965,7 +1995,8 @@ def save_lead(
                 saved_out,
                 deep_refresh=deep_refresh,
             )
-            invalidate_sources_cache(agency_id)
+            if discovering_agency_id:
+                invalidate_sources_cache(discovering_agency_id)
             return saved_out
 
         try:
@@ -2073,7 +2104,8 @@ def save_lead(
             _schedule_lead_image_after_save(
                 lead, agency_id, int(new_id), saved_out, deep_refresh=deep_refresh
             )
-            invalidate_sources_cache(agency_id)
+            if discovering_agency_id:
+                invalidate_sources_cache(discovering_agency_id)
             return saved_out
 
     # Hors connexion : course détectée à l'INSERT → rejeu en mise à jour (une fois).
@@ -2082,7 +2114,7 @@ def save_lead(
             lead,
             source_id,
             job_id,
-            agency_id=agency_id,
+            agency_id=discovering_agency_id,
             require_verification=False,
             deep_refresh=deep_refresh,
             veille_recrawl=veille_recrawl,
@@ -2228,17 +2260,20 @@ def get_source_lead_urls(
     name = src.get("name") or ""
     url_like = _source_url_like(src.get("domain") or "", src.get("base_url") or "")
     status_clause = " AND COALESCE(status, 'nouveau') != 'retire'" if active_only else ""
+    from crm.leads.shared_pool import shared_leads_sql_where
+
+    pool_where = shared_leads_sql_where()
     with get_connection() as conn:
         rows = conn.execute(
             f"""SELECT source_url FROM leads
-               WHERE agency_id = ?
+               WHERE {pool_where}
                AND source_url IS NOT NULL AND source_url != ''
                AND (
                    source_id = ?
                    OR ((source_id IS NULL OR source_id = '') AND LOWER(source) = LOWER(?))
                    OR source_url LIKE ?
                ){status_clause}""",
-            (agency_id, source_id, name, url_like),
+            (source_id, name, url_like),
         ).fetchall()
     return [str(r["source_url"]) for r in rows if r["source_url"]]
 
@@ -2305,14 +2340,20 @@ def get_leads(
     enrich: bool = True,
     claim_orphans: bool = False,
 ) -> list[dict]:
+    from crm.leads.shared_pool import filter_leads_for_agency, shared_leads_sql_where
+
     if claim_orphans:
         claim_orphan_leads(agency_id)
+    pool_where = shared_leads_sql_where()
     with get_connection() as conn:
         rows = conn.execute(
-            f"SELECT {_LEADS_LIST_SQL} FROM leads WHERE agency_id = ? ORDER BY created_at DESC",
+            f"""SELECT {_LEADS_LIST_SQL} FROM leads
+               WHERE {pool_where} OR agency_id = ?
+               ORDER BY created_at DESC""",
             (agency_id,),
         ).fetchall()
         leads = [_row_to_lead(r, enrich_scores=False) for r in rows]
+    leads = filter_leads_for_agency(leads, agency_id)
     if enrich and leads:
         from crm.scoring.recalc import hydrate_leads_for_list
 
@@ -2333,14 +2374,18 @@ def _safe_json_field(raw) -> object | None:
 
 
 def get_lead(lead_id: int, agency_id: str) -> dict | None:
+    from crm.leads.shared_pool import lead_visible_to_agency
+
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM leads WHERE id = ? AND agency_id = ?",
-            (lead_id, agency_id),
+            "SELECT * FROM leads WHERE id = ?",
+            (lead_id,),
         ).fetchone()
     if not row:
         return None
     lead = _row_to_lead(row, enrich_scores=False)
+    if not lead_visible_to_agency(lead, agency_id):
+        return None
     try:
         from crm.scoring.recalc import hydrate_lead_from_stored
 
@@ -2745,6 +2790,11 @@ def get_sources(
             return list(cached[1])
     if sync:
         sync_default_sources_for_agency(agency_id)
+        from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO
+        from crawler.immobilier_catalog import sync_immobilier_catalog_for_agency
+
+        if CRAWL_INCLUDE_CATALOG_IN_AUTO:
+            sync_immobilier_catalog_for_agency(agency_id)
         sync_lead_source_ids(agency_id)
     with get_connection() as conn:
         rows = conn.execute(
@@ -2788,6 +2838,7 @@ def _row_to_source(
     live_counts: bool = True,
     counts_by_source_id: dict[str, dict[str, int]] | None = None,
 ):
+    from crawler.immobilier_catalog import resolve_catalog_id
     from crawler.url_utils import logo_fallback_for_domain, logo_url_for_domain, registrable_domain
     from urllib.parse import urlparse
 
@@ -2836,6 +2887,7 @@ def _row_to_source(
         "last_scan": r["last_scan"],
         "last_error": r["last_error"],
         "is_custom": is_custom,
+        "is_catalog": bool(resolve_catalog_id(r["id"])),
         "is_default_portal": is_default_portal_source(r["id"]),
         "is_antibot": is_antibot_source(
             {"id": r["id"], "base_url": r["base_url"], "search_url": r["search_url"]}
@@ -3087,25 +3139,22 @@ def get_activities(agency_id: str, limit: int = 20) -> list[dict]:
 
 
 def get_stats(agency_id: str) -> dict:
-    with get_connection() as conn:
-        row = conn.execute(
-            """SELECT
-                   COUNT(*) AS total,
-                   SUM(CASE WHEN COALESCE(listing_type, type, 'particulier') != 'agence' THEN 1 ELSE 0 END) AS sans_agence,
-                   SUM(CASE WHEN status = 'nouveau' THEN 1 ELSE 0 END) AS nouveaux,
-                   SUM(CASE WHEN status = 'mandat' THEN 1 ELSE 0 END) AS mandats,
-                   SUM(CASE WHEN COALESCE(listing_type, type, 'particulier') = 'particulier' THEN 1 ELSE 0 END) AS particuliers
-               FROM leads WHERE agency_id = ?""",
-            (agency_id,),
-        ).fetchone()
-    if not row:
-        return {"total": 0, "sans_agence": 0, "nouveaux": 0, "mandats": 0, "particuliers": 0}
+    leads = get_leads(agency_id, enrich=False, claim_orphans=False)
+    total = len(leads)
+    sans_agence = sum(
+        1 for l in leads if (l.get("listing_type") or l.get("type") or "particulier") != "agence"
+    )
+    nouveaux = sum(1 for l in leads if (l.get("status") or "") == "nouveau")
+    mandats = sum(1 for l in leads if (l.get("status") or "") == "mandat")
+    particuliers = sum(
+        1 for l in leads if (l.get("listing_type") or l.get("type") or "particulier") == "particulier"
+    )
     return {
-        "total": int(row["total"] or 0),
-        "sans_agence": int(row["sans_agence"] or 0),
-        "nouveaux": int(row["nouveaux"] or 0),
-        "mandats": int(row["mandats"] or 0),
-        "particuliers": int(row["particuliers"] or 0),
+        "total": total,
+        "sans_agence": sans_agence,
+        "nouveaux": nouveaux,
+        "mandats": mandats,
+        "particuliers": particuliers,
     }
 
 
@@ -3343,6 +3392,19 @@ def patch_lead(lead_id: int, agency_id: str, data: dict) -> dict | None:
             agency_id,
         )
     return lead
+
+
+def get_agency_id_by_slug(slug: str) -> str | None:
+    """ID agence depuis le slug public (vitrine estimateur, liens personnalisés)."""
+    slug = (slug or "").strip().lower()
+    if not slug:
+        return None
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM agencies WHERE lower(slug) = ?",
+            (slug,),
+        ).fetchone()
+    return str(row["id"]) if row else None
 
 
 def get_agency_name(agency_id: str) -> str:

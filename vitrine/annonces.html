@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Catalogue des annonces publiées par les agences immobilières sur Veliora. Consultation uniquement — publication réservée au CRM.">
+  <link rel="canonical" href="https://veliora.fr/annonces">
+  <meta name="theme-color" content="#152a36">
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <title>Catalogue annonces agences — Veliora</title>
+  <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=2">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=44">
+  <link rel="stylesheet" href="/vitrine/assets/css/annonces.css?v=2">
+</head>
+<body class="vitrine vitrine-annonces">
+  <header class="v-nav" id="top">
+    <div class="v-nav-inner">
+      <a href="/" class="v-brand" aria-label="Veliora — accueil">
+        <span class="v-logo-mark" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"/></svg>
+        </span>
+        Veliora
+      </a>
+      <button type="button" class="v-nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="v-nav-links" id="nav-links" aria-label="Navigation principale">
+        <a href="/#agences">Agences</a>
+        <a href="/#produit">Produit</a>
+        <a href="/offre">Tarifs</a>
+        <a href="/estimation" class="v-nav-estimation">Estimation gratuite</a>
+        <a href="/annonces">Catalogue</a>
+        <a href="/#faq">FAQ</a>
+        <span class="v-nav-divider v-nav-divider--end" aria-hidden="true"></span>
+        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion pro</a>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Espace agence</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="v-annonces-main">
+    <section class="v-annonces-hero v-reveal">
+      <h1>Catalogue des annonces</h1>
+      <p class="v-annonces-lead">Biens publiés par les <strong>agences immobilières</strong> abonnées à Veliora. La publication est réservée aux professionnels (menu CRM → Portail annonces).</p>
+      <div class="v-annonces-hero-actions">
+        <a href="/estimation" class="v-btn v-btn-primary">Estimer mon bien (gratuit)</a>
+        <a href="/crm/auth" class="v-btn v-btn-secondary">Connexion agence</a>
+      </div>
+    </section>
+
+    <section class="v-annonces-filters v-reveal" aria-label="Filtres">
+      <label class="v-annonces-filter">
+        <span>Ville</span>
+        <input type="text" id="filter-city" placeholder="Ex. Lorient">
+      </label>
+      <label class="v-annonces-filter">
+        <span>Transaction</span>
+        <select id="filter-tx">
+          <option value="">Toutes</option>
+          <option value="vente">Vente</option>
+          <option value="location">Location</option>
+        </select>
+      </label>
+      <button type="button" class="v-btn v-btn-ghost" id="btn-filter">Rechercher</button>
+    </section>
+
+    <section class="v-annonces-grid-wrap v-reveal" id="listings-grid" aria-live="polite">
+      <p class="v-annonces-loading">Chargement des annonces…</p>
+    </section>
+  </main>
+
+  <footer class="v-footer">
+    <div class="v-footer-grid v-footer-grid-4">
+      <div><strong class="v-footer-brand">Veliora</strong><p>Radar mandats pour agences.</p></div>
+      <div><strong>Produit</strong><a href="/#produit">Fonctionnalités</a><a href="/estimation">Estimation vendeur</a></div>
+      <div><strong>Accès</strong><a href="/crm/auth">Connexion pro</a><a href="/crm/auth?tab=register">Espace agence</a></div>
+      <div><strong>Légal</strong><a href="/confidentialite">Confidentialité</a></div>
+    </div>
+    <p class="v-footer-copy">© 2026 Veliora</p>
+  </footer>
+
+  <script src="/vitrine/assets/js/vitrine-ui.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
+  <script src="/vitrine/assets/js/annonces.js?v=2" defer></script>
+</body>
+</html>

@@ -7,25 +7,26 @@
   <title>Veliora — Connexion agence immobilière</title>
   <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=2">
   <link rel="stylesheet" href="/crm/assets/css/styles.css?v=61">
-  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=37">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=38">
   <style>
     .auth-pricing {
       background: var(--v-sand, #ebe6de);
       border: 1px solid var(--border);
       border-left: 3px solid var(--v-brass-light, #c4a574);
-      border-radius: 12px;
-      padding: 1rem 1.15rem;
-      margin-bottom: 1.25rem;
+      border-radius: 10px;
+      padding: 0.65rem 0.85rem;
+      margin-bottom: 0.85rem;
       text-align: center;
     }
     .auth-pricing .price {
       font-family: var(--font-serif, Georgia, serif);
-      font-size: 1.85rem;
+      font-size: 1.45rem;
       font-weight: 600;
       color: var(--v-ink, #1e3340);
+      line-height: 1.2;
     }
-    .auth-pricing .price span { font-size: 0.95rem; font-weight: 500; color: var(--text-muted, #64748b); }
-    .auth-pricing p { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--text-muted, #64748b); line-height: 1.45; }
+    .auth-pricing .price span { font-size: 0.8rem; font-weight: 500; color: var(--text-muted, #64748b); }
+    .auth-pricing p { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--text-muted, #64748b); line-height: 1.35; }
     .auth-checkout-banner {
       background: rgba(214, 178, 94, 0.12);
       border: 1px solid rgba(214, 178, 94, 0.35);
@@ -52,10 +53,9 @@
   </style>
 </head>
 <body class="auth-page">
-  <div class="auth-card">
+  <div class="auth-card" id="auth-card">
     <h1 class="auth-brand-title">Veliora</h1>
-    <p class="auth-sub">L’outil des agences qui veulent signer plus de mandats</p>
-    <p class="auth-sub auth-sub-muted">Briefing marché · appels priorisés · suivi jusqu’à la signature</p>
+    <p class="auth-sub" id="auth-tagline">Connexion espace agence</p>
 
     <div class="auth-pricing" id="auth-pricing" hidden>
       <div class="price"><span id="price-amount">500</span> € HT <span>/ mois</span></div>
@@ -93,24 +93,20 @@
     </form>
 
     <form id="form-register" class="auth-panel">
-      <label class="form-field"><span>Nom de l'agence</span><input type="text" id="reg-agency" required></label>
-      <label class="form-field"><span>Ville de l'agence</span><input type="text" id="reg-city" placeholder="Saisissez 2 lettres (ex. Lorient, Lyon…)" autocomplete="off" required></label>
-      <label class="form-field"><span>Votre email (administrateur)</span><input type="email" id="reg-email" required></label>
-      <label class="form-field"><span>Mot de passe</span><input type="password" id="reg-password" required minlength="8"></label>
-      <label class="form-field"><span>Prénom</span><input type="text" id="reg-first"></label>
-      <label class="form-field"><span>Nom</span><input type="text" id="reg-last"></label>
-      <p class="form-hint">Réservé aux agences immobilières. Après création du compte, activation de l'abonnement (paiement sécurisé Stripe).</p>
-      <p class="form-hint" style="font-size:0.78rem;margin-top:0.35rem">
-        <a href="/legal#cgv" target="_blank" rel="noopener">CGV</a> ·
-        <a href="/legal#confidentialite" target="_blank" rel="noopener">Confidentialité</a>
-      </p>
-      <button type="submit" class="btn btn-primary btn-block" id="btn-register-submit">Créer mon compte agence</button>
+      <div class="auth-register-grid">
+        <label class="form-field auth-field-full"><span>Nom de l'agence</span><input type="text" id="reg-agency" required autocomplete="organization"></label>
+        <label class="form-field auth-field-full"><span>Ville</span><input type="text" id="reg-city" placeholder="Ex. Lorient, Lyon…" autocomplete="off" required></label>
+        <label class="form-field auth-field-wide"><span>Email admin</span><input type="email" id="reg-email" required autocomplete="email"></label>
+        <label class="form-field"><span>Mot de passe</span><input type="password" id="reg-password" required minlength="8" autocomplete="new-password"></label>
+        <label class="form-field"><span>Prénom</span><input type="text" id="reg-first" autocomplete="given-name"></label>
+        <label class="form-field"><span>Nom</span><input type="text" id="reg-last" autocomplete="family-name"></label>
+      </div>
+      <p class="auth-register-foot">Agences immobilières · puis activation Stripe. <a href="/legal#cgv" target="_blank" rel="noopener">CGV</a> · <a href="/legal#confidentialite" target="_blank" rel="noopener">Confidentialité</a></p>
+      <button type="submit" class="btn btn-primary btn-block" id="btn-register-submit">Créer mon compte</button>
     </form>
 
     <div id="auth-toast" class="auth-toast" hidden></div>
-    <p style="margin-top:1.25rem;font-size:0.75rem;text-align:center;opacity:0.7">
-      <a href="/">← Retour au site</a>
-    </p>
+    <p class="auth-back-link"><a href="/">← Retour au site</a></p>
   </div>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script>
@@ -270,10 +266,21 @@
       reset: document.getElementById("form-reset"),
     };
 
+    const authCard = document.getElementById("auth-card");
+    const authTagline = document.getElementById("auth-tagline");
+    const taglines = {
+      login: "Connexion espace agence",
+      register: "Créer votre espace agence",
+      forgot: "Réinitialisation du mot de passe",
+      reset: "Nouveau mot de passe",
+    };
+
     function showPanel(name) {
       tabs.forEach((x) => x.classList.remove("active"));
       Object.values(panels).forEach((p) => p?.classList.remove("active"));
       if (panels[name]) panels[name].classList.add("active");
+      authCard?.classList.toggle("auth-card--register", name === "register");
+      if (authTagline) authTagline.textContent = taglines[name] || taglines.login;
     }
 
     const resetToken = params.get("reset");
@@ -331,7 +338,11 @@
       finally { setBtnLoading(btn, false); }
     });
 
-    if (params.get("tab") === "register") tabs[1].click();
+    if (params.get("tab") === "register") {
+      tabs[1].classList.add("active");
+      tabs[0].classList.remove("active");
+      showPanel("register");
+    }
 
     function toast(msg, ok) {
       const el = document.getElementById("auth-toast");

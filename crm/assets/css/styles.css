@@ -8920,3 +8920,32 @@ body:has(.crawl-dock.open) .script-dock.open {
   .ai-composer-send, .ai-composer-clear { width: 38px; height: 38px; }
 }
 
+/* Portail annonces CRM */
+.portal-view { max-width: 960px; }
+.portal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.portal-intro { margin: 0; color: var(--text-secondary); font-size: 0.92rem; max-width: 36rem; }
+.portal-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.portal-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.portal-table th,
+.portal-table td { padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border-light); text-align: left; }
+.portal-table .num { text-align: right; white-space: nowrap; }
+.portal-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.portal-status { font-size: 0.72rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; }
+.portal-status--published { background: #e8f5ee; color: #1a5c42; }
+.portal-status--draft { background: #f4f0e8; color: #6b5a3e; }
+.portal-status--archived { background: #eee; color: #666; }
+.portal-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+.portal-form-grid .form-field-wide { grid-column: 1 / -1; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
+

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Estimez gratuitement la valeur de votre bien en vente — données DVF officielles, fourchette indicative en quelques minutes. Veliora.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://veliora.fr/estimation">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:title" content="Estimation gratuite de votre bien — Veliora">
+  <meta property="og:description" content="Valeur indicative basée sur les ventes réelles (DVF). Gratuit, confidentiel, sans engagement.">
+  <meta property="og:url" content="https://veliora.fr/estimation">
+  <meta property="og:image" content="https://veliora.fr/vitrine/assets/img/apartment-interior.jpg">
+  <meta name="theme-color" content="#152a36">
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <title>Estimation gratuite de votre bien — Veliora</title>
+  <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=2">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=41">
+  <link rel="stylesheet" href="/vitrine/assets/css/estimation-lp.css?v=4">
+</head>
+<body class="vitrine vitrine-estimation">
+  <header class="v-nav" id="top">
+    <div class="v-nav-inner">
+      <a href="/" class="v-brand" aria-label="Veliora — accueil">
+        <span class="v-logo-mark" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V9.5z"/></svg>
+        </span>
+        Veliora
+      </a>
+      <button type="button" class="v-nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="v-nav-links" id="nav-links" aria-label="Navigation principale">
+        <a href="/#agences">Agences</a>
+        <a href="/#produit">Produit</a>
+        <a href="/offre">Tarifs</a>
+        <a href="/estimation" class="v-nav-estimation">Estimation gratuite</a>
+        <a href="/annonces">Catalogue</a>
+        <a href="/#faq">FAQ</a>
+        <span class="v-nav-divider v-nav-divider--end" aria-hidden="true"></span>
+        <a href="/crm/auth" class="v-btn v-btn-ghost">Connexion pro</a>
+        <a href="/crm/auth?tab=register" class="v-btn v-btn-primary">Espace agence</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="v-est-page-hero v-reveal" aria-labelledby="est-page-title">
+      <div class="v-est-page-hero-inner">
+        <p class="v-label">Estimation vendeur · 100 % gratuite</p>
+        <h1 id="est-page-title">Combien vaut <em>votre bien</em>&nbsp;?</h1>
+        <p class="v-est-page-lead">Même moteur que dans l’espace pro Veliora : ventes DVF (Etalab), ajustements métier, fourchette net vendeur et prix FAI.</p>
+      </div>
+    </section>
+
+    <section class="v-est-page-body v-reveal" aria-label="Formulaire d'estimation">
+      <div class="v-est-page-grid">
+        <aside class="v-est-trust-panel" id="comment-ca-marche">
+          <h2 class="v-est-trust-title">Pourquoi nous faire confiance</h2>
+          <ul class="v-est-trust-list">
+            <li>
+              <span class="v-est-trust-ico" aria-hidden="true">✓</span>
+              <span><strong>Données officielles</strong> — actes et ventes déclarées sur votre secteur</span>
+            </li>
+            <li>
+              <span class="v-est-trust-ico" aria-hidden="true">✓</span>
+              <span><strong>Confidentiel</strong> — vos coordonnées servent uniquement à vous recontacter</span>
+            </li>
+            <li>
+              <span class="v-est-trust-ico" aria-hidden="true">✓</span>
+              <span><strong>Sans engagement</strong> — avis de valeur indicatif, non contractuel</span>
+            </li>
+            <li>
+              <span class="v-est-trust-ico" aria-hidden="true">✓</span>
+              <span><strong>2 minutes</strong> — formulaire guidé, résultat immédiat</span>
+            </li>
+          </ul>
+          <p class="v-est-trust-foot">Les agences immobilières de votre ville peuvent consulter votre demande pour vous accompagner dans votre projet de vente.</p>
+        </aside>
+
+        <div class="v-est-form-shell" id="lp-est-form-shell">
+          <div class="v-est-form-head">
+            <h2 id="lp-form-title" class="v-est-form-title">Votre estimation</h2>
+            <div class="v-est-progress" role="progressbar" aria-valuemin="1" aria-valuemax="3" aria-valuenow="1" id="lp-progress">
+              <div class="v-est-progress-track"><div class="v-est-progress-fill" id="lp-progress-fill"></div></div>
+              <ol class="v-est-steps" id="lp-steps-label">
+                <li class="is-active" data-step="0"><button type="button" data-goto-step="0">Le bien</button></li>
+                <li data-step="1"><button type="button" data-goto-step="1">Détails</button></li>
+                <li data-step="2"><button type="button" data-goto-step="2">Propriétaire</button></li>
+              </ol>
+            </div>
+          </div>
+
+          <form id="lp-est-form" class="v-est-wizard" novalidate>
+            <input type="text" name="website" id="lp-est-website" class="v-est-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+            <div class="v-est-pane is-active" data-pane="0">
+              <p class="v-est-pane-intro">Type de bien, surface et localisation.</p>
+              <fieldset class="v-est-field">
+                <legend>Type de bien</legend>
+                <div class="v-est-chips" id="lp-type-chips" role="radiogroup" aria-label="Type de bien" data-hidden-for="lp-property-type"></div>
+                <input type="hidden" id="lp-property-type" value="appartement">
+              </fieldset>
+              <div class="v-est-slider">
+                <div class="v-est-slider-top">
+                  <label for="lp-surface">Surface habitable</label>
+                  <output id="lp-surface-out" for="lp-surface">65 m²</output>
+                </div>
+                <input type="range" id="lp-surface" class="v-est-range" min="12" max="350" step="1" value="65">
+              </div>
+              <div class="v-est-slider-row">
+                <div class="v-est-slider">
+                  <div class="v-est-slider-top">
+                    <label for="lp-rooms">Pièces</label>
+                    <output id="lp-rooms-out" for="lp-rooms">3</output>
+                  </div>
+                  <input type="range" id="lp-rooms" class="v-est-range" min="1" max="15" step="1" value="3">
+                </div>
+                <div class="v-est-slider">
+                  <div class="v-est-slider-top">
+                    <label for="lp-floor">Étage</label>
+                    <output id="lp-floor-out" for="lp-floor">2</output>
+                  </div>
+                  <input type="range" id="lp-floor" class="v-est-range" min="0" max="60" step="1" value="2">
+                </div>
+              </div>
+              <div class="v-est-row-2">
+                <label class="v-est-input">
+                  <span>Ville <abbr title="obligatoire">*</abbr></span>
+                  <input type="text" id="lp-city" required autocomplete="address-level2" placeholder="Ex. Lorient">
+                </label>
+                <label class="v-est-input">
+                  <span>Code postal</span>
+                  <input type="text" id="lp-postcode" maxlength="5" autocomplete="postal-code" placeholder="56100">
+                </label>
+              </div>
+              <label class="v-est-input v-est-input--full">
+                <span>Adresse (recommandé)</span>
+                <input type="text" id="lp-address" autocomplete="street-address" placeholder="Numéro et rue">
+              </label>
+            </div>
+
+            <div class="v-est-pane" data-pane="1" hidden>
+              <p class="v-est-pane-intro">État, énergie, honoraires et atouts — comme dans l’estimateur agence.</p>
+              <fieldset class="v-est-field">
+                <legend>État général</legend>
+                <div class="v-est-chips" id="lp-condition-chips" role="radiogroup" data-hidden-for="lp-condition"></div>
+                <input type="hidden" id="lp-condition" value="standard">
+              </fieldset>
+              <fieldset class="v-est-field">
+                <legend>DPE</legend>
+                <div class="v-est-chips v-est-chips--dpe" id="lp-dpe-chips" role="radiogroup" data-hidden-for="lp-dpe"></div>
+                <input type="hidden" id="lp-dpe" value="">
+              </fieldset>
+              <div class="v-est-row-2">
+                <label class="v-est-input">
+                  <span>Exposition</span>
+                  <select id="lp-exposure" class="v-est-select"></select>
+                </label>
+                <label class="v-est-input">
+                  <span>Construction</span>
+                  <select id="lp-construction" class="v-est-select"></select>
+                </label>
+              </div>
+              <label class="v-est-input v-est-input--commission">
+                <span>Honoraires agence (%)</span>
+                <input type="number" id="lp-commission" min="0" max="12" step="0.1" value="5">
+              </label>
+              <fieldset class="v-est-field">
+                <legend>Atouts <span class="v-est-opt">(optionnel)</span></legend>
+                <div class="v-est-chips v-est-chips--multi" id="lp-features-chips" role="group" aria-label="Atouts du bien"></div>
+              </fieldset>
+            </div>
+
+            <div class="v-est-pane" data-pane="2" hidden>
+              <p class="v-est-pane-intro">Vos coordonnées pour recevoir l’estimation et, si vous le souhaitez, être mis en relation avec une agence.</p>
+              <div class="v-est-row-2">
+                <label class="v-est-input">
+                  <span>Prénom <abbr title="obligatoire">*</abbr></span>
+                  <input type="text" id="lp-first" required minlength="2" autocomplete="given-name">
+                </label>
+                <label class="v-est-input">
+                  <span>Nom <abbr title="obligatoire">*</abbr></span>
+                  <input type="text" id="lp-last" required minlength="2" autocomplete="family-name">
+                </label>
+              </div>
+              <div class="v-est-row-2">
+                <label class="v-est-input">
+                  <span>Téléphone</span>
+                  <input type="tel" id="lp-phone" autocomplete="tel" placeholder="06 12 34 56 78">
+                </label>
+                <label class="v-est-input">
+                  <span>Email</span>
+                  <input type="email" id="lp-email" autocomplete="email" placeholder="vous@email.fr">
+                </label>
+              </div>
+              <p class="v-est-hint">Téléphone ou email requis.</p>
+              <label class="v-est-consent">
+                <input type="checkbox" id="lp-consent" required>
+                <span>J’accepte le traitement de mes données pour cette estimation (<a href="/confidentialite" target="_blank" rel="noopener">confidentialité</a>).</span>
+              </label>
+            </div>
+
+          </form>
+
+          <div class="v-est-wizard-actions" id="lp-est-actions">
+            <button type="button" class="v-btn v-btn-ghost" id="lp-prev">Retour</button>
+            <button type="button" class="v-btn v-btn-primary v-btn-lg" id="lp-next">Continuer</button>
+          </div>
+
+          <div id="lp-est-result" class="v-est-result-wrap" hidden aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="v-footer">
+    <div class="v-footer-grid v-footer-grid-4">
+      <div>
+        <strong class="v-footer-brand">Veliora</strong>
+        <p>Radar mandats pour agences immobilières.</p>
+      </div>
+      <div>
+        <strong>Produit</strong>
+        <a href="/#produit">Fonctionnalités</a>
+        <a href="/#comment">Mise en route</a>
+        <a href="/offre">Tarifs</a>
+        <a href="/estimation">Estimation vendeur</a>
+      </div>
+      <div>
+        <strong>Accès</strong>
+        <a href="/crm/auth?tab=register">Créer un compte</a>
+        <a href="/crm/auth">Connexion</a>
+        <a href="/crm">Application</a>
+      </div>
+      <div>
+        <strong>Légal</strong>
+        <a href="/mentions-legales">Mentions légales</a>
+        <a href="/cgv">CGV</a>
+        <a href="/confidentialite">Confidentialité</a>
+      </div>
+    </div>
+    <p class="v-footer-copy">© 2026 Veliora · Données DVF : DGFiP / Etalab</p>
+  </footer>
+
+  <script src="/vitrine/assets/js/vitrine-ui.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
+  <script src="/vitrine/assets/js/estimator-public.js?v=3" defer></script>
+  <script src="/vitrine/assets/js/estimation-lp.js?v=5" defer></script>
+</body>
+</html>
