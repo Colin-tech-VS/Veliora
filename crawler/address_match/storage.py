@@ -158,12 +158,19 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
         return False
     cands = resolution.get("candidats") or []
 
+    # Les prospects crawlés vivent d'abord dans le pool partagé (agency_id NULL)
+    # avant d'être rattachés à l'agence. On cible donc la ligne du lead que son
+    # agency_id soit celui passé OU vide/NULL — sinon le write-back ne matche rien.
+    from crm.leads.shared_pool import shared_leads_sql_where
+
+    pool_where = shared_leads_sql_where()
+
     at = _now()
     try:
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT address, city, postcode, latitude, longitude FROM leads "
-                "WHERE id = ? AND agency_id = ?",
+                f"WHERE id = ? AND (agency_id = ? OR {pool_where})",
                 (lead_id, agency_id),
             ).fetchone()
             if not row:
@@ -229,7 +236,8 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
             params.append(at)
             params.extend([lead_id, agency_id])
             conn.execute(
-                f"UPDATE leads SET {', '.join(sets)} WHERE id = ? AND agency_id = ?",
+                f"UPDATE leads SET {', '.join(sets)} "
+                f"WHERE id = ? AND (agency_id = ? OR {pool_where})",
                 params,
             )
             conn.commit()

@@ -192,12 +192,14 @@ def _features_from_lead_row(row: dict) -> ListingFeatures:
     stored = row.get("listing_features")
     if isinstance(stored, dict):
         return ListingFeatures.from_dict(stored)
+    from crawler.address_quality import real_street_or_none
+
     return ListingFeatures(
         title=row.get("listing_title") or row.get("property_title"),
         city=row.get("city"),
         postcode=row.get("postcode"),
         neighborhood=row.get("sector"),
-        partial_address=row.get("address"),
+        partial_address=real_street_or_none(row.get("address")),
         surface=row.get("surface"),
         price=row.get("price"),
         price_per_m2=(

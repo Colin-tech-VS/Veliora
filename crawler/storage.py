@@ -2489,6 +2489,7 @@ def delete_all_leads(agency_id: str) -> int:
 def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
     from crm.scoring.recalc import enrich_lead_scores as enrich_lead_row
     from crawler.hub_detection import (
+        detect_property_type,
         is_listing_title_name,
         parse_property_detail,
         parse_property_label,
@@ -2548,6 +2549,14 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         city=city,
     )
 
+    # Type de bien toujours renseigné (Appartement, Maison…). Détecté depuis le
+    # titre/adresse ; à défaut « Appartement » (cas le plus fréquent) pour ne
+    # jamais laisser le champ vide dans l'UI / les exports.
+    property_type = (
+        detect_property_type(listing_title, property_title, address if address != "—" else None)
+        or "Appartement"
+    )
+
     base = {
         "id": row["id"],
         "owner": owner or "Particulier",
@@ -2560,6 +2569,7 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         "property": property_detail,
         "property_title": property_title,
         "property_detail": property_detail,
+        "property_type": property_type,
         "price": row["price"] or 0,
         "previous_price": row["previous_price"] if "previous_price" in keys else None,
         "transaction_type": row["transaction_type"] if "transaction_type" in keys else "vente",

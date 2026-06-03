@@ -212,7 +212,11 @@ def extract_listing_features(
     feats.city = getattr(lead, "city", None)
     feats.postcode = getattr(lead, "postcode", None)
     feats.neighborhood = getattr(lead, "sector", None)
-    feats.partial_address = getattr(lead, "address", None)
+    # Ne jamais géocoder une voie de repli synthétique (« … (approx.) ») : ce
+    # n'est pas une vraie adresse, elle fausserait la résolution.
+    from crawler.address_quality import real_street_or_none
+
+    feats.partial_address = real_street_or_none(getattr(lead, "address", None))
     feats.surface = getattr(lead, "surface", None)
     feats.price = getattr(lead, "price", None)
     feats.published_at = getattr(lead, "published_at", None)
