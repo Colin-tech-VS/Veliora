@@ -8782,10 +8782,37 @@ body:has(.crawl-dock.open) .script-dock.open {
   .ux-workflow { grid-template-columns: 1fr; }
 }
 
+/* Panneau clair dans le bandeau sombre .crawler-hero — forcer les couleurs texte */
+.crawler-hero .veille-feed-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--brand-accent-light, #c4a574);
+}
+
+.crawler-hero .veille-feed-panel .form-hint {
+  color: var(--text-muted);
+}
+
+.crawler-hero .veille-feed-panel .btn-ghost {
+  color: var(--brand-primary);
+  border-color: var(--border);
+  background: transparent;
+}
+
+.crawler-hero .veille-feed-panel .btn-ghost:hover {
+  color: var(--brand-primary-dark);
+  background: var(--bg-muted);
+}
+
 .veille-feed-panel {
   margin-top: 1rem;
   padding: 1rem 1.1rem;
   background: var(--bg-surface);
+  color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   border-left: 3px solid var(--brand-accent-light, #c4a574);
@@ -8804,6 +8831,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   font-family: var(--font-serif);
   font-size: 1.05rem;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .veille-feed-list {
@@ -8858,6 +8886,7 @@ body:has(.crawl-dock.open) .script-dock.open {
 .veille-feed-item-title {
   font-weight: 600;
   font-size: 0.9rem;
+  color: var(--text-primary);
 }
 
 .veille-feed-item-details {

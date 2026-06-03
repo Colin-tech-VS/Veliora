@@ -1163,20 +1163,51 @@ def get_last_crawl_job(agency_id: str) -> dict | None:
 
 def crawl_veille_readiness(agency_id: str) -> dict:
     """Prérequis veille auto : ville, portails, dernier résultat."""
+    from crawler.config import (
+        CRAWL_AUTO_FREE_PROXIES,
+        CRAWL_PLAYWRIGHT_ENABLED,
+        antibot_portals_crawl_enabled,
+        proxies_enabled,
+    )
+
     city = (get_agency_primary_city(agency_id) or "").strip()
     portails = get_sources_for_full_crawl(agency_id)
     last = get_last_crawl_job(agency_id)
     blockers: list[str] = []
+    hints: list[str] = []
     if not city:
         blockers.append("Ville non renseignée (Territoire ou fiche agence)")
     if not portails:
         blockers.append("Aucun portail recommandé activé avec une URL de recherche")
+
+    antibot_on = antibot_portals_crawl_enabled()
+    proxies_on = proxies_enabled()
+    if not antibot_on:
+        hints.append(
+            "Leboncoin, PAP, SeLoger, Bien’ici : exclus de la veille (anti-bot). "
+            "La rotation d’IP ne tourne que si CRAWL_PROXIES est renseigné sur le serveur "
+            "(proxies résidentiels recommandés) ou CRAWL_AUTO_FREE_PROXIES=true."
+        )
+    elif proxies_on:
+        hints.append("Portails protégés activés — rotation IP via vos proxies configurés.")
+    elif CRAWL_AUTO_FREE_PROXIES:
+        hints.append(
+            "Portails protégés activés — rotation via pool de proxies publics (best-effort)."
+        )
+    elif CRAWL_PLAYWRIGHT_ENABLED:
+        hints.append(
+            "Portails protégés activés sans proxy : risque de blocage rapide sur Scalingo."
+        )
+
     return {
         "city": city or None,
         "portails_veille_count": len(portails),
         "portails_veille_names": [p.get("name") for p in portails[:6]],
         "blockers": blockers,
+        "hints": hints,
         "ready": not blockers,
+        "antibot_portals_in_veille": antibot_on,
+        "proxies_configured": proxies_on,
         "last_job": last,
     }
 

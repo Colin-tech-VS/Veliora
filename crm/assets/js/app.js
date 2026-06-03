@@ -4810,7 +4810,11 @@ function updateCrawlerVeilleHint(status) {
 
   if (veille.blockers?.length) {
     lines.push(`À corriger : ${veille.blockers.join(" · ")}`);
-  } else if (veille.ready) {
+  }
+  if (veille.hints?.length) {
+    lines.push(veille.hints[0]);
+  }
+  if (veille.ready && !veille.blockers?.length) {
     const names = (veille.portails_veille_names || []).slice(0, 4).join(", ");
     lines.push(
       `Portails suivis : ${veille.portails_veille_count}${names ? ` (${names}…)` : ""} · ville ${veille.city || "—"}.`,

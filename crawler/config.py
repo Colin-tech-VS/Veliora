@@ -366,4 +366,5 @@ def background_crawl_config() -> dict:
         "lead_refresh_stale_hours": CRAWL_LEAD_REFRESH_STALE_HOURS,
         "lead_refresh_max_per_run": CRAWL_LEAD_REFRESH_MAX_PER_RUN,
         "antibot_portals_enabled": antibot_portals_crawl_enabled(),
+        "proxies_configured": proxies_enabled(),
     }
