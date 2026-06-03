@@ -1126,10 +1126,11 @@ body {
 .col-score-mandat { width: 8.5rem; }
 
 .drawer-mandate-hero {
-  padding: 1rem 1.15rem;
-  margin-bottom: 1rem;
-  background: linear-gradient(145deg, rgba(11, 18, 32, 0.04), rgba(42, 74, 92, 0.06));
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.85rem;
+  background: linear-gradient(145deg, rgba(11, 18, 32, 0.05), rgba(42, 74, 92, 0.09));
   border: 1px solid var(--border);
+  border-left: 4px solid var(--brand-gold-dark, #9a7b2e);
   border-radius: var(--radius-md);
 }
 
@@ -1165,6 +1166,25 @@ body {
   margin: 0;
   font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+/* Marché (DVF) regroupé sous le score */
+.drawer-mandate-market {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+}
+
+/* Rapprochement acquéreurs/locataires mis en avant juste sous le score */
+.drawer-matches--featured {
+  border: 1px solid var(--brand-accent, #2a4a5c);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(42, 74, 92, 0.04);
 }
 
 @media (max-width: 900px) {
@@ -4648,10 +4668,71 @@ tr.lead-row-flash td {
   background: rgba(245, 158, 11, 0.1);
 }
 
+/* Progression du workflow transaction (11 étapes) */
+.lead-journey-progress {
+  margin-bottom: 0.6rem;
+}
+
+.lead-journey-progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.15);
+  overflow: hidden;
+}
+
+.lead-journey-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand-600, #0f766e);
+  transition: width var(--duration-normal, 0.2s) ease;
+}
+
+.lead-journey-progress-label {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.lead-journey-status {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.lead-journey-next {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.lead-journey-next-kicker {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.lead-journey-next strong {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
 .lead-journey-actions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.5rem;
+}
+
+/* Le bouton « Prendre en charge / Continuer dans Affaires » occupe toute la largeur */
+.lead-journey-actions #drawer-journey-affaire {
+  grid-column: 1 / -1;
 }
 
 .lead-journey-actions .btn {

@@ -228,6 +228,10 @@
         : "Vue agence : qui fait quoi, à quelle étape. Cliquez le bouton bleu sur chaque carte.";
     return `<div class="tx-header">
       <p class="tx-intro">${intro}</p>
+      <div class="tx-toolbar">
+        <button type="button" class="btn btn-primary btn-sm" data-tx-action="go-prospects">+ Récupérer une annonce</button>
+        <span class="tx-toolbar-hint">Ouvrez une annonce dans Prospects et cliquez « Prendre en charge » : elle arrive ici.</span>
+      </div>
       ${processGuideHtml(scope)}
       ${filterBarHtml(deals)}
     </div>`;
@@ -278,6 +282,10 @@
     const action = btn.dataset.txAction;
     const id = Number(btn.dataset.id);
     try {
+      if (action === "go-prospects") {
+        if (typeof switchView === "function") switchView("leads");
+        return;
+      }
       if (action === "lead") {
         if (typeof openDrawer === "function") openDrawer(id);
         return;
