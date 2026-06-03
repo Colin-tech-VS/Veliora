@@ -970,6 +970,30 @@
     height: auto;
   }
 
+  /* Filet de sécurité anti-débordement (estimateur, crawler, etc.) :
+     aucun contenu réel (URL d'estimation publique, email vendeur, titre
+     d'annonce ou grand nombre) ne doit pousser un module au-delà de l'écran.
+     `overflow-wrap: anywhere` n'agit que lorsque le mot dépasserait — rendu
+     inchangé pour le contenu normal. `min-width: 0` corrige le débordement
+     classique des enfants flex/grid qui refusent de rétrécir. */
+  .content :where(p, span, a, li, td, th, h1, h2, h3, h4, dd, .value, code, pre) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .content :where(.card, .source-card, .lead-card, .stat-card, .client-card,
+    .mandate-card, .estimateur-layout, .estimateur-main, .estimateur-sidebar,
+    .crawler-hero, .crawler-hero-content, .analyze-hero, .module-intro) {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .content :where(.card-header, .source-card-header, .drawer-header,
+    .radar-briefing-header, .mandates-toolbar, .clients-toolbar,
+    .filters-bar, .crawler-controls) > * {
+    min-width: 0;
+  }
+
   .crawl-city-bar {
     max-width: none;
     width: 100%;
