@@ -177,21 +177,34 @@ def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> 
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT address, latitude, longitude FROM leads "
+                "SELECT address, city, postcode, latitude, longitude FROM leads "
                 "WHERE id = ? AND agency_id = ?",
                 (lead_id, agency_id),
             ).fetchone()
             if not row:
                 return False
-            cur_addr = (row["address"] if not isinstance(row, (tuple, list)) else row[0]) or ""
-            cur_lat = row["latitude"] if not isinstance(row, (tuple, list)) else row[1]
-            cur_lng = row["longitude"] if not isinstance(row, (tuple, list)) else row[2]
+            if hasattr(row, "keys"):
+                cur_addr = (row["address"] or "") or ""
+                row_city = row["city"]
+                row_pc = row["postcode"]
+                cur_lat = row["latitude"]
+                cur_lng = row["longitude"]
+            else:
+                cur_addr = (row[0] or "") if len(row) > 0 else ""
+                row_city = row[1] if len(row) > 1 else None
+                row_pc = row[2] if len(row) > 2 else None
+                cur_lat = row[3] if len(row) > 3 else None
+                cur_lng = row[4] if len(row) > 4 else None
 
             sets: list[str] = []
             params: list = []
             addr_l = cur_addr.strip().lower()
+            from crawler.address_quality import is_city_only_address
+
             addr_is_replaceable = (
-                addr_l in _ADDR_BAD or "(approx." in addr_l
+                addr_l in _ADDR_BAD
+                or "(approx." in addr_l
+                or is_city_only_address(cur_addr, row_city, row_pc)
             )
             if addr_is_replaceable:
                 sets.append("address = ?")

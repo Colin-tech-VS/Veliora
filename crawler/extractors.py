@@ -1814,17 +1814,35 @@ def _apply_json_ld(data: Any, lead: LeadData, page_url: str = "") -> None:
     if isinstance(atype, list):
         atype = " ".join(atype)
 
-    if "address" in data and not lead.address:
-        addr = data["address"]
-        if isinstance(addr, dict):
-            parts = [
-                addr.get("streetAddress"),
-                addr.get("postalCode"),
-                addr.get("addressLocality"),
-            ]
-            lead.address = ", ".join(p for p in parts if p)
-        elif isinstance(addr, str):
-            lead.address = addr
+    if "address" in data:
+        from crawler.address_quality import is_street_level_address
+
+        weak = not is_street_level_address(
+            lead.address,
+            getattr(lead, "city", None),
+            getattr(lead, "postcode", None),
+        )
+        if weak:
+            addr = data["address"]
+            if isinstance(addr, dict):
+                street = (addr.get("streetAddress") or "").strip()
+                if street:
+                    parts = [
+                        street,
+                        addr.get("postalCode"),
+                        addr.get("addressLocality"),
+                    ]
+                    lead.address = ", ".join(p for p in parts if p)
+                else:
+                    parts = [
+                        addr.get("postalCode"),
+                        addr.get("addressLocality"),
+                    ]
+                    locality = ", ".join(p for p in parts if p)
+                    if locality and not lead.address:
+                        lead.address = locality
+            elif isinstance(addr, str) and addr.strip():
+                lead.address = addr.strip()
 
     if "floorSize" in data and lead.surface is None:
         fs = data["floorSize"]

@@ -1519,6 +1519,36 @@ class CrawlerEngine:
             scroll_lazy=scroll_lazy,
         )
 
+    def _boost_listing_address(self, lead, html: str, url: str) -> None:
+        """Ré-extrait une adresse rue (JSON-LD, DOM) si la fiche n'a que la ville."""
+        from crawler.address_quality import is_street_level_address
+
+        if is_street_level_address(
+            lead.address,
+            getattr(lead, "city", None),
+            getattr(lead, "postcode", None),
+        ):
+            return
+        if not (html or "").strip():
+            return
+        from bs4 import BeautifulSoup
+        from crawler.extractors import extract_from_json_ld, extract_listing_address
+
+        soup = BeautifulSoup(html, "lxml")
+        extract_from_json_ld(soup, lead, page_url=url)
+        if is_street_level_address(
+            lead.address,
+            getattr(lead, "city", None),
+            getattr(lead, "postcode", None),
+        ):
+            return
+        dom_addr = extract_listing_address(soup, url)
+        if dom_addr:
+            from crawler.hub_detection import is_hub_listing_address
+
+            if not is_hub_listing_address(dom_addr):
+                lead.address = dom_addr
+
     def _clean_unreliable_fields(self, lead) -> None:
         """Zéro donnée faussée : on n'enregistre jamais un nom/adresse douteux.
 
@@ -1549,11 +1579,16 @@ class CrawlerEngine:
                 pass
 
         if lead.address and not _address_ok(lead.address):
-            city = getattr(lead, "city", None)
-            postcode = getattr(lead, "postcode", None)
-            if city:
-                lead.address = f"{city} ({postcode})" if postcode else city
-            else:
+            # Pas de placeholder « Ville (CP) » : ville/CP restent sur city/postcode.
+            lead.address = None
+        else:
+            from crawler.address_quality import is_city_only_address
+
+            if is_city_only_address(
+                lead.address,
+                getattr(lead, "city", None),
+                getattr(lead, "postcode", None),
+            ):
                 lead.address = None
 
     def _process_listing(
@@ -1728,6 +1763,7 @@ class CrawlerEngine:
         from crawler.validation import repair_mixed_listing
 
         lead = repair_mixed_listing(lead, fetched.html, url)
+        self._boost_listing_address(lead, fetched.html, url)
         self._clean_unreliable_fields(lead)
 
         # Crawl strictement local : on rejette toute annonce hors de la ville cible.

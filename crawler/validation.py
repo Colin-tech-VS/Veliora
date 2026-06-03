@@ -634,12 +634,16 @@ def merge_lead_for_update(
     else:
         merged.email = None
 
-    if _address_ok(fresh.address):
-        merged.address = fresh.address.strip()
-    elif _address_ok(existing.address):
-        merged.address = existing.address.strip()
-    else:
-        merged.address = None
+    from crawler.address_quality import pick_best_address
+
+    merged.address = pick_best_address(
+        fresh.address,
+        existing.address,
+        fresh_city=getattr(fresh, "city", None),
+        fresh_postcode=getattr(fresh, "postcode", None),
+        existing_city=getattr(existing, "city", None),
+        existing_postcode=getattr(existing, "postcode", None),
+    )
 
     if _facts_field_confirmed(fresh, "surface") and _surface_ok(fresh.surface):
         merged.surface = fresh.surface
