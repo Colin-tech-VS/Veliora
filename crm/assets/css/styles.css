@@ -228,6 +228,81 @@ body {
   color: var(--brand-accent-light);
 }
 
+/* Navigation regroupée (accordéon) */
+.nav-group {
+  margin-bottom: 0.15rem;
+}
+
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-sidebar);
+  font-size: 0.9rem;
+  font-weight: 450;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.nav-group-toggle:hover {
+  background: var(--bg-sidebar-hover);
+  color: var(--text-inverse);
+}
+
+.nav-group-toggle .nav-group-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.nav-group-toggle .nav-group-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  opacity: 0.5;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.nav-group.open > .nav-group-toggle .nav-group-chevron {
+  transform: rotate(90deg);
+}
+
+/* Un groupe est mis en avant quand l'un de ses écrans est actif */
+.nav-group.has-active > .nav-group-toggle {
+  color: var(--text-inverse);
+}
+
+.nav-group.has-active > .nav-group-toggle .nav-group-icon {
+  opacity: 1;
+  color: var(--brand-accent-light);
+}
+
+.nav-group-items {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 1.45rem;
+  padding-left: 0.45rem;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.nav-group.open > .nav-group-items {
+  display: flex;
+}
+
+.nav-group-items .nav-item {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
 .nav-badge {
   margin-left: auto;
   background: var(--brand-accent);
@@ -3082,6 +3157,31 @@ tr.lead-row-flash td {
   font-size: 0.75rem;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* Méta repliée dans la cellule Propriété (type + source) */
+.lead-property-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+/* Cellule Prix · Marché regroupée */
+.lead-price-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.lead-price-market {
+  font-size: 0.75rem;
+}
+
+.lead-price-market:empty {
+  display: none;
 }
 
 .score-pill {

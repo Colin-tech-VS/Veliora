@@ -1796,6 +1796,32 @@ function setupNavigation() {
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
+  // Groupes repliables de la sidebar (un seul ouvert à la fois)
+  document.querySelectorAll(".nav-group-toggle").forEach((toggle) => {
+    toggle.addEventListener("click", () => {
+      const group = toggle.closest(".nav-group");
+      const willOpen = !group.classList.contains("open");
+      document.querySelectorAll(".nav-group").forEach((g) => {
+        g.classList.toggle("open", g === group && willOpen);
+        g.querySelector(".nav-group-toggle")?.setAttribute(
+          "aria-expanded",
+          String(g === group && willOpen),
+        );
+      });
+    });
+  });
+}
+
+// Ouvre/illumine le groupe contenant l'écran actif, ferme les autres.
+function syncNavGroups(view) {
+  document.querySelectorAll(".nav-group").forEach((group) => {
+    const hasActive = !!group.querySelector(`.nav-item[data-view="${view}"]`);
+    group.classList.toggle("has-active", hasActive);
+    group.classList.toggle("open", hasActive);
+    group
+      .querySelector(".nav-group-toggle")
+      ?.setAttribute("aria-expanded", String(hasActive));
+  });
 }
 
 async function switchView(view) {
@@ -1815,6 +1841,7 @@ async function switchView(view) {
   document.querySelectorAll(".nav-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
+  syncNavGroups(view);
   document.querySelectorAll(".mobile-bottom-nav button").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
@@ -6045,16 +6072,18 @@ function renderLeadRow(lead) {
           <div class="lead-property-text">
             <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}${estimatedChip}</div>
             <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
+            <div class="lead-property-meta">${getTypeBadge(lead)} <span class="source-tag">${lead.source}</span></div>
           </div>
         </div>
       </td>
-      <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
-      <td>${getTypeBadge(lead)}</td>
+      <td>
+        <div class="lead-price-cell">
+          <span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}
+          <div class="lead-price-market">${renderDvfBadge(lead) || ""}</div>
+        </div>
+      </td>
       <td>${getStatusBadge(lead.status)}</td>
-      <td><span class="source-tag">${lead.source}</span></td>
-      <td>${renderDvfBadge(lead) || '<span class="text-muted">—</span>'}</td>
-      <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
-      <td class="lead-actions-cell lead-delete-cell">${getLeadDeleteButtonHtml(lead)}</td>
+      <td class="lead-actions-cell">${getLeadActionsHtml(lead)} ${getLeadDeleteButtonHtml(lead)}</td>
     </tr>`;
 }
 
@@ -6073,7 +6102,7 @@ function renderLeads() {
     gridWrapper.style.display = "none";
 
     if (!leads.length) {
-      tableContainer.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
+      tableContainer.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
       return;
     }
 
