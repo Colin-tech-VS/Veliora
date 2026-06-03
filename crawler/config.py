@@ -7,13 +7,13 @@ import sys
 # Serveur Linux sans écran → on reste en headless.
 _IS_DESKTOP = sys.platform in ("win32", "darwin")
 
-# Profil : quality (défaut) | balanced | fast | turbo
+# Profil : quality | balanced | fast (défaut) | turbo
 # La vérification des données (cohérence + verify_lead) est appliquée quel que soit
 # le profil : le profil ne change que les délais de politesse, jamais la validité.
 # « quality » = comportement humain max (délais longs, scroll/pauses réalistes) →
 # réduit fortement les bannissements anti-bot, au prix de la vitesse.
-# balanced = rapide + fiable (défaut). quality = lent, turbo = agressif.
-CRAWL_SPEED_PROFILE = os.getenv("CRAWL_SPEED_PROFILE", "balanced").strip().lower()
+# fast = rapide + fiable (défaut). balanced = prudent, quality = lent, turbo = agressif.
+CRAWL_SPEED_PROFILE = os.getenv("CRAWL_SPEED_PROFILE", "fast").strip().lower()
 
 # Crawl local : arrêt découverte dès N liens (évite 35 pages vides)
 CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "28"))
@@ -179,8 +179,10 @@ def active_speed_preset() -> dict[str, float]:
 PLAYWRIGHT_TIMEOUT_MS = 45_000
 PLAYWRIGHT_RETRIES = 6
 
-# Anti-bot : attente max pour laisser passer Cloudflare / challenge
-ANTIBOT_CHALLENGE_WAIT_MS = 30_000
+# Anti-bot : attente max pour laisser passer Cloudflare / challenge.
+# 30s gelait le crawl sur chaque portail bloqué ; 15s suffit pour un challenge
+# légitime — au-delà, la rotation d'IP / le passage au portail suivant est plus utile.
+ANTIBOT_CHALLENGE_WAIT_MS = int(os.getenv("ANTIBOT_CHALLENGE_WAIT_MS", "15000"))
 
 # Si bloqué en headless, réessayer avec Chrome visible — OFF par défaut (mode automatique).
 PLAYWRIGHT_HEADED_FALLBACK = os.getenv("CRAWL_HEADED_FALLBACK", "false").strip().lower() in (

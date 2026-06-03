@@ -1123,10 +1123,15 @@ class CrawlerEngine:
             else:
                 zero_yield_pages += 1
 
+            # On a déjà une belle moisson et les dernières pages ne donnent plus
+            # rien : inutile de continuer à explorer du vide → on passe à l'extraction.
+            if len(all_links) >= 12 and zero_yield_pages >= 3:
+                break
+
             if (
                 not city_slug
                 and not fallback_seeds_done
-                and zero_yield_pages >= 6
+                and zero_yield_pages >= 3
                 and len(all_links) < 3
                 and pages_to_visit
             ):
@@ -1722,11 +1727,20 @@ class CrawlerEngine:
                 return True
             return _type_uncertain(ld)
 
+        def _needs_contact_refetch(ld) -> bool:
+            # Le 2e passage navigateur (click « révéler le contact ») est coûteux :
+            # on ne le déclenche QUE s'il manque vraiment tout moyen de contact
+            # (ni téléphone ni email) ou le nom du vendeur. Une simple incertitude
+            # de type, ou un seul canal manquant, ne justifie pas un re-fetch complet.
+            if not _name_ok(ld.first_name, ld.last_name):
+                return True
+            return not ld.phone and not ld.email
+
         core_miss = missing_core_fields(lead)
         if _needs_contact_pass(lead):
             lead = deep_enhance_listing_contacts(fetched.html, url, lead)
             core_miss = missing_core_fields(lead)
-        if _needs_contact_pass(lead) and not deep_refresh:
+        if _needs_contact_refetch(lead) and not deep_refresh:
             if job_id:
                 update_crawl_job(
                     job_id,
