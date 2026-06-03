@@ -46,11 +46,17 @@ def ensure_portal_tables(conn) -> None:
         )
     """)
     # Migration douce des tables créées avant l'ajout des colonnes agent.
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(portal_listings)").fetchall()}
-    for col in ("agent_id", "agent_name", "source_lead_id"):
-        if col not in cols:
-            ddl = "INTEGER" if col == "source_lead_id" else "TEXT"
-            conn.execute(f"ALTER TABLE portal_listings ADD COLUMN {col} {ddl}")
+    from velora_db.introspect import ensure_columns
+
+    ensure_columns(
+        conn,
+        "portal_listings",
+        {
+            "agent_id": "TEXT",
+            "agent_name": "TEXT",
+            "source_lead_id": "INTEGER",
+        },
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_listings_status "
         "ON portal_listings(status, city)"

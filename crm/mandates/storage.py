@@ -71,10 +71,18 @@ def ensure_mandate_tables(conn) -> None:
         )
     """)
     # Double validation (propriétaire + agent) — migration douce.
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(seller_mandates)").fetchall()}
-    for col in ("owner_validated_at", "agent_validated_at", "agent_id", "agent_name"):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE seller_mandates ADD COLUMN {col} TEXT")
+    from velora_db.introspect import ensure_columns
+
+    ensure_columns(
+        conn,
+        "seller_mandates",
+        {
+            "owner_validated_at": "TEXT",
+            "agent_validated_at": "TEXT",
+            "agent_id": "TEXT",
+            "agent_name": "TEXT",
+        },
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_seller_mandates_agency "
         "ON seller_mandates(agency_id)"

@@ -826,7 +826,10 @@ def seed_default_sources_for_agency(agency_id: str) -> int:
 
 def sync_default_sources_for_agency(agency_id: str) -> int:
     """Portails Veliora par agence : présents pour tout le monde, URLs à jour."""
-    from crawler.portals import resolve_base_portal_id
+    from crm.leads.shared_pool import is_shared_pool_agency_id
+
+    if is_shared_pool_agency_id(agency_id):
+        return 0
 
     now = _now()
     touched = 0
@@ -850,7 +853,15 @@ def sync_default_sources_for_agency(agency_id: str) -> int:
                     """INSERT INTO sources
                        (id, name, base_url, search_url, enabled, is_custom,
                         agency_id, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+                       ON CONFLICT(id) DO UPDATE SET
+                         name = excluded.name,
+                         base_url = excluded.base_url,
+                         search_url = excluded.search_url,
+                         enabled = excluded.enabled,
+                         is_custom = 0,
+                         agency_id = excluded.agency_id,
+                         updated_at = excluded.updated_at""",
                     (sid, cfg.name, cfg.base_url, cfg.search_url, enabled, agency_id, now, now),
                 )
             touched += 1
@@ -1681,16 +1692,18 @@ def record_lead_outcome_event(
         conn.commit()
 
 
-def _coerce_source_id(conn, source_id: str | None, agency_id: str) -> str | None:
+def _coerce_source_id(conn, source_id: str | None, agency_id: str | None) -> str | None:
     """Évite les échecs FK Postgres si la source n'existe pas encore."""
+    from crm.leads.shared_pool import is_shared_pool_agency_id
+
     if not source_id:
         return None
-    row = conn.execute(
-        "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
-        (source_id, agency_id),
-    ).fetchone()
+    row = conn.execute("SELECT id FROM sources WHERE id = ?", (source_id,)).fetchone()
     if row:
         return source_id
+    if is_shared_pool_agency_id(agency_id):
+        logger.warning("source_id inconnu pour INSERT lead — %s (pool partagé)", source_id)
+        return None
     sync_default_sources_for_agency(agency_id)
     row = conn.execute(
         "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
@@ -1883,7 +1896,7 @@ def save_lead(
 
     race_retry = False
     with get_connection() as conn:
-        source_id = _coerce_source_id(conn, source_id, agency_id)
+        source_id = _coerce_source_id(conn, source_id, discovering_agency_id)
         if existing_row:
             old_p = existing_row.get("price") or 0
             new_p = lead.price or 0
