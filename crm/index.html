@@ -632,6 +632,14 @@
               <h2>Veille sur vos portails</h2>
               <p>Veliora consulte <strong>vos sites de recherche</strong> (Leboncoin, PAP, SeLoger, Bien’ici, Figaro, site agence…) — vente, location et toutes les pages de liste que vous ajoutez.</p>
               <p class="form-hint" id="crawler-auto-hint">La veille automatique tourne en continu tant que le serveur est actif (relance au redémarrage).</p>
+              <section class="veille-feed-panel" id="veille-feed-panel" hidden aria-live="polite">
+                <div class="veille-feed-head">
+                  <h3>Dernières annonces — ajouts & mises à jour</h3>
+                  <button type="button" class="btn btn-ghost btn-sm" id="veille-feed-refresh">Actualiser</button>
+                </div>
+                <ul class="veille-feed-list" id="veille-feed-list"></ul>
+                <p class="form-hint veille-feed-empty" id="veille-feed-empty" hidden>Aucun mouvement récent — la veille alimente cette liste dès qu’une annonce est créée ou modifiée.</p>
+              </section>
               <form class="custom-crawl-form" id="custom-crawl-form">
                 <div class="custom-crawl-input">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"/><path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
@@ -1412,7 +1420,7 @@
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
-  <script src="/crm/assets/js/app.js?v=81"></script>
+  <script src="/crm/assets/js/app.js?v=82"></script>
   <script src="/crm/assets/js/ai.js?v=5"></script>
   <script>
     if ("serviceWorker" in navigator) {

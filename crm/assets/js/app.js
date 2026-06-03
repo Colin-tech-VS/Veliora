@@ -1794,6 +1794,7 @@ async function switchView(view) {
       applyAgencyCityToCrawl();
       scheduleSourceUrlsForCity();
     });
+    refreshVeilleFeed().catch(() => {});
   }
   if (view === "clients" && typeof loadClients === "function") {
     try {
@@ -3134,6 +3135,9 @@ function setupCrawler() {
     document.getElementById("btn-agency-legal-profile")?.click();
   });
   document.getElementById("crawler-toggle").addEventListener("click", toggleCrawler);
+  document.getElementById("veille-feed-refresh")?.addEventListener("click", () => {
+    refreshVeilleFeed().catch((err) => showToast(err.message, "error"));
+  });
   document.getElementById("crawler-scan-btn").addEventListener("click", runManualScan);
   document.getElementById("crawler-all-btn").addEventListener("click", runManualScan);
   document.getElementById("add-source-btn").addEventListener("click", openAddSourceModal);
@@ -4716,7 +4720,61 @@ function syncCrawlerUI() {
     const extra = cfg.lead_refresh_enabled ? " · fiches ≥24h" : "";
     footerCount.title = `Relance auto toutes les ${intervalMin} min${extra}`;
   }
+  renderVeilleFeed(cfg.veille_feed || []);
   updateCrawlerVeilleHint(cfg);
+}
+
+async function refreshVeilleFeed() {
+  try {
+    const data = await api("/crawler/veille-feed?limit=30");
+    renderVeilleFeed(data.items || []);
+  } catch (err) {
+    console.warn("veille-feed", err);
+  }
+}
+
+function renderVeilleFeed(items) {
+  const panel = document.getElementById("veille-feed-panel");
+  const list = document.getElementById("veille-feed-list");
+  const empty = document.getElementById("veille-feed-empty");
+  if (!panel || !list) return;
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) {
+    panel.hidden = false;
+    list.innerHTML = "";
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  panel.hidden = false;
+  list.innerHTML = rows
+    .map((row) => {
+      const isNew = row.change_type === "created";
+      const badge = isNew ? "Nouveau" : "Mis à jour";
+      const when = (row.created_at || "").slice(0, 16).replace("T", " ");
+      const details = Array.isArray(row.details) ? row.details.join(" · ") : row.summary || "";
+      const score =
+        row.mandate_score != null ? ` · Score ${Math.round(row.mandate_score)}` : "";
+      const src = row.source_name ? ` · ${escapeHtml(row.source_name)}` : "";
+      return `<li class="veille-feed-item">
+        <div class="veille-feed-item-head">
+          <span class="veille-feed-badge ${isNew ? "created" : "updated"}">${badge}</span>
+          <time>${escapeHtml(when)}</time>
+        </div>
+        <span class="veille-feed-item-title">${escapeHtml(row.owner_label || row.summary || "Prospect")}${score}</span>
+        <span class="veille-feed-item-details">${escapeHtml(details)}${src}</span>
+        <div class="veille-feed-item-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-veille-open-lead="${row.lead_id}">Voir la fiche →</button>
+        </div>
+      </li>`;
+    })
+    .join("");
+  list.querySelectorAll("[data-veille-open-lead]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = parseInt(btn.getAttribute("data-veille-open-lead"), 10);
+      if (id) openDrawer(id);
+    });
+  });
 }
 
 function updateCrawlerVeilleHint(status) {
@@ -7800,6 +7858,7 @@ async function runBackgroundPoll() {
     state.crawlerRunning = !!status.running;
     state.veilleEffective = !!status.veille_effective;
     state.backgroundCrawl = status;
+    renderVeilleFeed(status.veille_feed || []);
     updateCrawlerVeilleHint(status);
     syncCrawlerUI();
 

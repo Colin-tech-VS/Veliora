@@ -306,6 +306,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()}
 
+    if "crawl_lead_changes" not in tables:
+        _ensure_crawl_lead_changes_table(conn)
+
     if "crawl_jobs" not in tables:
         conn.execute("""
             CREATE TABLE crawl_jobs (
@@ -1012,16 +1015,47 @@ def cancel_all_active_crawl_jobs(agency_id: str | None = None) -> int:
         return cur.rowcount or 0
 
 
-def get_pending_or_running_crawl_job(agency_id: str) -> dict | None:
-    """Job en cours ou en file — évite deux crawls Playwright en parallèle."""
+PORTAL_CRAWL_JOB_TYPES = frozenset(
+    {"all_sources", "veille_auto", "single_source", "url"}
+)
+REFRESH_CRAWL_JOB_TYPES = frozenset({"lead_refresh", "listing_import"})
+
+
+def crawl_job_lane(job_type: str | None) -> str:
+    if (job_type or "") in REFRESH_CRAWL_JOB_TYPES:
+        return "refresh"
+    return "portal"
+
+
+def get_pending_or_running_crawl_job(
+    agency_id: str,
+    *,
+    lane: str = "any",
+) -> dict | None:
+    """Job en cours — par file : portal (veille portails) ou refresh (fiches), sans se bloquer."""
     expire_stale_crawl_jobs()
+    types: tuple[str, ...] | None = None
+    if lane == "portal":
+        types = tuple(PORTAL_CRAWL_JOB_TYPES)
+    elif lane == "refresh":
+        types = tuple(REFRESH_CRAWL_JOB_TYPES)
     with get_connection() as conn:
-        row = conn.execute(
-            """SELECT * FROM crawl_jobs
-               WHERE agency_id = ? AND status IN ('pending', 'running')
-               ORDER BY created_at DESC LIMIT 1""",
-            (agency_id,),
-        ).fetchone()
+        if types:
+            placeholders = ",".join("?" for _ in types)
+            row = conn.execute(
+                f"""SELECT * FROM crawl_jobs
+                   WHERE agency_id = ? AND status IN ('pending', 'running')
+                     AND job_type IN ({placeholders})
+                   ORDER BY created_at DESC LIMIT 1""",
+                (agency_id, *types),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT * FROM crawl_jobs
+                   WHERE agency_id = ? AND status IN ('pending', 'running')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (agency_id,),
+            ).fetchone()
     return _row_to_job(row) if row else None
 
 
@@ -1080,6 +1114,88 @@ def crawl_veille_readiness(agency_id: str) -> dict:
         "ready": not blockers,
         "last_job": last,
     }
+
+
+def _ensure_crawl_lead_changes_table(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS crawl_lead_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            lead_id INTEGER NOT NULL,
+            change_type TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '[]',
+            source_name TEXT,
+            listing_url TEXT,
+            owner_label TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_crawl_lead_changes_agency "
+        "ON crawl_lead_changes(agency_id, created_at DESC)"
+    )
+
+
+def insert_crawl_lead_change(
+    *,
+    job_id: str,
+    agency_id: str,
+    lead_id: int,
+    change_type: str,
+    summary: str,
+    details: list[str],
+    source_name: str | None,
+    listing_url: str | None,
+    owner_label: str | None,
+) -> None:
+    with get_connection() as conn:
+        _ensure_crawl_lead_changes_table(conn)
+        conn.execute(
+            """INSERT INTO crawl_lead_changes
+               (job_id, agency_id, lead_id, change_type, summary, details_json,
+                source_name, listing_url, owner_label, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                job_id,
+                agency_id,
+                lead_id,
+                change_type,
+                summary,
+                json.dumps(details, ensure_ascii=False),
+                source_name,
+                listing_url,
+                owner_label,
+                _now(),
+            ),
+        )
+        conn.commit()
+
+
+def get_veille_feed(agency_id: str, limit: int = 40) -> list[dict]:
+    """Derniers ajouts / mises à jour pour le panneau veille CRM."""
+    limit = max(1, min(int(limit), 100))
+    with get_connection() as conn:
+        _ensure_crawl_lead_changes_table(conn)
+        rows = conn.execute(
+            """SELECT c.*, l.mandate_score, l.city AS lead_city
+               FROM crawl_lead_changes c
+               LEFT JOIN leads l ON l.id = c.lead_id AND l.agency_id = c.agency_id
+               WHERE c.agency_id = ?
+               ORDER BY c.created_at DESC
+               LIMIT ?""",
+            (agency_id, limit),
+        ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["details"] = json.loads(d.pop("details_json", "[]") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            d["details"] = []
+        out.append(d)
+    return out
 
 
 def _json_job_field(raw, default=None):

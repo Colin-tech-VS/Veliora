@@ -151,6 +151,22 @@ CREATE TABLE IF NOT EXISTS crawl_jobs (
 CREATE INDEX IF NOT EXISTS idx_crawl_jobs_status ON crawl_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_crawl_jobs_agency ON crawl_jobs(agency_id);
 
+CREATE TABLE IF NOT EXISTS crawl_lead_changes (
+    id              BIGSERIAL PRIMARY KEY,
+    job_id          TEXT NOT NULL,
+    agency_id       TEXT NOT NULL,
+    lead_id         BIGINT NOT NULL,
+    change_type     TEXT NOT NULL,
+    summary         TEXT NOT NULL,
+    details_json    TEXT NOT NULL DEFAULT '[]',
+    source_name     TEXT,
+    listing_url     TEXT,
+    owner_label     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crawl_lead_changes_agency ON crawl_lead_changes(agency_id, created_at DESC);
+
 -- Activité
 CREATE TABLE IF NOT EXISTS activities (
     id              BIGSERIAL PRIMARY KEY,

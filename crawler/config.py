@@ -336,6 +336,12 @@ CRAWL_LEAD_REFRESH_MAX_PER_RUN = max(
     int(os.getenv("CRAWL_LEAD_REFRESH_MAX_PER_RUN", "15") or "15"),
 )
 
+# Veille auto : durée max par portail (évite blocage anti-bot — on passe au suivant)
+CRAWL_VEILLE_SOURCE_MAX_SEC = max(
+    120,
+    int(os.getenv("CRAWL_VEILLE_SOURCE_MAX_SEC", "420") or "420"),
+)
+
 
 def antibot_portals_crawl_enabled() -> bool:
     """Leboncoin, PAP, SeLoger… : activables si Playwright + proxies (ou forçage explicite)."""

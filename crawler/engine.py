@@ -106,6 +106,8 @@ class CrawlerEngine:
         self._thread: threading.Thread | None = None
         self._lead_refresh_thread: threading.Thread | None = None
         self._bg_interval_sec = 300
+        self._source_deadline: float | None = None
+        self._veille_mode = False
         self._lock = threading.Lock()
         self._job_lock = threading.Lock()
 
@@ -189,6 +191,7 @@ class CrawlerEngine:
         agency_id: str | None = None,
         eta_seconds: int | None = None,
         listings_total: int | None = None,
+        lane: str | None = None,
     ) -> dict:
         if not agency_id:
             raise ValueError("agency_id requis pour lancer un crawl")
@@ -199,13 +202,15 @@ class CrawlerEngine:
             eta = eta_seconds
         if listings_total is None:
             listings_total = MAX_LISTING_LINKS
-        with self._job_lock:
-            from crawler.storage import get_pending_or_running_crawl_job
+        from crawler.storage import crawl_job_lane, get_pending_or_running_crawl_job
 
-            existing = get_pending_or_running_crawl_job(agency_id)
+        job_lane = lane or crawl_job_lane(job_type)
+        with self._job_lock:
+            existing = get_pending_or_running_crawl_job(agency_id, lane=job_lane)
             if existing:
                 logger.info(
-                    "Crawl déjà actif pour l'agence %s — job %s",
+                    "Crawl %s déjà actif pour l'agence %s — job %s",
+                    job_lane,
                     agency_id,
                     existing.get("id"),
                 )
@@ -274,8 +279,10 @@ class CrawlerEngine:
 
             reset_block_rotation_counter()
             self.refresh_adapters(agency_id)
-            if job_type == "all_sources":
-                self._job_scan_all(job_id, city=city)
+            self._veille_mode = job_type == "veille_auto"
+            self._source_deadline = None
+            if job_type in ("all_sources", "veille_auto"):
+                self._job_scan_all(job_id, city=city, veille_mode=self._veille_mode)
             elif job_type == "single_source" and source_id:
                 self._job_scan_source(job_id, source_id, city=city)
             elif job_type == "url" and target_url:
@@ -326,7 +333,9 @@ class CrawlerEngine:
         close_browser_session()
         return True
 
-    def _finish_job(self, job_id: str, result: CrawlResult, label: str) -> None:
+    def _finish_job(
+        self, job_id: str, result: CrawlResult, label: str, *, veille_soft: bool = False
+    ) -> None:
         if self._crawl_stopped(job_id):
             return
         dvf_line = ""
@@ -354,6 +363,8 @@ class CrawlerEngine:
         status = "completed"
         if result.errors and not result.leads_saved and not result.leads_updated:
             if result.leads_found > 0 or result.warnings:
+                status = "completed"
+            elif veille_soft:
                 status = "completed"
             else:
                 status = "failed" if not result.leads_found else "completed"
@@ -402,18 +413,28 @@ class CrawlerEngine:
             job_id,
         )
 
-    def _job_scan_all(self, job_id: str, city: str | None = None) -> None:
+    def _source_timed_out(self) -> bool:
+        d = self._source_deadline
+        return d is not None and time.monotonic() >= d
+
+    def _job_scan_all(
+        self, job_id: str, city: str | None = None, *, veille_mode: bool = False
+    ) -> None:
         from crawler.storage import seed_default_sources_for_agency, get_sources_for_full_crawl
 
         added = seed_default_sources_for_agency(self._agency_id)
         self.refresh_adapters(self._agency_id)
         sources = get_sources_for_full_crawl(self._agency_id)
+        if veille_mode:
+            from crawler.storage import is_antibot_source
+
+            sources = [s for s in sources if not is_antibot_source(s)]
         if not sources:
             update_crawl_job(
                 job_id,
                 status="failed",
                 errors=[CrawlError.issue(CrawlError.NO_LISTINGS, "Aucun portail recommandé activé")],
-                message="Activez au moins un portail recommandé (section du haut)",
+                message="Aucun portail accessible pour la veille (activez ParuVendu, Ouest-France Immo… — LBC/PAP exclus)",
                 finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             )
             return
@@ -447,19 +468,30 @@ class CrawlerEngine:
         if len(sources) > 4:
             names_preview += f" +{len(sources) - 4}"
         extra = f" ({added} site(s) ajouté(s))" if added else ""
-        scope = f"Crawl {city}" if city else "Crawl portails recommandés"
+        scope = f"Veille {city}" if city and veille_mode else (f"Crawl {city}" if city else "Crawl portails")
         update_crawl_job(
             job_id,
             progress=10,
-            message=f"{scope} — {len(sources)} site(s) : {names_preview}{extra}…",
+            message=f"{scope} — {len(sources)} portail(s) accessible(s) : {names_preview}{extra}…",
         )
 
-        self._prime_protected_sources(sources, job_id, city=city)
+        if not veille_mode:
+            self._prime_protected_sources(sources, job_id, city=city)
 
         total = CrawlResult()
+        finish_label = "Veille automatique" if veille_mode else "Crawler tout"
         for i, src in enumerate(sources):
             if self._crawl_stopped(job_id):
                 return
+            if self._source_timed_out():
+                add_crawl_log(
+                    None,
+                    "",
+                    "skip_source",
+                    "Délai veille atteint — portail suivant au prochain passage",
+                    job_id,
+                )
+                break
             from crawler.config import CRAWL_PROXY_ROTATE_EACH_CRAWL
             from crawler.proxy_manager import begin_crawl_session
 
@@ -474,7 +506,27 @@ class CrawlerEngine:
                 progress=pct,
                 message=f"Site {i + 1}/{len(sources)} — {src['name']}…",
             )
-            r = self._crawl_source(src["id"], job_id, city=city)
+            from crawler.config import CRAWL_VEILLE_SOURCE_MAX_SEC
+
+            if veille_mode:
+                self._source_deadline = time.monotonic() + CRAWL_VEILLE_SOURCE_MAX_SEC
+            try:
+                r = self._crawl_source(
+                    src["id"], job_id, city=city, veille_mode=veille_mode
+                )
+            except Exception as exc:
+                logger.warning("Veille — %s ignoré : %s", src.get("name"), exc)
+                r = CrawlResult(
+                    warnings=[
+                        CrawlError.issue(
+                            CrawlError.FETCH_FAILED,
+                            f"{src.get('name')} — passage suivant ({str(exc)[:80]})",
+                        )
+                    ],
+                )
+            finally:
+                if veille_mode:
+                    self._source_deadline = None
             if self._crawl_stopped(job_id):
                 return
             total.leads_found += r.leads_found
@@ -487,7 +539,7 @@ class CrawlerEngine:
 
         if job_id:
             update_crawl_job(job_id, progress=95, message="Finalisation et enregistrement des résultats…")
-        self._finish_job(job_id, total, "Crawler tout")
+        self._finish_job(job_id, total, finish_label, veille_soft=veille_mode)
 
     def _prime_protected_sources(
         self, sources: list[dict], job_id: str, city: str | None = None
@@ -623,8 +675,10 @@ class CrawlerEngine:
         source_id: str,
         job_id: str | None = None,
         city: str | None = None,
+        *,
+        veille_mode: bool = False,
     ) -> CrawlResult:
-        if self._crawl_stopped(job_id):
+        if self._crawl_stopped(job_id) or self._source_timed_out():
             return CrawlResult()
         adapter = self.adapters.get(source_id)
         if not adapter:
@@ -814,7 +868,12 @@ class CrawlerEngine:
                 self._agency_id,
             )
             for i, listing_url in enumerate(targets):
-                if self._crawl_stopped(job_id):
+                if self._crawl_stopped(job_id) or self._source_timed_out():
+                    if self._source_timed_out() and job_id:
+                        update_crawl_job(
+                            job_id,
+                            message="Délai portail atteint — suite au prochain passage de veille",
+                        )
                     break
                 if not result.can_process_more_listings():
                     break
@@ -1482,7 +1541,10 @@ class CrawlerEngine:
             )
             update_crawl_job(job_id, message=load_msg)
 
-        is_recrawl = get_lead_by_source_url(url, self._agency_id) is not None
+        existing_row = (
+            get_lead_by_source_url(url, self._agency_id) if self._agency_id else None
+        )
+        is_recrawl = existing_row is not None
         if job_id:
             if deep_refresh:
                 msg = "Mise à jour poussée — type, téléphone, email…"
@@ -1818,16 +1880,31 @@ class CrawlerEngine:
             verif = saved.get("verification", "")
             if saved.get("created"):
                 result.leads_saved += 1
+                from crawler.lead_changes import diff_lead_fields, record_lead_change
+
+                details = diff_lead_fields(None, lead)
+                detail_txt = " · ".join(details[:3])
                 add_activity(
                     "new",
-                    f"Lead vérifié — {lead.owner}, {lead.address}",
+                    f"Nouveau prospect — {lead.owner} — {detail_txt}",
                     self._agency_id,
+                )
+                record_lead_change(
+                    job_id=job_id,
+                    agency_id=self._agency_id,
+                    lead_id=int(saved["id"]),
+                    change_type="created",
+                    summary=f"Nouveau — {lead.owner or 'Vendeur'}",
+                    details=details,
+                    source_name=adapter.source_name,
+                    listing_url=url,
+                    owner_label=lead.owner,
                 )
                 add_crawl_log(
                     source_id or adapter.source_id,
                     url,
                     "ok",
-                    f"{summary} ({verif})",
+                    f"Nouveau — {summary} — {detail_txt}",
                     job_id,
                 )
                 if job_id:
@@ -1841,16 +1918,31 @@ class CrawlerEngine:
                     )
             else:
                 result.leads_updated += 1
+                from crawler.lead_changes import diff_lead_fields, record_lead_change
+
+                details = diff_lead_fields(existing_row, lead)
+                detail_txt = " · ".join(details[:3])
                 add_activity(
                     "crawl",
-                    f"Lead mis à jour (vérifié) — {lead.owner}",
+                    f"Mis à jour — {lead.owner} — {detail_txt}",
                     self._agency_id,
+                )
+                record_lead_change(
+                    job_id=job_id,
+                    agency_id=self._agency_id,
+                    lead_id=int(saved["id"]),
+                    change_type="updated",
+                    summary=f"Mise à jour — {lead.owner or 'Vendeur'}",
+                    details=details,
+                    source_name=adapter.source_name,
+                    listing_url=url,
+                    owner_label=lead.owner,
                 )
                 add_crawl_log(
                     source_id or adapter.source_id,
                     url,
                     "updated",
-                    f"Recrawl OK — {summary} ({verif})",
+                    f"Màj — {summary} — {detail_txt}",
                     job_id,
                 )
                 if job_id:
@@ -1939,7 +2031,7 @@ class CrawlerEngine:
         )
 
     def scan_all_enabled(self, city: str | None = None, *, agency_id: str | None = None) -> dict:
-        return self.enqueue_job("all_sources", city=city, agency_id=agency_id)
+        return self.enqueue_job("all_sources", city=city, agency_id=agency_id, lane="portal")
 
     def crawl_url(self, url: str, *, agency_id: str | None = None) -> dict:
         return self.enqueue_job("url", target_url=url, agency_id=agency_id)
@@ -1975,6 +2067,7 @@ class CrawlerEngine:
             agency_id=agency_id,
             eta_seconds=eta,
             listings_total=1,
+            lane="refresh",
         )
 
     def start_background(self, interval: int | None = None) -> None:
@@ -2024,19 +2117,25 @@ class CrawlerEngine:
 
         while self.running:
             try:
+                self._run_lead_refresh_pass()
                 for agency_id in list_agency_ids():
                     if not self.running:
                         break
                     city = get_agency_primary_city(agency_id)
                     if not city:
                         continue
-                    if get_pending_or_running_crawl_job(agency_id):
+                    if get_pending_or_running_crawl_job(agency_id, lane="portal"):
                         logger.debug(
-                            "Veille auto — job déjà actif pour %s, passage suivant",
+                            "Veille portails — job déjà actif pour %s",
                             agency_id,
                         )
-                        continue
-                    self.enqueue_job("all_sources", city=city, agency_id=agency_id)
+                    else:
+                        self.enqueue_job(
+                            "veille_auto",
+                            city=city,
+                            agency_id=agency_id,
+                            lane="portal",
+                        )
             except Exception as exc:
                 logger.exception("Background crawl: %s", exc)
             wait = self._bg_interval_sec if self.running else interval
@@ -2073,7 +2172,7 @@ class CrawlerEngine:
         for agency_id in list_agency_ids():
             if not self.running:
                 break
-            if get_pending_or_running_crawl_job(agency_id):
+            if get_pending_or_running_crawl_job(agency_id, lane="refresh"):
                 continue
             stale = get_leads_stale_for_refresh(
                 agency_id,
@@ -2083,7 +2182,7 @@ class CrawlerEngine:
             for row in stale:
                 if not self.running:
                     break
-                if get_pending_or_running_crawl_job(agency_id):
+                if get_pending_or_running_crawl_job(agency_id, lane="refresh"):
                     break
                 lead_id = row.get("id")
                 if not lead_id:

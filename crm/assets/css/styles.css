@@ -8770,6 +8770,94 @@ body:has(.crawl-dock.open) .script-dock.open {
   .ux-workflow { grid-template-columns: 1fr; }
 }
 
+.veille-feed-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--brand-accent-light, #c4a574);
+}
+
+.veille-feed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.veille-feed-head h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.veille-feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.veille-feed-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.veille-feed-item:last-child { border-bottom: none; }
+
+.veille-feed-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.veille-feed-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.veille-feed-badge.created {
+  background: rgba(90, 125, 106, 0.15);
+  color: var(--brand-secondary-dark, #466052);
+}
+
+.veille-feed-badge.updated {
+  background: rgba(154, 123, 79, 0.15);
+  color: var(--brand-accent-dark, #7d6340);
+}
+
+.veille-feed-item time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.veille-feed-item-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.veille-feed-item-details {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.veille-feed-item-actions {
+  margin-top: 0.25rem;
+}
+
 @media (max-width: 640px) {
   .ai-shell {
     margin: 0;

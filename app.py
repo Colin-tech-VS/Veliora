@@ -1628,6 +1628,8 @@ def api_crawler_status():
     status = engine.status()
     stats = get_stats(agency_id)
     sources = get_sources(agency_id, sync=False, live_counts=False)
+    from crawler.storage import get_veille_feed
+
     veille = crawl_veille_readiness(agency_id)
     return jsonify({
         **status,
@@ -1636,7 +1638,16 @@ def api_crawler_status():
         "total_leads": stats["total"],
         "prospects_in_db": stats["total"],
         "veille": veille,
+        "veille_feed": get_veille_feed(agency_id, limit=30),
     })
+
+
+@app.route("/api/crawler/veille-feed")
+def api_crawler_veille_feed():
+    from crawler.storage import get_veille_feed
+
+    limit = request.args.get("limit", 40, type=int)
+    return jsonify({"ok": True, "items": get_veille_feed(_aid(), limit=limit)})
 
 
 @app.route("/api/crawler/live-frame")
