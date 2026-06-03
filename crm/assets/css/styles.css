@@ -6489,6 +6489,9 @@ body:has(.crawl-dock.open) .script-dock.open {
   margin-top: 0;
 }
 .mandate-form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -6497,6 +6500,34 @@ body:has(.crawl-dock.open) .script-dock.open {
   padding: 0.35rem 0 0.15rem;
   border-bottom: 1px solid var(--border);
   margin: 0 0 0.25rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.mandate-form-section-title::-webkit-details-marker {
+  display: none;
+}
+/* Chevron de pliage */
+.mandate-form-section-title::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--duration-normal, 0.2s) ease;
+}
+.mandate-form-section[open] > .mandate-form-section-title::before {
+  transform: rotate(90deg);
+}
+.mandate-form-section-title:hover {
+  color: var(--text-primary, #1e293b);
+}
+.mandate-form-section-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding-top: 0.5rem;
 }
 .mandate-field-req {
   color: #dc2626;
