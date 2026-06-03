@@ -1097,9 +1097,21 @@
 }
 
 .auth-tab.active {
-  background: var(--brand-blue);
+  background: var(--brand-primary);
   color: #fff;
-  border-color: var(--brand-blue-dark);
+  border-color: var(--brand-primary-dark);
+}
+
+.auth-sub-muted {
+  font-size: 0.82rem;
+  opacity: 0.88;
+  margin-top: -0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.auth-brand-title {
+  font-family: var(--font-serif);
+  letter-spacing: 0.02em;
 }
 
 .auth-panel {

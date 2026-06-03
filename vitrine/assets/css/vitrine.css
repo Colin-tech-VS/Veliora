@@ -1,6 +1,5 @@
-/* Veliora vitrine — design immobilier épuré */
-
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+/* Veliora vitrine — même design system que le CRM */
+@import url('/crm/assets/css/veliora-brand.css');
 
 .vitrine,
 .vitrine *,
@@ -10,40 +9,8 @@
 }
 
 :root {
-  /* === Palette 2026 — premium immobilier ===
-     Indigo premium + ambre cuivré + ivoire chaud. Sobre et lisible. */
-  --brand-primary:   #2563eb;
-  --brand-primary-dark: #1e40af;
-  --brand-primary-light: #60a5fa;
-  --brand-secondary: #16A34A;
-  --brand-secondary-dark: #15803D;
-  --brand-accent:    #C68A2E;
-  --brand-accent-dark: #A06D1F;
-  --brand-bg:        #F7F5F1;
-  --brand-text:      #1A202C;
-
-  --v-cream: var(--brand-bg);
-  --v-sand: #E2E8F0;
-  --v-white: #ffffff;
-  --v-ink: var(--brand-text);
-  --v-ink-soft: #475569;
-  --v-muted: #64748B;
-  --v-navy: var(--brand-primary);
-  --v-slate: var(--brand-primary-dark);
-  --v-brass: var(--brand-accent);
-  --v-brass-light: #FBBF24;
-  --v-sage: var(--brand-secondary);
-  --v-sage-bg: #ECFDF5;
-  --v-clay: #DC2626;
-  --v-border: #CBD5E1;
-  --v-shadow: 0 2px 12px rgba(15, 23, 42, 0.06);
-  --v-shadow-lg: 0 4px 20px rgba(15, 23, 42, 0.10);
-  --v-radius: 8px;
-  --v-radius-lg: 12px;
-  --v-font: 'DM Sans', system-ui, sans-serif;
-  --v-serif: 'Cormorant Garamond', Georgia, serif;
-  --v-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --v-max: 1120px;
+  --v-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html:has(body.vitrine),

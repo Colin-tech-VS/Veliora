@@ -82,11 +82,11 @@ const radarMatchCache = new Map();
 const radarMatchInFlight = new Set();
 
 const viewTitles = {
-  dashboard: { title: "Radar automatique", subtitle: "Mode 1 — opportunités, alertes, briefing du matin" },
-  analyze: { title: "Analyse à la demande", subtitle: "Mode 2 — Score Mandat™ sur une URL" },
-  playbook: { title: "Scripts d'appel", subtitle: "Opportunités du marché et discours à tenir" },
-  leads: { title: "Opportunités", subtitle: "Classées par Score Mandat™ (vendeurs détectés)" },
-  crawler: { title: "Sources", subtitle: "Alimenter le radar (Mode 1)" },
+  dashboard: { title: "Briefing du marché", subtitle: "Vos vendeurs à contacter en priorité ce matin" },
+  analyze: { title: "Analyser une annonce", subtitle: "Collez l’URL d’une fiche — avis et score en direct" },
+  playbook: { title: "Scripts d'appel", subtitle: "Quoi dire, quand appeler, comment relancer" },
+  leads: { title: "Vos prospects", subtitle: "Classés par priorité mandat (Score Mandat™)" },
+  crawler: { title: "Veille portails", subtitle: "Choisissez vos sites — Veliora alimente le briefing" },
   pipeline: { title: "Pipeline", subtitle: "Glissez-déposez vos dossiers — du premier contact au mandat" },
   map: {
     title: "Carte",
@@ -953,7 +953,7 @@ function applyCrawlLabelFromJobMessage(label, jobMessage) {
   return city ? `Portails recommandés (${n}) — ${city}` : `Portails recommandés (${n})`;
 }
 
-function setCrawlModalTitles(label, { prefix = "Crawl — " } = {}) {
+function setCrawlModalTitles(label, { prefix = "Veille — " } = {}) {
   const title = `${prefix}${label}`;
   crawlState.label = label;
   const loaderTitle = document.getElementById("crawl-loader-title");
@@ -1305,7 +1305,7 @@ function requestCrawlCancelOnServer(jobId) {
 }
 
 /** Arrête le crawl serveur, coupe le polling et ferme modal + dock. */
-function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) {
+function stopCrawlJobAndCloseUi({ toastMessage = "Veille arrêtée" } = {}) {
   const wasAnalyzeImport = Boolean(
     crawlState.pollOptions?.goToAnalyze && crawlState.pollOptions?.importUrl,
   );
@@ -1327,7 +1327,7 @@ function stopCrawlJobAndCloseUi({ toastMessage = "Crawl arrêté" } = {}) {
 }
 
 function dismissCrawlUI() {
-  stopCrawlJobAndCloseUi({ toastMessage: "Crawl fermé et arrêté" });
+  stopCrawlJobAndCloseUi({ toastMessage: "Veille fermée et arrêtée" });
 }
 
 async function finishCrawlFromJob(job, label, options = {}) {
@@ -1407,7 +1407,7 @@ function setupCrawlBackground() {
     CrawlWatch.setupClientListener((job, label, eventType) => {
       if (!job) return;
       if (eventType === "progress") {
-        updateCrawlLoaderUI(job, `Crawl — ${label || crawlState.label}`);
+        updateCrawlLoaderUI(job, `Veille — ${label || crawlState.label}`);
         return;
       }
       finishCrawlFromJob(job, label, crawlState.pollOptions || {});
@@ -1510,13 +1510,13 @@ async function minimizeCrawlUI(opts = {}) {
     await CrawlWatch.start(crawlState.jobId, crawlState.label);
     if (perm === "granted") {
       showToast(
-        "Crawl en arrière-plan — vous pouvez quitter l’app, notification à la fin",
+        "Veille en arrière-plan — vous pouvez quitter l’app, notification à la fin",
         "info",
         5500,
       );
     } else {
       showToast(
-        "Le crawl continue sur le serveur — revenez sur Veliora ou autorisez les notifications",
+        "La veille continue sur le serveur — revenez sur Veliora ou autorisez les notifications",
         "info",
         7000,
       );
@@ -1977,21 +1977,21 @@ function openCrawlUrlModal(url) {
   const btnOnce = document.getElementById("crawl-url-once");
 
   if (existing) {
-    hint.textContent = `${existing.name} est déjà configuré avec cette URL. Le crawl va utiliser cette source.`;
+    hint.textContent = `${existing.name} est déjà configuré avec cette URL. La veille utilisera ce portail.`;
     btnAdd.style.display = "none";
-    btnOnce.textContent = "Lancer le crawl";
+    btnOnce.textContent = "Lancer la veille";
     btnOnce.className = "btn btn-primary";
   } else if (sameDomain) {
-    hint.textContent = `${sameDomain.name} est déjà dans vos sources. Mettre à jour le lien « ${url} » ou crawler une seule fois ?`;
-    btnAdd.textContent = "Mettre à jour et crawler";
+    hint.textContent = `${sameDomain.name} est déjà dans vos sources. Mettre à jour le lien « ${url} » ou lancer une seule mise à jour ?`;
+    btnAdd.textContent = "Mettre à jour et surveiller";
     btnAdd.style.display = "";
-    btnOnce.textContent = "Crawler une fois";
+    btnOnce.textContent = "Mettre à jour une fois";
     btnOnce.className = "btn btn-secondary";
   } else {
-    hint.textContent = `Ajouter ${name} à vos sources pour le crawler régulièrement, ou lancer un crawl unique ?`;
-    btnAdd.textContent = "Ajouter aux sources et crawler";
+    hint.textContent = `Ajouter ${name} à vos portails pour la surveiller régulièrement, ou une mise à jour ponctuelle ?`;
+    btnAdd.textContent = "Ajouter et surveiller";
     btnAdd.style.display = "";
-    btnOnce.textContent = "Crawler une fois";
+    btnOnce.textContent = "Mettre à jour une fois";
     btnOnce.className = "btn btn-secondary";
   }
 
@@ -2609,7 +2609,7 @@ function openLeadsRefreshAllModal(activeCount) {
   const txt = document.getElementById("leads-refresh-all-text");
   if (!modal) return Promise.resolve(false);
   if (txt) {
-    txt.textContent = `Recrawler annonce par annonce les ${activeCount} prospect(s) actifs ?`;
+    txt.textContent = `Mettre à jour annonce par annonce les ${activeCount} prospect(s) actifs ?`;
   }
   modal.classList.add("open");
   return new Promise((resolve) => {
@@ -2776,7 +2776,7 @@ function setupLeadsActions() {
     const refreshBtn = document.getElementById("leads-refresh-all-btn");
     const activeCount = LEADS.filter((l) => (l.status || "nouveau") !== "retire").length;
     if (!activeCount) {
-      showToast("Aucun prospect actif à recrawler", "warning");
+      showToast("Aucun prospect actif à mettre à jour", "warning");
       return;
     }
     if (crawlState.active || leadRefreshState.busy) {
@@ -2822,7 +2822,7 @@ function setupLeadsActions() {
     } finally {
       if (refreshBtn) {
         refreshBtn.disabled = false;
-        refreshBtn.textContent = "Recrawler tous les prospects";
+        refreshBtn.textContent = "Mettre à jour tous les prospects";
       }
     }
   });
@@ -3519,7 +3519,7 @@ function getLeadListingLinkHtml(lead, label = "Voir") {
 function getLeadRefreshButtonHtml(lead) {
   const url = (lead.source_url || "").trim();
   if (!url) return "";
-  return `<button type="button" class="btn btn-recrawl btn-sm lead-refresh-btn" data-id="${lead.id}" title="Recrawler l'annonce sur le portail" onclick="event.stopPropagation()">${LEAD_ICON_REFRESH}<span>Recrawler</span></button>`;
+  return `<button type="button" class="btn btn-recrawl btn-sm lead-refresh-btn" data-id="${lead.id}" title="Mettre à jour l'annonce sur le portail" onclick="event.stopPropagation()">${LEAD_ICON_REFRESH}<span>Actualiser</span></button>`;
 }
 
 function getLeadActionsHtml(lead) {
@@ -4133,7 +4133,7 @@ async function refreshLeadDeep(leadId) {
       if (!jobId) throw new Error("Impossible de lancer la mise à jour");
       leadRefreshState.jobId = jobId;
 
-      appendLeadRefreshFeedLine("Crawl navigateur démarré…");
+      appendLeadRefreshFeedLine("Lecture du portail en cours…");
       const job = await pollLeadRefreshJob(jobId, id, lead);
 
       await refreshAppData();
@@ -4440,8 +4440,8 @@ async function pollCrawlJobOnce(jobId, label, lastLogsFetch) {
   }
   const title =
     job.status === "completed" || job.status === "failed"
-      ? `Crawl terminé — ${displayLabel}`
-      : `Crawl — ${displayLabel}`;
+      ? `Veille terminée — ${displayLabel}`
+      : `Veille — ${displayLabel}`;
   updateCrawlLoaderUI(job, title);
   return { job, lastLogsFetch: newFetch, displayLabel };
 }
@@ -4533,7 +4533,7 @@ function startCrawlPolling(jobId, label, options = {}) {
 }
 
 function cancelStaleCrawlUi() {
-  stopCrawlJobAndCloseUi({ toastMessage: "Crawl annulé" });
+  stopCrawlJobAndCloseUi({ toastMessage: "Veille annulée" });
 }
 
 async function resumeActiveCrawlIfAny() {
@@ -4553,7 +4553,7 @@ async function resumeActiveCrawlIfAny() {
 
     crawlState.active = true;
     crawlState.jobId = job.id;
-    crawlState.label = job.source_id || job.message?.slice(0, 40) || "Crawl";
+    crawlState.label = job.source_id || job.message?.slice(0, 40) || "Veille";
     crawlState.startedAt = started;
     crawlState.minimized = true;
     state.loading = true;
@@ -4562,9 +4562,9 @@ async function resumeActiveCrawlIfAny() {
     minimizeCrawlUI({ notify: true });
     startCrawlWaitAnimation();
     startLiveFramePolling();
-    updateCrawlLoaderUI(job, `Crawl — reprise`);
+    updateCrawlLoaderUI(job, `Veille — reprise`);
     startCrawlPolling(job.id, crawlState.label);
-    showToast("Crawl en cours — arrière-plan + notification à la fin", "info", 4500);
+    showToast("Veille en cours — arrière-plan + notification à la fin", "info", 4500);
   } catch {
     if (crawlState.active) hideCrawlLoader();
   }
@@ -4578,7 +4578,7 @@ async function runCrawlJob(endpoint, body, label, options = {}) {
 
   const useExisting = Boolean(options.existingJobId);
   showCrawlLoader(
-    useExisting ? label : `Crawl — ${label}`,
+    useExisting ? label : `Veille — ${label}`,
     useExisting ? "Extraction de l'annonce…" : "Lancement (mode humain, peut être long)…",
     0,
   );
@@ -4658,11 +4658,11 @@ async function toggleCrawler() {
     if (state.crawlerRunning) {
       await api("/crawler/stop", { method: "POST" });
       state.crawlerRunning = false;
-      showToast("Crawler en pause");
+      showToast("Veille automatique en pause");
     } else {
       await api("/crawler/start", { method: "POST" });
       state.crawlerRunning = true;
-      showToast("Crawler démarré — surveillance active");
+      showToast("Veille automatique activée");
     }
     syncCrawlerUI();
   } catch (err) {
@@ -4678,11 +4678,11 @@ function syncCrawlerUI() {
   if (state.crawlerRunning) {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
     dot?.classList.remove("paused");
-    if (label) label.textContent = "Crawler actif";
+    if (label) label.textContent = "Veille auto active";
   } else {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Démarrer`;
     dot?.classList.add("paused");
-    if (label) label.textContent = "Crawler en pause";
+    if (label) label.textContent = "Veille auto en pause";
   }
 }
 
@@ -6092,7 +6092,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
   const liveCrawl =
     stats.isActiveSource && stats.job
       ? `<p class="source-live-crawl">
-          Crawl en cours —
+          Veille en cours —
           ${stats.job.listings_done || 0}/${stats.job.listings_total || "?"} annonces ·
           ${stats.job.leads_found || 0} analysées ·
           ${stats.job.leads_saved || 0} nouveaux ·
@@ -6120,7 +6120,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
             ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
             ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Bientôt disponible</span>' : ""}
             ${s.is_default_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Recommandé</span>' : ""}
-            ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur crawl</span>' : ""}
+            ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur veille</span>' : ""}
             ${saved ? '<span class="source-status-badge source-status-badge--ok">Lien enregistré</span>' : ""}
           </div>
         </div>
@@ -6149,7 +6149,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
         </div>
         <div class="source-url-meta">
           ${displayUrl ? `<a href="${escapeAttr(displayUrl)}" class="source-url-open" target="_blank" rel="noopener noreferrer">Ouvrir le lien</a>` : ""}
-          <span class="source-url-hint">${saved ? "Utilisé pour le prochain crawl" : "Modifiez puis Entrée, clic dehors ou Enregistrer"}</span>
+          <span class="source-url-hint">${saved ? "Utilisé pour la prochaine mise à jour" : "Modifiez puis Entrée, clic dehors ou Enregistrer"}</span>
         </div>
       </div>
       <div class="source-stats">
@@ -6165,10 +6165,10 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
       <div class="source-progress"><div class="bar"><div class="fill source-stat-progress" data-source="${s.id}" style="width:${stats.inDb > 0 ? 100 : 0}%"></div></div></div>
       ${
         s.is_antibot && !s.is_custom
-          ? `<p class="source-paid-hint form-hint">Portail protégé (Cloudflare / anti-bot) — crawl bientôt disponible (pas encore activé).</p>`
+          ? `<p class="source-paid-hint form-hint">Portail à accès restreint — connexion bientôt disponible (pas encore activé).</p>`
           : `<button class="btn btn-secondary source-crawl-btn" data-source="${s.id}" data-name="${escapeAttr(s.name)}" ${crawlState.active ? "disabled" : ""}>
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Crawler
+        Mettre à jour
       </button>`
       }
     </div>`;
@@ -6188,7 +6188,7 @@ function updateSourceCardsLive(job) {
 
     let liveEl = card.querySelector(".source-live-crawl");
     if (stats.isActiveSource && stats.job) {
-      const text = `Crawl en cours — ${stats.job.listings_done || 0}/${stats.job.listings_total || "?"} annonces · ${stats.job.leads_found || 0} analysées · ${stats.job.leads_saved || 0} nouveaux · ${stats.job.leads_updated || 0} màj`;
+      const text = `Veille en cours — ${stats.job.listings_done || 0}/${stats.job.listings_total || "?"} annonces · ${stats.job.leads_found || 0} analysées · ${stats.job.leads_saved || 0} nouveaux · ${stats.job.leads_updated || 0} màj`;
       if (!liveEl) {
         liveEl = document.createElement("p");
         liveEl.className = "source-live-crawl";

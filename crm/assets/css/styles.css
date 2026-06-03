@@ -1,49 +1,14 @@
-/* ─── Veliora CRM — aligné vitrine immobilière ─── */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* ─── Veliora CRM — design agence immobilière (tokens partagés vitrine) ─── */
+@import url('veliora-brand.css');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* === Palette 2026 — premium immobilier ===
-     Navy profond et raffiné (pas un bleu SaaS criard), vert business
-     mesuré, ambre pour l'urgence. Sobre, qualitatif, intemporel. */
-  --brand-primary:   #2563eb;   /* indigo premium — moderne et lisible */
-  --brand-primary-dark: #1e40af;
-  --brand-primary-light: #60a5fa;
-  --brand-secondary: #16A34A;   /* vert opportunité / business */
-  --brand-secondary-dark: #15803D;
-  --brand-accent:    #C68A2E;   /* ambre cuivré — accent qualité (pas criard) */
-  --brand-accent-dark: #A06D1F;
-  --brand-bg:        #F7F5F1;   /* fond ivoire chaud — moins clinique */
-  --brand-text:      #1A202C;   /* charbon profond */
-
-  /* Alias historiques — on garde les noms mais on les recâble sur la nouvelle palette
-     pour que TOUT le CRM hérite des nouvelles couleurs sans toucher au reste du CSS. */
-  --v-cream: var(--brand-bg);
-  --v-sand: #E2E8F0;
-  --v-ink: var(--brand-text);
-  --v-navy: var(--brand-primary);
-  --v-slate: var(--brand-primary-dark);
-  --v-brass: var(--brand-accent);
-  --v-brass-light: #FBBF24;
-  --v-sage: var(--brand-secondary);
-  --v-clay: #DC2626;            /* rouge urgence (l'orange est réservé à l'accent) */
-  --v-border-warm: #CBD5E1;
-
-  /* Marque (alias historiques CRM) */
-  --brand-night: var(--brand-primary-dark);
   --brand-night-soft: var(--brand-primary);
-  --brand-night-muted: #334155;
-  --brand-blue: var(--brand-primary);
-  --brand-blue-dark: var(--brand-primary-dark);
-  --brand-blue-light: var(--brand-primary-light);
-  --brand-blue-glow: rgba(31, 78, 216, 0.22);
-  --brand-gold: var(--brand-accent);
-  --brand-gold-light: var(--v-brass-light);
-  --brand-gold-glow: rgba(245, 158, 11, 0.18);
+  --brand-night-muted: #3d5563;
+  --brand-gold-light: var(--brand-accent-light);
   --brand-violet: var(--brand-secondary);
   --brand-violet-deep: var(--brand-secondary-dark);
-  --gradient-brand: var(--brand-primary);
   --gradient-night: linear-gradient(180deg, var(--brand-primary-dark) 0%, var(--brand-primary) 100%);
-  --gradient-app: var(--brand-bg);
 
   --navy-950: var(--brand-primary-dark);
   --navy-900: var(--brand-primary-dark);
@@ -67,15 +32,15 @@
   --bg-elevated: #ffffff;
   --bg-muted: var(--v-sand);
   --bg-sidebar: var(--brand-primary-dark);
-  --bg-header: var(--brand-primary-dark);
-  --bg-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --bg-sidebar-active: rgba(245, 158, 11, 0.22);
+  --bg-header: var(--brand-surface);
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --bg-sidebar-active: rgba(196, 165, 116, 0.18);
 
   --text-primary: var(--brand-text);
   --text-secondary: #475569;
   --text-muted: #64748B;
-  --text-inverse: #F8FAFC;
-  --text-sidebar: #CBD5E1;
+  --text-inverse: #f8f6f2;
+  --text-sidebar: rgba(248, 246, 242, 0.72);
   --text-sidebar-active: #ffffff;
 
   --border: var(--v-border-warm);
@@ -247,7 +212,7 @@ body {
   transform: translateY(-50%);
   width: 3px;
   height: 20px;
-  background: var(--teal-400);
+  background: var(--brand-accent-light);
   border-radius: 0 2px 2px 0;
 }
 
@@ -260,13 +225,13 @@ body {
 
 .nav-item.active svg {
   opacity: 1;
-  color: var(--teal-400);
+  color: var(--brand-accent-light);
 }
 
 .nav-badge {
   margin-left: auto;
-  background: var(--teal-500);
-  color: white;
+  background: var(--brand-accent);
+  color: var(--text-inverse);
   font-size: 0.65rem;
   font-weight: 600;
   padding: 0.15rem 0.5rem;
@@ -644,14 +609,16 @@ body {
 }
 
 .btn-primary {
-  background: var(--brand-blue);
-  color: white;
-  box-shadow: 0 2px 8px rgba(30, 51, 64, 0.12);
+  background: var(--brand-primary);
+  color: var(--text-inverse);
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
 }
 
 .btn-primary:hover {
-  background: var(--brand-blue-dark);
-  box-shadow: 0 4px 12px rgba(30, 51, 64, 0.18);
+  background: var(--brand-primary-dark);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary:active {
@@ -8723,6 +8690,84 @@ body:has(.crawl-dock.open) .script-dock.open {
   }
   .ai-conversation { min-width: 220px; }
   .ai-memory-block { display: none; }
+}
+
+/* ─── Parcours quotidien (UX agence) ─── */
+.ux-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--brand-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.ux-workflow[hidden] { display: none; }
+.ux-workflow-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--bg-muted);
+}
+.ux-workflow-step strong {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+}
+.ux-workflow-step span {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.ux-workflow-step em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--brand-accent-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.header-bar {
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+.header-title {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.product-modes {
+  border: 1px solid var(--border-light);
+  background: var(--brand-surface);
+  box-shadow: var(--shadow-sm);
+}
+.product-mode.active {
+  border-color: var(--brand-accent);
+  background: linear-gradient(180deg, #fff 0%, #faf7f2 100%);
+}
+.brand-tagline {
+  font-size: 0.72rem;
+  opacity: 0.85;
+  letter-spacing: 0.02em;
+}
+.crawler-hero {
+  background: var(--gradient-night) !important;
+}
+.ai-chat-head-accent {
+  color: var(--brand-accent) !important;
+}
+
+@media (max-width: 1100px) {
+  .ux-workflow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .ux-workflow { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

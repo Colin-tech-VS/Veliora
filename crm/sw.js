@@ -38,8 +38,8 @@ async function notifyAllClients(payload) {
 
 function buildNotification(job, label) {
   const ok = job.status === "completed";
-  const title = ok ? `Veliora — crawl terminé` : `Veliora — crawl en échec`;
-  let body = job.message || label || "Crawl";
+  const title = ok ? `Veliora — veille terminée` : `Veliora — veille interrompue`;
+  let body = job.message || label || "Veille portails";
   if (ok && (job.leads_saved || job.leads_updated)) {
     const parts = [];
     if (job.leads_saved) parts.push(`${job.leads_saved} nouveau(x)`);
@@ -114,7 +114,7 @@ async function pollCrawlJobOnce() {
 function startCrawlWatch(data) {
   watchState = {
     jobId: data.jobId,
-    label: data.label || "Crawl",
+    label: data.label || "Veille",
     token: data.token || "",
     apiBase: data.apiBase || "/api",
   };

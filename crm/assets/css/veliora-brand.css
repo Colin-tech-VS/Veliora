@@ -1,0 +1,64 @@
+/**
+ * Veliora — design system partagé (vitrine + CRM + connexion)
+ * Premium immobilier : sobre, chaleureux, sans effet « tech / IA ».
+ */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap');
+
+:root {
+  /* Primaire — ardoise profonde (confiance, mandats) */
+  --brand-primary: #1e3340;
+  --brand-primary-dark: #152a36;
+  --brand-primary-light: #3d5563;
+
+  /* Accent — bronze discret (luxe discret, pas or criard) */
+  --brand-accent: #9a7b4f;
+  --brand-accent-dark: #7d6340;
+  --brand-accent-light: #c4a574;
+
+  /* Secondaire — sauge (validation, opportunité) */
+  --brand-secondary: #5a7d6a;
+  --brand-secondary-dark: #466052;
+
+  --brand-bg: #f8f6f2;
+  --brand-surface: #ffffff;
+  --brand-text: #1a242e;
+  --brand-text-soft: #4a5c68;
+  --brand-muted: #6b7c87;
+
+  /* Alias Veliora historiques */
+  --v-cream: var(--brand-bg);
+  --v-sand: #ece8e1;
+  --v-white: var(--brand-surface);
+  --v-ink: var(--brand-text);
+  --v-ink-soft: var(--brand-text-soft);
+  --v-muted: var(--brand-muted);
+  --v-navy: var(--brand-primary);
+  --v-slate: var(--brand-primary-dark);
+  --v-brass: var(--brand-accent);
+  --v-brass-light: var(--brand-accent-light);
+  --v-sage: var(--brand-secondary);
+  --v-sage-bg: #eef4f0;
+  --v-clay: #b85c4a;
+  --v-border: #ddd6cb;
+  --v-border-warm: var(--v-border);
+  --v-shadow: 0 2px 14px rgba(26, 36, 46, 0.06);
+  --v-shadow-lg: 0 8px 32px rgba(26, 36, 46, 0.08);
+  --v-radius: 10px;
+  --v-radius-lg: 14px;
+  --v-font: 'DM Sans', system-ui, sans-serif;
+  --v-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --v-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --font-sans: var(--v-font);
+  --font-serif: var(--v-serif);
+
+  --brand-night: var(--brand-primary-dark);
+  --brand-blue: var(--brand-primary);
+  --brand-blue-dark: var(--brand-primary-dark);
+  --brand-blue-light: var(--brand-primary-light);
+  --brand-blue-glow: rgba(30, 51, 64, 0.12);
+  --brand-gold: var(--brand-accent);
+  --brand-gold-glow: rgba(154, 123, 79, 0.15);
+  --gradient-brand: linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 100%);
+  --gradient-app: var(--brand-bg);
+}

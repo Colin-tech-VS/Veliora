@@ -14,13 +14,18 @@ Veliora utilise **uniquement** `DATABASE_URL` (connexion Postgres directe). Les 
 
 ---
 
-## 2. Schéma SQL
+## 2. Schéma SQL (tout en un clic)
 
 1. **SQL Editor** → New query
-2. Coller tout [`velora_db/postgres_schema.sql`](velora_db/postgres_schema.sql) → **Run**
-3. Puis **obligatoire pour la sécurité** : exécuter [`scripts/supabase_enable_rls.sql`](scripts/supabase_enable_rls.sql)
+2. Coller **tout** le fichier [`scripts/supabase_setup_complet.sql`](scripts/supabase_setup_complet.sql) → **Run**
 
-Sans l’étape 3, le dashboard affiche **Unrestricted** sur toutes les tables.
+Ce script unique fait : tables Veliora + IA + RLS + purge `crawl_logs` + rapport de taille.
+
+Alternative (3 fichiers séparés) : `postgres_schema.sql` puis `supabase_enable_rls.sql` puis `supabase_maintenance.sql`.
+
+Sans la RLS, le dashboard affiche **Unrestricted** sur toutes les tables.
+
+**Deadlock `40P01` pendant le script ?** Arrêtez Veliora sur Scalingo 2 min, puis lancez uniquement [`scripts/supabase_rls_seul.sql`](scripts/supabase_rls_seul.sql), puis [`scripts/supabase_maintenance_seul.sql`](scripts/supabase_maintenance_seul.sql). Ne relancez pas tout `supabase_setup_complet.sql` si le schéma est déjà créé.
 
 ---
 

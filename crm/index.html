@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#152a36">
+  <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=1">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=60">
-  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=35">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=61">
+  <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=36">
 </head>
 <body>
   <div class="sidebar-overlay" id="sidebar-overlay"></div>
@@ -26,7 +27,7 @@
         </div>
         <div class="brand-text">
           <h1>Veliora</h1>
-          <span class="brand-tagline">Radar mandats · Score Mandat™</span>
+          <span class="brand-tagline">Pour votre agence immobilière</span>
         </div>
       </div>
 
@@ -80,16 +81,16 @@
           <div class="nav-section-label">Assistant</div>
           <button class="nav-item nav-item-ai" data-view="ai">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path d="M12 2.5l1.7 3.6 3.8.5-2.8 2.6.7 3.8L12 11.2 8.6 13l.7-3.8L6.5 6.6l3.8-.5L12 2.5z"/><path d="M5 17.5l1 2 2.2.3-1.6 1.5.4 2.2L5 22.4 3 23.5l.4-2.2L1.8 19.8 4 19.5l1-2z"/><path d="M19 14l1.1 2.3 2.5.4-1.8 1.7.4 2.5L19 19.8 16.8 21l.4-2.5-1.8-1.7 2.5-.4L19 14z"/></svg>
-            Assistant IA
-            <span class="nav-badge nav-badge-ai" id="badge-ai">beta</span>
+            Conseiller Veliora
+            <span class="nav-badge nav-badge-ai" id="badge-ai">aide</span>
           </button>
         </div>
 
         <div class="nav-section">
-          <div class="nav-section-label">Outils</div>
+          <div class="nav-section-label">Veille marché</div>
           <button class="nav-item" data-view="crawler">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
-            Détection annonces
+            Mes portails
           </button>
         </div>
       </nav>
@@ -98,7 +99,7 @@
         <div class="crawler-status-mini">
           <div class="status-row">
             <span class="status-dot paused"></span>
-            <p>Détection en pause</p>
+            <p>Veille en pause</p>
           </div>
           <p><span class="count">0</span> annonces vues aujourd'hui</p>
         </div>
@@ -121,7 +122,7 @@
           <div class="header-center">
             <form class="search-box" id="global-search-form" role="search" autocomplete="off">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input type="search" id="global-search" name="q" placeholder="Rechercher: ville:lyon m2>70 type:particulier (ou coller URL)…" enterkeyhint="search" aria-label="Rechercher dans Veliora">
+              <input type="search" id="global-search" name="q" placeholder="Ville, surface, particulier… ou coller une URL d’annonce" enterkeyhint="search" aria-label="Rechercher dans Veliora">
               <button type="submit" class="search-box-submit" id="global-search-submit" aria-label="Lancer la recherche">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke-width="2.4" stroke="currentColor"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
               </button>
@@ -135,7 +136,7 @@
             <button type="button" class="header-icon-btn" id="btn-invite-collab" hidden title="Inviter un collaborateur" aria-label="Inviter">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2M8.5 11a4 4 0 100-8 4 4 0 000 8zM20 8v6M23 11h-6"/></svg>
             </button>
-            <button class="btn btn-secondary btn-compact" id="header-crawl-btn" type="button" onclick="switchView('crawler')" title="Alimenter le radar — détection des annonces sur les portails">
+            <button class="btn btn-secondary btn-compact" id="header-crawl-btn" type="button" onclick="switchView('crawler')" title="Configurer la veille sur vos portails">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path d="M9 12l2 2 4-4"/></svg>
               <span class="btn-label">Portails</span>
             </button>
@@ -152,17 +153,40 @@
       <div class="content">
 
         <nav class="product-modes" id="product-modes" aria-label="Modes Veliora">
-          <button type="button" class="product-mode active" data-mode="dashboard" id="product-mode-radar">
-            <span class="product-mode-num">Mode 1</span>
-            <span class="product-mode-title">Radar automatique</span>
-            <span class="product-mode-desc">Opportunités · Score · Alertes · Briefing</span>
+            <button type="button" class="product-mode active" data-mode="dashboard" id="product-mode-radar">
+            <span class="product-mode-num">Chaque matin</span>
+            <span class="product-mode-title">Briefing & priorités</span>
+            <span class="product-mode-desc">Qui appeler en premier — score, alertes, scripts</span>
           </button>
           <button type="button" class="product-mode" data-mode="analyze" id="product-mode-analyze">
-            <span class="product-mode-num">Mode 2</span>
-            <span class="product-mode-title">Analyse à la demande</span>
-            <span class="product-mode-desc">Coller une URL → Score Mandat™</span>
+            <span class="product-mode-num">À la volée</span>
+            <span class="product-mode-title">Une annonce précise</span>
+            <span class="product-mode-desc">Collez l’URL d’une fiche → avis en quelques secondes</span>
           </button>
         </nav>
+
+        <section class="ux-workflow" id="ux-workflow" aria-label="Votre journée type avec Veliora">
+          <div class="ux-workflow-step">
+            <em>Matin</em>
+            <strong>1. Briefing</strong>
+            <span>Ouvrez le radar : les vendeurs les plus prometteurs sont en tête de liste.</span>
+          </div>
+          <div class="ux-workflow-step">
+            <em>Journée</em>
+            <strong>2. Appels</strong>
+            <span>Script d’appel, SMS et relances depuis chaque fiche prospect.</span>
+          </div>
+          <div class="ux-workflow-step">
+            <em>Suivi</em>
+            <strong>3. Pipeline</strong>
+            <span>Glissez les dossiers : contact → RDV → mandat signé.</span>
+          </div>
+          <div class="ux-workflow-step">
+            <em>Marché</em>
+            <strong>4. Veille</strong>
+            <span>Activez vos portails pour alimenter le radar automatiquement.</span>
+          </div>
+        </section>
 
         <!-- Barre de progression onboarding (non bloquante) -->
         <div class="onboarding-bar" id="onboarding-bar" hidden aria-live="polite">
@@ -200,14 +224,14 @@
             <button type="button" class="crm-howto-close" id="crm-howto-close" title="Masquer ce guide" aria-label="Fermer">×</button>
             <div class="crm-howto-head">
               <span class="crm-howto-kicker">Comment Veliora fonctionne</span>
-              <h2>4 étapes du portail au mandat signé</h2>
+              <h2>De la veille au mandat signé — en 4 étapes</h2>
             </div>
             <ol class="crm-howto-steps">
               <li class="crm-howto-step" data-step="crawler">
                 <span class="crm-howto-num">1</span>
                 <div class="crm-howto-step-body">
-                  <strong>Choisir vos portails</strong>
-                  <p>Sélectionne ta ville cible et les sites à surveiller. Veliora va consulter LeBonCoin, SeLoger, PAP, BienIci, etc. à ta place.</p>
+                  <strong>Configurer vos portails</strong>
+                  <p>Indiquez votre ville et les sites à suivre (Leboncoin, SeLoger, PAP…). Veliora récupère les nouvelles annonces pour vous.</p>
                   <button type="button" class="crm-howto-link" data-howto-goto="crawler">Ouvrir mes portails →</button>
                 </div>
               </li>
@@ -240,10 +264,10 @@
 
           <section class="crm-dashboard-hero" id="crm-dashboard-hero" aria-label="Score Mandat et opportunités du marché">
             <div class="crm-hero-copy">
-              <span class="crm-hero-kicker">Mode 1 · Radar automatique</span>
+              <span class="crm-hero-kicker">Chaque matin</span>
               <h2 class="crm-hero-title" id="radar-greeting">Briefing du marché</h2>
               <p class="crm-hero-date radar-date" id="radar-date"></p>
-              <p class="crm-hero-tagline">Nouvelles opportunités, Score Mandat™, alertes et briefing du matin — le cœur du produit.</p>
+              <p class="crm-hero-tagline">Qui appeler en premier, pourquoi, et avec quels arguments — sur votre secteur.</p>
               <div class="crm-hero-stats">
                 <div class="crm-hero-stat">
                   <span class="n" id="radar-total-opps">0</span>
@@ -605,8 +629,8 @@
 
           <div class="crawler-hero">
             <div class="crawler-hero-content">
-              <h2>Détection automatique des annonces</h2>
-              <p>Veliora consulte <strong>tous vos portails</strong> (LeBonCoin, PAP, SeLoger, Bien'ici, Figaro, sites perso…) — vente, location, pagination et catégories incluses.</p>
+              <h2>Veille sur vos portails</h2>
+              <p>Veliora consulte <strong>vos sites de recherche</strong> (Leboncoin, PAP, SeLoger, Bien’ici, Figaro, site agence…) — vente, location et toutes les pages de liste que vous ajoutez.</p>
               <form class="custom-crawl-form" id="custom-crawl-form">
                 <div class="custom-crawl-input">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101"/><path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
@@ -690,7 +714,7 @@
           <h4 class="sources-subsection-title">Portails recommandés</h4>
           <div class="sources-grid" id="sources-grid-reliable"></div>
           <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (bientôt disponibles)</h4>
-          <p class="form-hint sources-subsection-hint">PAP, LeBonCoin, SeLoger, BienIci, LogicImmo — sites avec protection renforcée (anti-bots). Détection en cours d'optimisation, pas encore activée.</p>
+          <p class="form-hint sources-subsection-hint">PAP, Leboncoin, SeLoger, Bien’ici, Logic-Immo — portails à accès restreint. Connexion en cours d’amélioration ; pas encore activés dans la liste ci-dessous.</p>
           <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
           <div id="sources-custom-wrap" hidden>
             <h4 class="sources-subsection-title">Vos portails personnalisés</h4>
@@ -826,7 +850,7 @@
                 <button type="button" class="btn btn-secondary btn-sm map-btn-particuliers active" id="map-btn-particuliers" title="Filtrer les particuliers autour de moi" aria-pressed="true">
                   Particuliers
                 </button>
-                <button type="button" class="btn btn-primary btn-sm" id="map-btn-scan-around" title="Lancer un crawl local autour de ma position">
+                <button type="button" class="btn btn-primary btn-sm" id="map-btn-scan-around" title="Rechercher des annonces autour de ma position">
                   Scanner autour
                 </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="map-btn-locate" title="Recentrer sur ma position">
@@ -929,8 +953,8 @@
               <div class="ai-messages" id="ai-messages" aria-live="polite">
                 <div class="ai-welcome">
                   <div class="ai-welcome-glow" aria-hidden="true"></div>
-                  <h2>Bonjour 👋</h2>
-                  <p>Je connais toutes vos annonces, vos acheteurs/locataires, votre pipeline et l'activité de la semaine. Demandez-moi par quoi commencer aujourd'hui — je vous propose la prochaine action.</p>
+                  <h2>Bonjour</h2>
+                  <p>Je connais vos annonces, vos acheteurs, votre suivi commercial et la semaine en cours. Demandez-moi par quoi commencer — je vous indique la prochaine action concrète.</p>
                   <div class="ai-suggestions">
                     <button type="button" class="ai-suggestion" data-suggestion="Donne-moi les 3 prospects les plus chauds à appeler aujourd'hui et pourquoi.">3 prospects à appeler aujourd'hui</button>
                     <button type="button" class="ai-suggestion" data-suggestion="Quelles annonces correspondent le mieux à mes acheteurs actifs ?">Annonces ↔ acheteurs</button>
@@ -993,7 +1017,7 @@
         <div class="lead-refresh-head">
           <div class="lead-refresh-spinner" aria-hidden="true"></div>
           <div class="lead-refresh-copy">
-            <strong>Recrawl de l'annonce</strong>
+            <strong>Mettre à jour l’annonce</strong>
             <p id="lead-refresh-step">Connexion au portail…</p>
           </div>
         </div>
@@ -1040,14 +1064,14 @@
 
   <!-- Dock crawl (réduit) -->
   <div class="crawl-dock" id="crawl-dock" role="status" aria-live="polite">
-    <button type="button" class="crawl-dock-close" id="crawl-dock-close" title="Arrêter le crawl et fermer">×</button>
+    <button type="button" class="crawl-dock-close" id="crawl-dock-close" title="Arrêter la veille et fermer">×</button>
     <button type="button" class="crawl-dock-compact" id="crawl-dock-compact" title="Réduire encore le widget" aria-pressed="false">Réduire +</button>
     <div class="crawl-dock-scene" aria-hidden="true">
       <span class="crawl-dock-icon crawl-dock-icon-house"></span>
       <span class="crawl-dock-icon crawl-dock-icon-key"></span>
       <span class="crawl-dock-icon crawl-dock-icon-pin"></span>
     </div>
-    <div class="crawl-dock-title" id="crawl-dock-title">Crawl en cours</div>
+    <div class="crawl-dock-title" id="crawl-dock-title">Veille en cours</div>
     <div class="crawl-dock-step" id="crawl-dock-step">…</div>
     <p class="crawl-dock-tip" id="crawl-dock-tip"></p>
     <div class="crawl-stats crawl-dock-stats" id="crawl-dock-stats">
@@ -1093,12 +1117,12 @@
           <div class="crawl-scene-key">🔑</div>
         </div>
         <div class="crawl-loader-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-close-btn" title="Arrêter le crawl et fermer">✕ Fermer</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — crawl continue, notification à la fin">⤓ Arrière-plan</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter le crawl">Arrêter</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-close-btn" title="Arrêter la veille et fermer">✕ Fermer</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — la veille continue, notification à la fin">⤓ Arrière-plan</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter la veille">Arrêter</button>
         </div>
       </div>
-      <p class="crawl-loader-title" id="crawl-loader-title">Crawl en cours</p>
+      <p class="crawl-loader-title" id="crawl-loader-title">Veille en cours</p>
       <div class="crawl-target" id="crawl-loader-target">
         <span class="crawl-target-site" id="crawl-loader-site" hidden></span>
         <span class="crawl-target-detail" id="crawl-loader-detail"></span>
@@ -1387,7 +1411,7 @@
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
-  <script src="/crm/assets/js/app.js?v=77"></script>
+  <script src="/crm/assets/js/app.js?v=78"></script>
   <script src="/crm/assets/js/ai.js?v=5"></script>
   <script>
     if ("serviceWorker" in navigator) {

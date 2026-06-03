@@ -77,7 +77,7 @@
       const payload = {
         type: "CRAWL_WATCH_START",
         jobId,
-        label: label || "Crawl",
+        label: label || "Veille",
         token,
         apiBase,
         startedAt: Date.now(),
@@ -108,7 +108,7 @@
       if (!("Notification" in window) || Notification.permission !== "granted") return;
       if (!job) return;
       const ok = job.status === "completed";
-      const title = ok ? `Crawl terminé — ${label}` : `Crawl en échec — ${label}`;
+      const title = ok ? `Veille terminée — ${label}` : `Veille interrompue — ${label}`;
       const body =
         job.message ||
         (ok
