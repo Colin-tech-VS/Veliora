@@ -7321,6 +7321,33 @@ body:has(.crawl-dock.open) .script-dock.open {
   color: var(--v-brass, #9a7349);
   margin: 0.6rem 0 0.4rem;
 }
+.drawer-estimator-owner-details {
+  margin: 0.6rem 0 0.2rem;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 0 0.85rem;
+}
+.drawer-estimator-owner-details[open] {
+  padding-bottom: 0.6rem;
+}
+.drawer-estimator-owner-details > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.6rem 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--v-brass, #9a7349);
+  user-select: none;
+}
+.drawer-estimator-owner-details > summary::-webkit-details-marker {
+  display: none;
+}
+.drawer-estimator-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
 
 /* ─── Vitrine theme — titres & cartes ─── */
 .view-header h1,

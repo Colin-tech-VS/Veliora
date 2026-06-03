@@ -6673,8 +6673,10 @@ function renderEstimatorNewLeadFormHtml(prefix = "tab-est-new") {
   const blank = {};
   return `
     <form id="${prefix}-form" class="drawer-estimator-form drawer-estimator-form--new" onsubmit="return false">
-      <div class="drawer-estimator-owner">
-        <div class="drawer-estimator-owner-title">Propriétaire (vendeur)</div>
+      <div class="drawer-estimator-owner-title">Le bien</div>
+      ${estimatorCriteriaGridHtml(blank, prefix, null)}
+      <details class="drawer-estimator-owner-details">
+        <summary>+ Ajouter le propriétaire <span class="drawer-estimator-optional">(optionnel)</span></summary>
         <div class="drawer-estimator-grid">
           <label class="drawer-estimator-field">
             <span>Prénom</span>
@@ -6693,9 +6695,7 @@ function renderEstimatorNewLeadFormHtml(prefix = "tab-est-new") {
             <input type="email" id="${prefix}-email" placeholder="email@…">
           </label>
         </div>
-      </div>
-      <div class="drawer-estimator-owner-title">Le bien</div>
-      ${estimatorCriteriaGridHtml(blank, prefix, null)}
+      </details>
       <button type="button" class="btn btn-primary" id="${prefix}-create-btn">Créer le prospect &amp; estimer</button>
     </form>
     <div id="${prefix}-result" class="drawer-estimator-result-wrap"></div>`;
@@ -6755,7 +6755,7 @@ function renderEstimateurView() {
           ${intro}
           <div class="estimateur-newlead-note">
             <strong>Nouveau bien à estimer</strong>
-            <p class="form-hint">Le bien sera enregistré comme prospect avec le badge <span class="origin-badge origin-badge-est">📋 Estimation</span>.</p>
+            <p class="form-hint">Renseignez juste le bien : il sera enregistré comme prospect avec le badge <span class="origin-badge origin-badge-est">📋 Estimation</span>. Le propriétaire reste optionnel.</p>
           </div>
           ${vente.length ? `<button type="button" class="btn btn-ghost btn-sm" id="tab-est-back-btn">← Estimer un prospect existant</button>` : ""}
         </aside>
