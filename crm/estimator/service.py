@@ -326,6 +326,7 @@ def build_price_estimate(lead: dict, inputs: dict | None = None) -> dict:
         "dvf_verdict": comp.get("verdict"),
         "dvf_verdict_label": comp.get("verdict_label"),
         "dvf_delta_pct": comp.get("delta_pct"),
+        "dvf_geo_level": comp.get("dvf_geo_level") or "commune",
         "dvf_app_url": DVF_APP_URL,
         "disclaimer": (
             "Estimation indicative Veliora — médiane des ventes DVF (Etalab) sur le secteur, "
@@ -334,7 +335,10 @@ def build_price_estimate(lead: dict, inputs: dict | None = None) -> dict:
             "Ne remplace pas une visite, un diagnostic ni un avis de valeur certifié."
         ),
         "methodology": [
-            f"Médiane DVF : {int(round(median_m2)):,} €/m² ({sample_count} ventes, {comp.get('dvf_reference_period') or 'période récente'})".replace(",", " "),
+            (
+                f"Médiane DVF {'au code postal ' + str(comp.get('postcode')) if comp.get('dvf_geo_level') == 'postcode' else 'communale'} : "
+                f"{int(round(median_m2)):,} €/m² ({sample_count} ventes, {comp.get('dvf_reference_period') or 'période récente'})"
+            ).replace(",", " "),
             f"Surface retenue : {surface:g} m² → base {int(round(base_total)):,} €".replace(",", " "),
             "Ajustements cumulés : "
             + (f"{round(total_adj * 100, 1):+}% ({len(adjustments)} critère(s))" if adjustments else "aucun"),

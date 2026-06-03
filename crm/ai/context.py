@@ -66,6 +66,25 @@ def _short_lead(lead: dict) -> str:
     return " · ".join(bits)
 
 
+def _lead_index_line(lead: dict) -> str:
+    """Ligne ultra-compacte pour l'index complet des annonces (budget tokens maîtrisé)."""
+    bits = [f"#{lead.get('id')}"]
+    title = lead.get("listing_title") or lead.get("address") or "annonce"
+    bits.append(str(title)[:48])
+    if lead.get("city"):
+        bits.append(str(lead.get("city")))
+    bits.append(_fmt_price(lead))
+    score = lead.get("mandate_score") or 0
+    if score:
+        bits.append(f"SM{score}")
+    return " · ".join(bits)
+
+
+# Plafond du nombre d'annonces décrites dans le prompt (garde le contexte borné
+# même pour les gros portefeuilles, tout en couvrant largement les cas réels).
+LEAD_INDEX_CAP = 150
+
+
 def _short_client(c: dict) -> str:
     name = c.get("full_name") or " ".join(filter(None, [c.get("first_name"), c.get("last_name")])) or "Sans nom"
     seg = (c.get("segment") or "acheteur").lower()
@@ -175,6 +194,23 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
         lines.append(f"## Top {len(top_leads)} annonces (par Score Mandat™ décroissant)")
         for lead in top_leads:
             lines.append("- " + _short_lead(lead))
+
+    # Index complet (compact) du reste du portefeuille : l'IA doit pouvoir
+    # répondre sur N'IMPORTE QUELLE annonce, pas seulement le top 15.
+    remaining = sorted_leads[len(top_leads):LEAD_INDEX_CAP]
+    if remaining:
+        lines.append("")
+        lines.append(
+            f"## Index complet des annonces ({len(remaining)} autres — format compact)"
+        )
+        lines.append("Pour répondre sur n'importe quelle annonce : id · titre · ville · prix · score (SM).")
+        for lead in remaining:
+            lines.append("- " + _lead_index_line(lead))
+        if len(sorted_leads) > LEAD_INDEX_CAP:
+            lines.append(
+                f"- … +{len(sorted_leads) - LEAD_INDEX_CAP} annonces non listées ici "
+                "(demande-les par ville, prix ou Score Mandat™ et je les retrouve)."
+            )
 
     if top_clients:
         lines.append("")
