@@ -371,15 +371,44 @@ def veille_source_budget_sec(existing_lead_count: int) -> int:
 
 
 def antibot_portals_crawl_enabled() -> bool:
-    """Leboncoin, PAP, SeLoger… inclus dès qu'une rotation IP est active (proxy ou pool auto)."""
+    """Leboncoin, PAP, SeLoger, Logic-Immo, BienIci (DataDome / Cloudflare).
+
+    Réalité technique : ces portails exigent un VRAI navigateur (Playwright) — le
+    fetch HTTP simple échoue même avec rotation IP. On ne les active donc QUE si un
+    navigateur est disponible, sinon c'est « 0 annonce » silencieux et du budget de
+    crawl gaspillé. Pour de la fiabilité, ajouter en plus des proxies résidentiels
+    (CRAWL_PROXIES) : les proxies publics gratuits ne passent pas DataDome.
+    Forçable explicitement via CRAWL_ANTIBOT_PORTALS_ENABLED=1/0.
+    """
     raw = (os.getenv("CRAWL_ANTIBOT_PORTALS_ENABLED") or "").strip().lower()
     if raw in ("1", "true", "yes"):
         return True
     if raw in ("0", "false", "no"):
         return False
-    if CRAWL_AUTO_FREE_PROXIES or proxies_enabled():
-        return True
+    # Navigateur indispensable ; la rotation IP (proxy/pool) reste fortement conseillée.
     return CRAWL_PLAYWRIGHT_ENABLED
+
+
+def antibot_portals_readiness() -> dict:
+    """État de préparation au crawl des portails anti-bot (pour diagnostic / UI)."""
+    has_browser = CRAWL_PLAYWRIGHT_ENABLED
+    has_residential = proxies_enabled()  # CRAWL_PROXIES (idéalement résidentiels)
+    has_any_rotation = has_residential or CRAWL_AUTO_FREE_PROXIES
+    if has_browser and has_residential:
+        level = "ready"  # navigateur + proxies dédiés : configuration fiable
+    elif has_browser and has_any_rotation:
+        level = "partial"  # navigateur + pool gratuit : fonctionne par intermittence
+    elif has_browser:
+        level = "browser_only"  # navigateur sans rotation : blocages fréquents
+    else:
+        level = "blocked"  # pas de navigateur : portails anti-bot inopérants
+    return {
+        "level": level,
+        "enabled": antibot_portals_crawl_enabled(),
+        "has_browser": has_browser,
+        "has_residential_proxies": has_residential,
+        "has_ip_rotation": has_any_rotation,
+    }
 
 
 def background_crawl_config() -> dict:
@@ -396,6 +425,7 @@ def background_crawl_config() -> dict:
         "veille_discovery_max_listings": CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS,
         "veille_source_max_cap_sec": CRAWL_VEILLE_SOURCE_MAX_CAP_SEC,
         "antibot_portals_enabled": antibot_portals_crawl_enabled(),
+        "antibot_readiness": antibot_portals_readiness(),
         "proxies_configured": proxies_enabled(),
         "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
     }
