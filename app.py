@@ -313,7 +313,7 @@ def api_health():
         "server": "veliora-flask",
         "product": "Veliora",
         "tagline": __import__("crm.config", fromlist=["PRODUCT_TAGLINE"]).PRODUCT_TAGLINE,
-        "api_version": 7,
+        "api_version": __import__("crm.constants", fromlist=["API_VERSION"]).API_VERSION,
         "lead_refresh": True,
         "radar": True,
         "clients": True,

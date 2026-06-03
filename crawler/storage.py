@@ -3257,27 +3257,9 @@ def _normalize_patch_lead_field(key: str, value: object) -> object | None:
 
 def patch_lead(lead_id: int, agency_id: str, data: dict) -> dict | None:
     """Met à jour pipeline, notes, champs contact/bien (saisie CRM)."""
-    allowed = {
-        "pipeline",
-        "status",
-        "notes",
-        "next_follow_up",
-        "first_name",
-        "last_name",
-        "phone",
-        "email",
-        "address",
-        "city",
-        "postcode",
-        "sector",
-        "surface",
-        "price",
-        "type",
-        "listing_type",
-        "agency",
-        "source_url",
-        "transaction_type",
-    }
+    from crm.constants import LEAD_PATCH_FIELDS
+
+    allowed = set(LEAD_PATCH_FIELDS)
     updates: dict[str, object] = {}
     for key in allowed:
         if key not in data:

@@ -20,9 +20,45 @@ function getApiBase() {
 }
 
 const API = getApiBase();
-const AUTH_TOKEN_KEY = "propscout_token";
-const AUTH_USER_KEY = "propscout_user";
+const AUTH_TOKEN_KEY = "veliora_token";
+const AUTH_TOKEN_KEY_LEGACY = "propscout_token";
+const AUTH_USER_KEY = "veliora_user";
+const AUTH_USER_KEY_LEGACY = "propscout_user";
 const DVF_APP_URL = "https://app.dvf.etalab.gouv.fr/";
+
+function getStoredAuthToken() {
+  return (
+    localStorage.getItem(AUTH_TOKEN_KEY) ||
+    localStorage.getItem(AUTH_TOKEN_KEY_LEGACY) ||
+    ""
+  );
+}
+
+function getStoredAuthUserRaw() {
+  return localStorage.getItem(AUTH_USER_KEY) || localStorage.getItem(AUTH_USER_KEY_LEGACY);
+}
+
+function setStoredAuth(token, userObj) {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_TOKEN_KEY_LEGACY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY_LEGACY);
+  }
+  if (userObj != null) {
+    const raw = typeof userObj === "string" ? userObj : JSON.stringify(userObj);
+    localStorage.setItem(AUTH_USER_KEY, raw);
+    localStorage.setItem(AUTH_USER_KEY_LEGACY, raw);
+  } else {
+    localStorage.removeItem(AUTH_USER_KEY);
+    localStorage.removeItem(AUTH_USER_KEY_LEGACY);
+  }
+}
+
+function clearStoredAuth() {
+  setStoredAuth(null, null);
+}
 
 const state = {
   user: null,
@@ -159,7 +195,7 @@ function apiErrorMessage(status, path, body, res) {
 }
 
 function getAuthHeaders() {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = getStoredAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -172,8 +208,7 @@ async function parseApiResponse(res, path) {
   const isJson = (res.headers.get("content-type") || "").includes("application/json");
   const body = isJson ? await res.json().catch(() => ({})) : {};
   if (res.status === 401 && !path.startsWith("/auth/")) {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    localStorage.removeItem(AUTH_USER_KEY);
+    clearStoredAuth();
     redirectToLogin();
     throw new Error("Session expirée — reconnectez-vous");
   }
@@ -1564,7 +1599,7 @@ function leadQuickFactsHtml(lead) {
 }
 
 async function ensureAuth() {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = getStoredAuthToken();
   if (!token) {
     redirectToLogin();
     return false;
@@ -1575,7 +1610,7 @@ async function ensureAuth() {
     state.settings = normalizeSettingsPayload(me.settings || state.settings || {});
     applyAgencyCityToCrawl();
     scheduleSourceUrlsForCity();
-    const cached = localStorage.getItem(AUTH_USER_KEY);
+    const cached = getStoredAuthUserRaw();
     if (cached) {
       try {
         state.user = { ...JSON.parse(cached), ...state.user };
@@ -1583,7 +1618,7 @@ async function ensureAuth() {
         /* ignore */
       }
     }
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(state.user));
+    setStoredAuth(token, state.user);
     updateAuthHeader();
     if (me.billing?.requires_payment && !me.billing?.active) {
       window.location.href = "/crm/auth?next=" + encodeURIComponent(
@@ -1614,7 +1649,7 @@ function updateAuthHeader() {
 }
 
 async function logout() {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = getStoredAuthToken();
   if (token) {
     try {
       await fetch(`${API}/auth/logout`, {
@@ -1625,8 +1660,7 @@ async function logout() {
       /* hors ligne — on efface quand même le token local */
     }
   }
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+  clearStoredAuth();
   window.location.href = "/";
 }
 
@@ -5118,7 +5152,7 @@ function renderAll() {
 function leadImageUrl(lead) {
   if (!lead?.has_image && !lead?.image_url) return null;
   const base = lead.image_url || `/api/leads/${lead.id}/image`;
-  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const token = getStoredAuthToken();
   if (!token) return base;
   const sep = base.includes("?") ? "&" : "?";
   return `${base}${sep}access_token=${encodeURIComponent(token)}`;
@@ -5817,7 +5851,6 @@ function setupPlaybook() {
 async function patchLeadPipeline(leadId, pipeline) {
   const result = await api(`/leads/${leadId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ pipeline }),
   });
   const idx = LEADS.findIndex((l) => l.id === leadId);
@@ -8184,7 +8217,7 @@ function setupAccountMenu() {
   });
   document.getElementById("btn-export-leads")?.addEventListener("click", async () => {
     try {
-      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      const token = getStoredAuthToken();
       const res = await fetch(`${API}/leads/export`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

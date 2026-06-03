@@ -16,7 +16,11 @@
 
   function readToken() {
     try {
-      return localStorage.getItem("propscout_token") || "";
+      return (
+        localStorage.getItem("veliora_token") ||
+        localStorage.getItem("propscout_token") ||
+        ""
+      );
     } catch {
       return "";
     }

@@ -111,8 +111,25 @@
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script>
     const API = "/api";
-    const AUTH_TOKEN_KEY = "propscout_token";
-    const AUTH_USER_KEY = "propscout_user";
+    const AUTH_TOKEN_KEY = "veliora_token";
+    const AUTH_TOKEN_KEY_LEGACY = "propscout_token";
+    const AUTH_USER_KEY = "veliora_user";
+    const AUTH_USER_KEY_LEGACY = "propscout_user";
+
+    function getStoredAuthToken() {
+      return localStorage.getItem(AUTH_TOKEN_KEY) || localStorage.getItem(AUTH_TOKEN_KEY_LEGACY) || "";
+    }
+    function setStoredAuth(token, userRaw) {
+      if (token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
+        localStorage.setItem(AUTH_TOKEN_KEY_LEGACY, token);
+      }
+      if (userRaw != null) {
+        const raw = typeof userRaw === "string" ? userRaw : JSON.stringify(userRaw);
+        localStorage.setItem(AUTH_USER_KEY, raw);
+        localStorage.setItem(AUTH_USER_KEY_LEGACY, raw);
+      }
+    }
 
     const params = new URLSearchParams(window.location.search);
     const nextUrl = params.get("next") || "/crm";
@@ -164,7 +181,7 @@
     }
 
     function authHeaders() {
-      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      const token = getStoredAuthToken();
       return token
         ? { Authorization: "Bearer " + token, "Content-Type": "application/json" }
         : { "Content-Type": "application/json" };
@@ -206,7 +223,7 @@
     }
 
     async function redirectIfActive() {
-      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      const token = getStoredAuthToken();
       if (!token) return;
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 8000);
@@ -234,7 +251,7 @@
         return;
       }
       if (checkout !== "success") return;
-      if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
+      if (!getStoredAuthToken()) {
         showBanner("Connectez-vous pour finaliser l'activation.", "err");
         return;
       }
@@ -242,7 +259,7 @@
       try {
         if (sessionId) await verifyCheckoutSession(sessionId);
         const me = await fetch(API + "/auth/me", {
-          headers: { Authorization: "Bearer " + localStorage.getItem(AUTH_TOKEN_KEY) },
+          headers: { Authorization: "Bearer " + getStoredAuthToken() },
         }).then(parseJson);
         if (me.billing?.active) {
           showBanner("Paiement confirmé — bienvenue sur Veliora !", "ok");
@@ -380,8 +397,8 @@
     }
 
     function saveSession(d) {
-      if (d.token) localStorage.setItem(AUTH_TOKEN_KEY, d.token);
-      if (d.user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(d.user));
+      if (d.token) setStoredAuth(d.token, d.user ? JSON.stringify(d.user) : null);
+      else if (d.user) setStoredAuth(null, d.user);
     }
 
     document.getElementById("form-login").addEventListener("submit", async (e) => {

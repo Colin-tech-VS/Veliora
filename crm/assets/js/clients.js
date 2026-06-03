@@ -31,7 +31,7 @@ async function loadClients() {
   } catch (err) {
     if ((err.message || "").includes("Route API introuvable")) {
       throw new Error(
-        "Module Acheteurs/Locataires absent sur le serveur. Fermez tous les terminaux Veliora (Ctrl+C), puis relancez demarrer.bat — vérifiez http://localhost:8000/api/health (api_version 6, clients true).",
+        "Module Acheteurs/Locataires absent sur le serveur. Fermez tous les terminaux Veliora (Ctrl+C), puis relancez demarrer.bat — vérifiez http://localhost:8000/api/health (api_version 7, clients true).",
       );
     }
     throw err;
@@ -137,7 +137,10 @@ async function downloadClientTemplate() {
   const showToastFn = clientDeps?.showToast || ((msg, type) => console.warn(type, msg));
   const apiBase = clientApiBase();
   const headers = clientDeps?.getAuthHeaders?.() || {};
-  const token = localStorage.getItem("propscout_token");
+  const token =
+    localStorage.getItem("veliora_token") ||
+    localStorage.getItem("propscout_token") ||
+    "";
   if (token && !headers.Authorization) {
     headers.Authorization = `Bearer ${token}`;
   }

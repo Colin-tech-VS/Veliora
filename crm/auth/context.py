@@ -35,7 +35,13 @@ def _extract_token() -> str:
         q = (request.args.get("access_token") or request.args.get("token") or "").strip()
         if q:
             return q
-    return (request.cookies.get("propscout_token") or "").strip()
+    from crm.constants import AUTH_TOKEN_KEYS
+
+    for key in AUTH_TOKEN_KEYS:
+        cookie = (request.cookies.get(key) or "").strip()
+        if cookie:
+            return cookie
+    return ""
 
 
 def resolve_current_user() -> dict | None:
