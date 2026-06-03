@@ -961,6 +961,247 @@
     font-size: 0.88rem;
     line-height: 1.5;
   }
+
+  /* Fluidité — éviter débordements horizontaux */
+  .content img,
+  .content video,
+  .content iframe {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .crawl-city-bar {
+    max-width: none;
+    width: 100%;
+  }
+
+  .crawl-city-readonly-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .crawl-city-readonly-actions .btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .veille-feed-panel {
+    overflow: hidden;
+  }
+
+  .veille-feed-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .veille-feed-head .btn {
+    min-height: 40px;
+  }
+
+  .veille-feed-list {
+    max-height: min(45dvh, 320px);
+  }
+
+  .veille-feed-item-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .veille-feed-item-actions .btn {
+    min-height: 40px;
+  }
+
+  .ux-workflow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .ux-workflow-step {
+    min-height: 44px;
+  }
+
+  .crm-howto-steps {
+    grid-template-columns: 1fr !important;
+  }
+
+  .crm-howto-step {
+    min-height: 44px;
+  }
+
+  /* Conseiller IA — hauteur utile avec nav bas */
+  .ai-shell {
+    margin: 0;
+    height: calc(
+      100dvh - var(--header-height) - 4.75rem - env(safe-area-inset-bottom)
+    );
+    min-height: 280px;
+  }
+
+  .ai-sidebar {
+    display: none;
+  }
+
+  .ai-chat {
+    min-height: 0;
+    flex: 1;
+    border-radius: var(--radius-md);
+  }
+
+  .ai-composer textarea,
+  .ai-composer input {
+    font-size: 16px;
+  }
+
+  .ai-suggestion {
+    min-height: 40px;
+  }
+
+  /* Acheteurs — matching */
+  .client-matches-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+  }
+
+  .client-match-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .client-match-head {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .client-match-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  .client-match-actions .btn {
+    flex: 1 1 calc(50% - 0.2rem);
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .client-editor-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Portails — actions tactiles */
+  .source-card-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .source-card-actions .btn,
+  .source-crawl-btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .crawler-live-stats {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .estimateur-view {
+    max-width: 100%;
+  }
+
+  /* Drawer détail prospect */
+  .detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+  }
+
+  .detail-row .value {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .drawer-link-inline a {
+    overflow-wrap: anywhere;
+  }
+
+  /* Loader veille plein écran confortable */
+  .crawl-loader {
+    padding: max(0.5rem, env(safe-area-inset-top))
+      max(0.5rem, env(safe-area-inset-right))
+      calc(0.5rem + env(safe-area-inset-bottom))
+      max(0.5rem, env(safe-area-inset-left));
+    align-items: flex-end;
+  }
+
+  .crawl-loader-card {
+    min-width: 0 !important;
+    width: calc(100vw - 1.25rem);
+    max-width: none;
+    max-height: 92dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
+  }
+
+  .crawl-loader-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .crawl-loader-actions .btn {
+    min-height: 40px;
+  }
+
+  /* Modales mandats / clients */
+  .modal-overlay {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+  }
+
+  .mandates-list {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Tablette (601–900px) — grilles intermédiaires */
+@media (min-width: 601px) and (max-width: 900px) {
+  .leads-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sources-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crawler-live-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .stats-grid,
+  .radar-stats.stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .crm-hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mandates-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Très petits écrans */
@@ -984,6 +1225,22 @@
 
   .radar-briefing-actions .btn {
     flex: 1 1 100%;
+  }
+
+  .ux-workflow {
+    grid-template-columns: 1fr;
+  }
+
+  .client-match-actions .btn {
+    flex: 1 1 100%;
+  }
+
+  .crawler-live-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-stats {
+    grid-template-columns: 1fr;
   }
 }
 

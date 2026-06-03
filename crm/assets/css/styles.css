@@ -3158,7 +3158,7 @@ tr.lead-row-flash td {
 /* ─── Crawler View ─── */
 .crawl-city-bar {
   margin-top: 1rem;
-  max-width: 520px;
+  max-width: min(520px, 100%);
 }
 
 .crawl-city-readonly {
@@ -4601,7 +4601,7 @@ tr.lead-row-flash td {
   position: fixed;
   top: 0;
   right: 0;
-  width: 480px;
+  width: min(480px, 100vw);
   max-width: 100vw;
   height: 100vh;
   height: 100dvh;
@@ -5177,8 +5177,8 @@ body:has(.crawl-dock.open) .script-dock.open {
   padding: 1.75rem 2rem 2rem;
   box-shadow: var(--shadow-lg);
   text-align: center;
-  min-width: 360px;
-  max-width: 480px;
+  min-width: min(360px, calc(100vw - 2rem));
+  max-width: min(480px, calc(100vw - 1.5rem));
   width: calc(100% - 2rem);
   border: 1px solid var(--border);
   overflow: hidden;
@@ -8838,8 +8838,10 @@ body:has(.crawl-dock.open) .script-dock.open {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 280px;
+  max-height: min(280px, 40dvh);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .veille-feed-item {
@@ -8887,6 +8889,8 @@ body:has(.crawl-dock.open) .script-dock.open {
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .veille-feed-item-details {
