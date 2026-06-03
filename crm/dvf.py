@@ -17,11 +17,25 @@ import logging
 import math
 import re
 import statistics
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 import requests
+from requests.adapters import HTTPAdapter
+
+try:  # urllib3 est livré avec requests ; repli défensif si absent
+    from urllib3.util.retry import Retry
+except Exception:  # pragma: no cover
+    Retry = None
 
 logger = logging.getLogger(__name__)
+
+# Nombre de fichiers DVF récupérés en parallèle lors des replis géographiques
+# (arrondissements d'une grande ville, communes d'un département). Le coût est
+# réseau (I/O), pas CPU : un pool de threads modeste réduit fortement la latence
+# à froid sans surcharger files.data.gouv.fr.
+DVF_FETCH_WORKERS = 8
 
 GEO_COMMUNES = "https://geo.api.gouv.fr/communes"
 GEO_SEARCH = "https://api-adresse.data.gouv.fr/search"
@@ -250,10 +264,43 @@ def _guess_type_local(surface: float | None, address: str = "") -> str:
     return "Appartement"
 
 
-def _session() -> requests.Session:
+_SESSION: requests.Session | None = None
+_SESSION_LOCK = threading.Lock()
+
+
+def _build_session() -> requests.Session:
     s = requests.Session()
     s.headers.update({"User-Agent": "Veliora/1.0 (pige immobiliere; contact@veliora.local)"})
+    # Pool de connexions partagé (keep-alive) : évite un handshake TCP/TLS par
+    # fichier DVF. Dimensionné pour les replis parallèles + l'enrichissement DVF
+    # pendant le crawl (plusieurs threads partagent la même session).
+    pool = max(DVF_FETCH_WORKERS * 2, 16)
+    if Retry is not None:
+        retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            backoff_factor=0.4,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=frozenset({"GET"}),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry, pool_connections=pool, pool_maxsize=pool)
+    else:  # pragma: no cover
+        adapter = HTTPAdapter(pool_connections=pool, pool_maxsize=pool)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
     return s
+
+
+def _session() -> requests.Session:
+    """Session HTTP persistante (keep-alive + pool + retry). Thread-safe."""
+    global _SESSION
+    if _SESSION is None:
+        with _SESSION_LOCK:
+            if _SESSION is None:
+                _SESSION = _build_session()
+    return _SESSION
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -293,12 +340,46 @@ def _geocode_fallback_loc(loc: dict, label: str = "") -> dict | None:
     }
 
 
+# Caches mémoire « succès uniquement » : un échec réseau transitoire (503, timeout)
+# ne doit jamais être mémorisé, sinon toutes les estimations suivantes pour cette
+# adresse repartiraient sur un repli dégradé pendant toute la vie du process.
+_GEOCODE_CACHE: dict[tuple, dict] = {}
+_COMMUNE_CACHE: dict[tuple, dict] = {}
+_GEO_CACHE_LOCK = threading.Lock()
+_GEO_CACHE_MAX = 4096
+
+
+def _cache_get(cache: dict, key: tuple) -> dict | None:
+    with _GEO_CACHE_LOCK:
+        hit = cache.get(key)
+        return dict(hit) if hit else None
+
+
+def _cache_put(cache: dict, key: tuple, value: dict | None) -> None:
+    if not value:
+        return
+    with _GEO_CACHE_LOCK:
+        if len(cache) >= _GEO_CACHE_MAX:
+            cache.clear()
+        cache[key] = value
+
+
 def geocode_address(address: str, city: str = "", *, prefer_street: bool = False) -> dict | None:
-    """Géocode une adresse (API Adresse.data.gouv.fr).
+    """Géocode une adresse (API Adresse.data.gouv.fr), succès mémoïsés.
 
     Si prefer_street=True, tente d'abord l'adresse complète (rue + ville) pour
     affiner le rayon de comparables DVF.
     """
+    key = ((address or "").strip(), (city or "").strip(), prefer_street)
+    cached = _cache_get(_GEOCODE_CACHE, key)
+    if cached is not None:
+        return cached
+    res = _geocode_address_impl(key[0], key[1], prefer_street)
+    _cache_put(_GEOCODE_CACHE, key, res)
+    return dict(res) if res else None
+
+
+def _geocode_address_impl(address: str, city: str, prefer_street: bool) -> dict | None:
     loc = parse_location_hint(address, city)
     addr_clean = (address or "").strip()
     if addr_clean in ("—", "-", ""):
@@ -333,7 +414,17 @@ def geocode_address(address: str, city: str = "", *, prefer_street: bool = False
 
 
 def resolve_commune_code(city: str, postcode: str | None = None) -> dict | None:
-    """Résout le code INSEE via geo.api.gouv.fr."""
+    """Résout le code INSEE via geo.api.gouv.fr (succès mémoïsés)."""
+    key = ((city or "").strip(), (postcode or "").strip() or None)
+    cached = _cache_get(_COMMUNE_CACHE, key)
+    if cached is not None:
+        return cached
+    res = _resolve_commune_code_impl(key[0], key[1])
+    _cache_put(_COMMUNE_CACHE, key, res)
+    return dict(res) if res else None
+
+
+def _resolve_commune_code_impl(city: str, postcode: str | None) -> dict | None:
     city = _normalize_city_name(city)
     arrondissement = _postcode_to_arrondissement(postcode)
     if arrondissement:
@@ -708,6 +799,37 @@ def _fetch_commune_csv(code_commune: str, year: str) -> str | None:
         return None
 
 
+def _fetch_commune_csv_any(code_commune: str, years: tuple[str, ...]) -> str | None:
+    """Premier CSV non vide parmi plusieurs millésimes (ordre = priorité)."""
+    for year in years:
+        raw = _fetch_commune_csv(code_commune, year)
+        if raw:
+            return raw
+    return None
+
+
+def _iter_commune_csv_parallel(codes: list[str], years: tuple[str, ...]):
+    """Récupère les CSV DVF de plusieurs communes en parallèle, par lots.
+
+    Yield (code_commune, csv_text) dès qu'un lot est prêt — le consommateur peut
+    s'arrêter tôt (assez de ventes) sans avoir lancé tous les téléchargements.
+    """
+    if not codes:
+        return
+    if len(codes) == 1:
+        raw = _fetch_commune_csv_any(codes[0], years)
+        if raw:
+            yield codes[0], raw
+        return
+    workers = min(DVF_FETCH_WORKERS, len(codes))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for start in range(0, len(codes), workers):
+            batch = codes[start : start + workers]
+            for cc, raw in zip(batch, pool.map(lambda c: _fetch_commune_csv_any(c, years), batch)):
+                if raw:
+                    yield cc, raw
+
+
 def _fetch_dept_commune_codes(dept: str, limit: int = 80) -> list[str]:
     """Codes INSEE d'un département ; inclut les arrondissements Paris/Lyon/Marseille."""
     codes: list[str] = []
@@ -837,10 +959,9 @@ def compute_price_stats(
         if (not sales or len(sales) < 15) and code_commune in MERGED_COMMUNE_ARRONDISSEMENTS:
             merged_sales: list[dict] = []
             merged_years: set[int] = set()
-            for cc in MERGED_COMMUNE_ARRONDISSEMENTS[code_commune]:
-                raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
-                if not raw:
-                    continue
+            for cc, raw in _iter_commune_csv_parallel(
+                list(MERGED_COMMUNE_ARRONDISSEMENTS[code_commune]), ("2025", "2024")
+            ):
                 chunk, chunk_years = _merge_csv_sales(raw, cc)
                 merged_sales.extend(chunk)
                 merged_years.update(chunk_years)
@@ -856,12 +977,8 @@ def compute_price_stats(
             dept_sales: list[dict] = []
             dept_years: set[int] = set()
             skip = set(candidates)
-            for cc in _fetch_dept_commune_codes(dept, limit=80):
-                if cc in skip:
-                    continue
-                raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
-                if not raw:
-                    continue
+            dept_codes = [cc for cc in _fetch_dept_commune_codes(dept, limit=80) if cc not in skip]
+            for cc, raw in _iter_commune_csv_parallel(dept_codes, ("2025", "2024")):
                 chunk, chunk_years = _merge_csv_sales(raw, cc)
                 dept_sales.extend(chunk)
                 dept_years.update(chunk_years)
