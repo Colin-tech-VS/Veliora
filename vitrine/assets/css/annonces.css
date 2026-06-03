@@ -168,3 +168,361 @@
   color: var(--v-muted);
   padding: 2rem;
 }
+
+/* Fiche annonce dédiée (SSR) */
+
+.v-ann-detail-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(1rem, 3vw, 2rem) clamp(1rem, 4vw, 2rem) 4rem;
+}
+
+.v-ann-detail-breadcrumb {
+  font-size: 0.85rem;
+  color: var(--v-muted);
+  margin-bottom: 1.25rem;
+}
+
+.v-ann-detail-breadcrumb a {
+  color: var(--v-navy);
+  text-decoration: none;
+}
+
+.v-ann-detail-hero {
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--v-border);
+}
+
+.v-ann-detail-hero-img {
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  display: block;
+}
+
+.v-ann-detail-hero-placeholder {
+  height: 280px;
+  background: linear-gradient(135deg, var(--v-cream), #dde5ea);
+}
+
+.v-ann-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr min(340px, 100%);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .v-ann-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .v-ann-detail-cta-card {
+    position: static;
+    order: -1;
+  }
+
+  .v-ann-detail-aside {
+    order: -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .v-annonces-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .v-annonces-filter {
+    width: 100%;
+  }
+
+  .v-annonces-filters .v-btn {
+    width: 100%;
+  }
+
+  .v-ann-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .v-ann-detail-main {
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  }
+
+  .v-ann-detail-breadcrumb {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .v-ann-detail-hero-img {
+    max-height: min(52vw, 280px);
+  }
+
+  .v-ann-detail-hero-placeholder {
+    height: min(45vw, 220px);
+  }
+
+  .v-ann-detail h1 {
+    font-size: clamp(1.25rem, 5vw, 1.65rem);
+  }
+
+  .v-ann-detail-price {
+    font-size: 1.2rem;
+  }
+
+  .v-ann-detail-specs {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .v-ann-detail-cta-card {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .v-ann-detail-cta-card .v-btn {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+
+}
+
+@media (max-width: 480px) {
+  .v-inquiry-modal {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .v-inquiry-modal-card {
+    max-width: none;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    padding: 1.25rem 1rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .v-inquiry-field input,
+  .v-inquiry-field textarea {
+    font-size: 16px;
+  }
+}
+
+/* Nav compacte fiche annonce */
+.vitrine-annonce-detail .v-nav-inner {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 720px) {
+  .vitrine-annonce-detail .v-nav-links {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    padding-top: 0.25rem;
+  }
+
+  .vitrine-annonce-detail .v-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+}
+
+.v-ann-detail-agency {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--v-brass);
+  margin: 0 0 0.35rem;
+}
+
+.v-ann-detail h1 {
+  font-family: var(--v-serif);
+  font-size: clamp(1.5rem, 3.5vw, 2.1rem);
+  color: var(--v-navy);
+  margin: 0 0 0.5rem;
+  line-height: 1.2;
+}
+
+.v-ann-detail-tx {
+  font-size: 0.65em;
+  font-weight: 600;
+  color: var(--v-muted);
+}
+
+.v-ann-detail-price {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--v-navy);
+  margin: 0 0 0.35rem;
+}
+
+.v-ann-detail-loc,
+.v-ann-detail-meta {
+  color: var(--v-muted);
+  margin: 0 0 0.5rem;
+}
+
+.v-ann-detail-hint {
+  background: var(--v-cream);
+  border-left: 3px solid var(--v-brass);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.9rem;
+  margin: 1rem 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.v-ann-detail-specs {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.v-ann-detail-desc {
+  line-height: 1.65;
+  color: var(--v-ink-soft, #4a5f6d);
+}
+
+.v-ann-detail-cta-card {
+  position: sticky;
+  top: 1rem;
+  background: var(--v-white);
+  border: 1px solid var(--v-border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 12px 32px rgba(21, 42, 54, 0.08);
+}
+
+.v-ann-detail-cta-card h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+  color: var(--v-navy);
+}
+
+.v-btn-block {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.v-ann-detail-legal {
+  font-size: 0.75rem;
+  color: var(--v-muted);
+  margin-top: 1rem;
+}
+
+.v-inquiry-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.v-inquiry-modal[hidden] {
+  display: none;
+}
+
+.v-inquiry-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 42, 54, 0.45);
+}
+
+.v-inquiry-modal-card {
+  position: relative;
+  background: var(--v-white);
+  border-radius: 16px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+}
+
+.v-inquiry-modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--v-muted);
+}
+
+.v-inquiry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.v-inquiry-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.v-inquiry-field input,
+.v-inquiry-field textarea {
+  font: inherit;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--v-border);
+  border-radius: 8px;
+}
+
+.v-inquiry-hint {
+  font-size: 0.72rem;
+  color: var(--v-muted);
+  margin: 0;
+}
+
+body.v-inquiry-open {
+  overflow: hidden;
+}
+
+.portal-inquiry-badge {
+  display: inline-block;
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #c45c3e;
+  color: #fff;
+  border-radius: 999px;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.portal-inquiry-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.portal-inquiry-item {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border, #e2e8ec);
+  font-size: 0.88rem;
+}
+
+.portal-inquiry-meta {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #6b7c88);
+  margin-top: 0.15rem;
+}

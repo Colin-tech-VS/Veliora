@@ -187,25 +187,67 @@
     }
   }
 
+  async function showInquiries(listing) {
+    const res = await portalApi(`/portal/listings/${listing.id}/inquiries`);
+    const items = res.inquiries || [];
+    const rows = items.length
+      ? items
+          .map((q) => {
+            const kind =
+              q.kind === "info_request" ? "Demande d'info" : "Contact agence";
+            const when = (q.created_at || "").slice(0, 16).replace("T", " ");
+            return `<li class="portal-inquiry-item">
+              <strong>${escapeHtml(kind)}</strong> — ${escapeHtml(q.name || "")}
+              <span class="portal-inquiry-meta">${escapeHtml(when)}</span>
+              ${q.phone ? `<br>Tél. ${escapeHtml(q.phone)}` : ""}
+              ${q.email ? `<br>${escapeHtml(q.email)}` : ""}
+              ${q.message ? `<p>${escapeHtml(q.message)}</p>` : ""}
+            </li>`;
+          })
+          .join("")
+      : "<p>Aucune demande pour cette annonce en ligne.</p>";
+    const pub =
+      listing.public_url || (listing.public_slug ? `/annonces/${listing.public_slug}` : "");
+    const pubLink = pub
+      ? `<p><a href="${escapeAttr(pub)}" target="_blank" rel="noopener">Voir la fiche publique</a></p>`
+      : "";
+    await openPortalModal(
+      `Demandes — ${listing.title || "Annonce"}`,
+      `${pubLink}<ul class="portal-inquiry-list">${rows}</ul>`,
+      [{ label: "Fermer", value: true, primary: true }],
+    );
+  }
+
   function renderListingsTable(listings) {
     if (!listings.length) {
       return `<p class="portal-empty">Aucune annonce. Publiez la première — elle apparaîtra sur <a href="/annonces" target="_blank" rel="noopener">veliora.fr/annonces</a>.</p>`;
     }
     const rows = listings
-      .map(
-        (l) => `<tr data-id="${escapeHtml(l.id)}">
+      .map((l) => {
+        const unread = Number(l.inquiry_unread_count || 0);
+        const badge = unread
+          ? `<span class="portal-inquiry-badge" title="Nouvelles demandes">${unread}</span>`
+          : "";
+        const pub =
+          l.public_url || (l.public_slug ? `/annonces/${l.public_slug}` : "");
+        const pubBtn = pub
+          ? `<a href="${escapeAttr(pub)}" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">Fiche</a>`
+          : "";
+        return `<tr data-id="${escapeHtml(l.id)}">
           <td>${statusBadge(l.status)}</td>
           <td><strong>${escapeHtml(l.title)}</strong><br><small>${escapeHtml(l.city || "")}</small></td>
           <td>${escapeHtml(l.transaction_type || "")} · ${escapeHtml(l.property_type || "")}</td>
           <td class="num">${fmtEuro(l.price)}</td>
           <td class="num">${l.surface ? `${l.surface} m²` : "—"}</td>
           <td class="portal-actions">
+            ${pubBtn}
+            <button type="button" class="btn btn-ghost btn-sm" data-portal-inquiries="${escapeHtml(l.id)}">Demandes${badge}</button>
             <button type="button" class="btn btn-ghost btn-sm" data-portal-edit="${escapeHtml(l.id)}">Modifier</button>
             <button type="button" class="btn btn-ghost btn-sm" data-portal-archive="${escapeHtml(l.id)}">Archiver</button>
             <button type="button" class="btn btn-ghost btn-sm" data-portal-delete="${escapeHtml(l.id)}">Supprimer</button>
           </td>
-        </tr>`,
-      )
+        </tr>`;
+      })
       .join("");
     return `
       <div class="portal-table-wrap">
@@ -222,7 +264,17 @@
     root.innerHTML = `<p class="portal-loading">Chargement du portail…</p>`;
     try {
       const res = await portalApi("/portal/listings");
-      const listings = res.listings || [];
+      const listings = await Promise.all(
+        (res.listings || []).map(async (l) => {
+          if (l.status !== "published") return l;
+          try {
+            const d = await portalApi(`/portal/listings/${l.id}`);
+            return { ...l, ...(d.listing || {}) };
+          } catch {
+            return l;
+          }
+        }),
+      );
       root.innerHTML = `
         <div class="portal-view">
           <div class="portal-head">
@@ -232,6 +284,13 @@
           ${renderListingsTable(listings)}
         </div>`;
       root.querySelector("#portal-new-btn")?.addEventListener("click", () => showEditor());
+      root.querySelectorAll("[data-portal-inquiries]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.portalInquiries;
+          const item = listings.find((l) => l.id === id);
+          if (item) showInquiries(item);
+        });
+      });
       root.querySelectorAll("[data-portal-edit]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const id = btn.dataset.portalEdit;

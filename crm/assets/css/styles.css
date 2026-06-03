@@ -8937,6 +8937,13 @@ body:has(.crawl-dock.open) .script-dock.open {
 .portal-table td { padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border-light); text-align: left; }
 .portal-table .num { text-align: right; white-space: nowrap; }
 .portal-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.portal-head { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .portal-head .btn-primary { width: 100%; }
+  .portal-table th:nth-child(3),
+  .portal-table td:nth-child(3) { display: none; }
+  .portal-actions .btn-sm { padding: 0.35rem 0.5rem; font-size: 0.75rem; }
+}
 .portal-status { font-size: 0.72rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 6px; }
 .portal-status--published { background: #e8f5ee; color: #1a5c42; }
 .portal-status--draft { background: #f4f0e8; color: #6b5a3e; }

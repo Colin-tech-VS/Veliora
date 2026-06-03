@@ -55,7 +55,31 @@ def ensure_portal_tables(conn) -> None:
             "agent_id": "TEXT",
             "agent_name": "TEXT",
             "source_lead_id": "INTEGER",
+            "public_slug": "TEXT",
         },
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS portal_listing_inquiries (
+            id TEXT PRIMARY KEY,
+            listing_id TEXT NOT NULL,
+            agency_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            message TEXT,
+            source_lead_id INTEGER,
+            read_at TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_portal_inquiries_listing "
+        "ON portal_listing_inquiries(listing_id, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_portal_listings_slug "
+        "ON portal_listings(public_slug) WHERE public_slug IS NOT NULL"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_portal_listings_status "
@@ -128,6 +152,76 @@ def list_listings(
     return [_row_to_listing(r) for r in rows]
 
 
+def _assign_unique_slug(conn, item: dict) -> str:
+    from crm.portal.slug import make_public_slug
+
+    base = make_public_slug(item)
+    slug = base
+    n = 0
+    while True:
+        row = conn.execute(
+            "SELECT id FROM portal_listings WHERE public_slug = ? AND id != ?",
+            (slug, item["id"]),
+        ).fetchone()
+        if not row:
+            break
+        n += 1
+        slug = f"{base}-{n}"[:120]
+    conn.execute(
+        "UPDATE portal_listings SET public_slug = ? WHERE id = ?",
+        (slug, item["id"]),
+    )
+    return slug
+
+
+def ensure_listing_public_slug(listing_id: str) -> str | None:
+    with get_connection() as conn:
+        ensure_portal_tables(conn)
+        row = conn.execute(
+            "SELECT * FROM portal_listings WHERE id = ?",
+            (listing_id,),
+        ).fetchone()
+        if not row:
+            return None
+        item = _row_to_listing(row)
+        if item.get("public_slug"):
+            return item["public_slug"]
+        if item.get("status") != "published":
+            return None
+        slug = _assign_unique_slug(conn, item)
+        conn.commit()
+        return slug
+
+
+def get_listing_by_slug(slug: str, *, public: bool = True) -> dict | None:
+    slug = (slug or "").strip()
+    if not slug:
+        return None
+    with get_connection() as conn:
+        ensure_portal_tables(conn)
+        row = conn.execute(
+            "SELECT * FROM portal_listings WHERE public_slug = ?",
+            (slug,),
+        ).fetchone()
+        if not row and len(slug) >= 8:
+            row = conn.execute(
+                "SELECT * FROM portal_listings WHERE id = ? OR id LIKE ?",
+                (slug, f"{slug}%"),
+            ).fetchone()
+    if not row:
+        return None
+    item = _row_to_listing(row)
+    if public:
+        if item.get("status") != "published":
+            return None
+        if (item.get("publisher_type") or "").lower() != "agency":
+            return None
+    if not item.get("public_slug"):
+        ensure_listing_public_slug(item["id"])
+        item = get_listing(item["id"], public=public) or item
+    return item
+
+
 def get_listing(listing_id: str, *, agency_id: str | None = None, public: bool = False) -> dict | None:
     with get_connection() as conn:
         ensure_portal_tables(conn)
@@ -143,9 +237,94 @@ def get_listing(listing_id: str, *, agency_id: str | None = None, public: bool =
             return None
         if (item.get("publisher_type") or "").lower() != "agency":
             return None
+        if not item.get("public_slug"):
+            ensure_listing_public_slug(item["id"])
+            item = get_listing(listing_id, public=True) or item
     if agency_id and item.get("agency_id") != agency_id:
         return None
     return item
+
+
+def list_published_slugs(limit: int = 500) -> list[dict]:
+    """Pour sitemap : slug + published_at."""
+    items = list_listings(public_only=True, publisher_type="agency", limit=limit)
+    out = []
+    for it in items:
+        slug = it.get("public_slug") or ensure_listing_public_slug(it["id"])
+        if slug:
+            out.append({"slug": slug, "published_at": it.get("published_at")})
+    return out
+
+
+def create_listing_inquiry(
+    *,
+    listing_id: str,
+    agency_id: str,
+    kind: str,
+    name: str,
+    email: str | None,
+    phone: str | None,
+    message: str | None,
+    source_lead_id: int | None,
+) -> dict:
+    iid = uuid.uuid4().hex
+    now = _now()
+    with get_connection() as conn:
+        ensure_portal_tables(conn)
+        conn.execute(
+            """INSERT INTO portal_listing_inquiries
+               (id, listing_id, agency_id, kind, name, email, phone, message,
+                source_lead_id, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                iid,
+                listing_id,
+                agency_id,
+                kind,
+                name,
+                email,
+                phone,
+                message,
+                source_lead_id,
+                now,
+            ),
+        )
+        conn.commit()
+    return {
+        "id": iid,
+        "listing_id": listing_id,
+        "kind": kind,
+        "name": name,
+        "created_at": now,
+    }
+
+
+def list_listing_inquiries(
+    listing_id: str,
+    *,
+    agency_id: str,
+    limit: int = 50,
+) -> list[dict]:
+    with get_connection() as conn:
+        ensure_portal_tables(conn)
+        rows = conn.execute(
+            """SELECT * FROM portal_listing_inquiries
+               WHERE listing_id = ? AND agency_id = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (listing_id, agency_id, max(1, min(limit, 100))),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_unread_inquiries(agency_id: str, listing_id: str) -> int:
+    with get_connection() as conn:
+        ensure_portal_tables(conn)
+        row = conn.execute(
+            """SELECT COUNT(*) AS n FROM portal_listing_inquiries
+               WHERE listing_id = ? AND agency_id = ? AND read_at IS NULL""",
+            (listing_id, agency_id),
+        ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) -> dict:
@@ -195,7 +374,11 @@ def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) ->
             ),
         )
         conn.commit()
-    return get_listing(lid, agency_id=agency_id) or {}
+    item = get_listing(lid, agency_id=agency_id) or {}
+    if item.get("status") == "published":
+        ensure_listing_public_slug(lid)
+        item = get_listing(lid, agency_id=agency_id) or item
+    return item
 
 
 def update_listing(listing_id: str, agency_id: str, data: dict) -> dict | None:
@@ -255,7 +438,11 @@ def update_listing(listing_id: str, agency_id: str, data: dict) -> dict | None:
             ),
         )
         conn.commit()
-    return get_listing(listing_id, agency_id=agency_id)
+    updated = get_listing(listing_id, agency_id=agency_id)
+    if updated and updated.get("status") == "published":
+        ensure_listing_public_slug(listing_id)
+        updated = get_listing(listing_id, agency_id=agency_id)
+    return updated
 
 
 def delete_listing(listing_id: str, agency_id: str) -> bool:
@@ -271,8 +458,14 @@ def delete_listing(listing_id: str, agency_id: str) -> bool:
 
 def public_listing_payload(item: dict) -> dict:
     """Réponse API publique — masque certains contacts si besoin."""
+    slug = item.get("public_slug")
+    if not slug and item.get("status") == "published" and item.get("id"):
+        slug = ensure_listing_public_slug(item["id"])
+    path = f"/annonces/{slug}" if slug else None
     return {
         "id": item.get("id"),
+        "slug": slug,
+        "url": path,
         "publisher_type": item.get("publisher_type"),
         "transaction_type": item.get("transaction_type"),
         "title": item.get("title"),

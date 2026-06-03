@@ -488,6 +488,12 @@ def _ensure_vitrine_public_routes() -> None:
         ("/portail", _annonces_page_response),
         ("/vitrine/annonces.html", _annonces_page_response),
     ]
+    if "/annonces/<slug>" not in rules:
+        app.add_url_rule(
+            "/annonces/<slug>",
+            "vitrine_annonce_detail_boot",
+            vitrine_annonce_detail,
+        )
     for rule, handler in to_register:
         if rule not in rules:
             app.add_url_rule(rule, f"vitrine_page_{rule.replace('/', '_')}", handler)
@@ -518,6 +524,13 @@ def vitrine_estimation():
 @app.route("/publier-annonce")
 def vitrine_publier_annonce_redirect():
     return redirect("/estimation", code=302)
+
+
+@app.route("/annonces/<slug>")
+def vitrine_annonce_detail(slug: str):
+    from crm.portal.public_page import listing_detail_response
+
+    return listing_detail_response(slug)
 
 
 @app.route("/annonces")
@@ -553,12 +566,25 @@ Sitemap: {SITE_URL}/sitemap.xml
 @app.route("/sitemap.xml")
 def sitemap_xml():
     from crm.config import SITE_URL
+    from crm.portal.storage import list_published_slugs
 
     pages = ["/", "/offre", "/estimation", "/annonces", "/legal"]
-    urls = "\n".join(
+    static_urls = [
         f"  <url><loc>{SITE_URL}{p}</loc><changefreq>weekly</changefreq></url>"
         for p in pages
-    )
+    ]
+    listing_urls = []
+    for row in list_published_slugs():
+        slug = row.get("slug")
+        if not slug:
+            continue
+        lastmod = (row.get("published_at") or "")[:10]
+        lastmod_tag = f"<lastmod>{lastmod}</lastmod>" if lastmod else ""
+        listing_urls.append(
+            f"  <url><loc>{SITE_URL}/annonces/{slug}</loc>"
+            f"<changefreq>daily</changefreq>{lastmod_tag}</url>"
+        )
+    urls = "\n".join(static_urls + listing_urls)
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 {urls}
@@ -1910,39 +1936,78 @@ def api_public_portal_listings():
 
 @app.route("/api/public/portal/listings/<listing_id>", methods=["GET"])
 def api_public_portal_listing_detail(listing_id):
-    from crm.portal.storage import get_listing, public_listing_payload
+    from crm.portal.storage import get_listing, get_listing_by_slug, public_listing_payload
 
     item = get_listing(listing_id, public=True)
+    if not item:
+        item = get_listing_by_slug(listing_id, public=True)
     if not item:
         return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
     return jsonify({"ok": True, "listing": public_listing_payload(item)})
 
 
+@app.route("/api/public/portal/listings/<listing_id>/inquiry", methods=["POST"])
+def api_public_portal_listing_inquiry(listing_id):
+    from crm.portal.inquiry import submit_listing_inquiry
+
+    data = request.get_json(silent=True) or {}
+    try:
+        out = submit_listing_inquiry(listing_id, data)
+    except Exception:
+        logging.exception("POST inquiry listing %s", listing_id)
+        return jsonify({"ok": False, "error": "Erreur serveur."}), 500
+    status = 200 if out.get("ok") else 400
+    return jsonify(out), status
+
+
 @app.route("/api/portal/listings", methods=["GET", "POST"])
 def api_portal_listings():
     from crm.portal.service import create_agency_listing
-    from crm.portal.storage import list_listings
+    from crm.portal.storage import count_unread_inquiries, ensure_listing_public_slug, list_listings
 
     aid = _aid()
     if request.method == "GET":
         status = (request.args.get("status") or "").strip() or None
         items = list_listings(agency_id=aid, status=status, limit=120)
+        from crm.portal.storage import get_listing
+
+        for it in items:
+            if it.get("status") == "published" and not it.get("public_slug"):
+                ensure_listing_public_slug(it["id"])
+            full = get_listing(it["id"], agency_id=aid) if it.get("status") == "published" else None
+            slug = (full or it).get("public_slug")
+            if slug:
+                it["public_slug"] = slug
+                it["public_url"] = f"/annonces/{slug}"
+            it["inquiry_unread_count"] = count_unread_inquiries(aid, it["id"])
         return jsonify({"ok": True, "listings": items})
     data = request.get_json(silent=True) or {}
     out = create_agency_listing(aid, data)
     return jsonify(out), 201 if out.get("ok") else 400
 
 
+@app.route("/api/portal/listings/<listing_id>/inquiries", methods=["GET"])
+def api_portal_listing_inquiries(listing_id):
+    from crm.portal.inquiry import agency_listing_inquiries
+
+    aid = _aid()
+    out = agency_listing_inquiries(aid, listing_id)
+    return jsonify(out), 200 if out.get("ok") else 404
+
+
 @app.route("/api/portal/listings/<listing_id>", methods=["GET", "PATCH", "DELETE"])
 def api_portal_listing(listing_id):
     from crm.portal.service import update_agency_listing
-    from crm.portal.storage import delete_listing, get_listing
+    from crm.portal.storage import count_unread_inquiries, delete_listing, get_listing
 
     aid = _aid()
     if request.method == "GET":
         item = get_listing(listing_id, agency_id=aid)
         if not item:
             return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
+        item["inquiry_unread_count"] = count_unread_inquiries(aid, listing_id)
+        if item.get("public_slug"):
+            item["public_url"] = f"/annonces/{item['public_slug']}"
         return jsonify({"ok": True, "listing": item})
     if request.method == "DELETE":
         if delete_listing(listing_id, aid):

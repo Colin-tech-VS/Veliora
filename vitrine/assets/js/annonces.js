@@ -16,14 +16,21 @@
       .replace(/"/g, "&quot;");
   }
 
+  function listingHref(l) {
+    if (l.url) return l.url;
+    if (l.slug) return `/annonces/${l.slug}`;
+    return `/annonces/${l.id}`;
+  }
+
   function cardHtml(l) {
+    const href = escapeHtml(listingHref(l));
     const img = l.image_url
       ? `<img src="${escapeHtml(l.image_url)}" alt="" loading="lazy" decoding="async">`
       : `<div class="v-ann-card-placeholder" aria-hidden="true"></div>`;
     const who = escapeHtml(l.agency_name || "Agence immobilière");
     return `
       <article class="v-ann-card">
-        <a href="#ann-${escapeHtml(l.id)}" class="v-ann-card-link" data-id="${escapeHtml(l.id)}">
+        <a href="${href}" class="v-ann-card-link">
           <div class="v-ann-card-img">${img}</div>
           <div class="v-ann-card-body">
             <span class="v-ann-card-badge">${who}</span>
@@ -55,33 +62,9 @@
         return;
       }
       grid.innerHTML = `<div class="v-ann-grid">${list.map(cardHtml).join("")}</div>`;
-      grid.querySelectorAll(".v-ann-card-link").forEach((a) => {
-        a.addEventListener("click", async (e) => {
-          e.preventDefault();
-          const id = a.dataset.id;
-          try {
-            const r = await fetch(`/api/public/portal/listings/${id}`);
-            const d = await r.json();
-            if (d.listing) showDetail(d.listing);
-          } catch {
-            VelioraUi?.toast("Impossible de charger l'annonce", "error");
-          }
-        });
-      });
     } catch {
       grid.innerHTML = `<p class="v-annonces-error">Connexion impossible — lancez Veliora avec demarrer.bat.</p>`;
     }
-  }
-
-  function showDetail(l) {
-    const who = l.agency_name || "Agence immobilière";
-    const msg = [
-      l.title,
-      `${l.city || ""} · ${fmtEuro(l.price)} · ${l.surface ? `${l.surface} m²` : ""}`,
-      l.description || "Pas de description.",
-      `${l.transaction_type || ""} · ${l.property_type || ""} · ${who}`,
-    ].join("\n\n");
-    VelioraUi?.alert(msg, { title: "Détail de l'annonce" });
   }
 
   document.getElementById("btn-filter")?.addEventListener("click", loadListings);
