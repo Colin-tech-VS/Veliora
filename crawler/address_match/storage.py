@@ -137,6 +137,86 @@ def save_address_match(lead_id: int, agency_id: str, resolution: dict) -> str | 
     return at
 
 
+_ADDR_BAD = ("", "—", "-", "n/a", "non renseigné")
+
+
+def apply_resolution_to_lead(lead_id: int, agency_id: str, resolution: dict) -> bool:
+    """Injecte l'adresse DPE/BAN résolue dans la table `leads` (pour la carte).
+
+    Objectif : que l'adresse réelle la plus précise (idéalement exacte) trouvée
+    par le rapprochement DPE serve directement au placement du marqueur, au lieu
+    de laisser la carte géocoder une ligne grossière « ville (CP) ».
+
+    Règles (idempotentes, jamais destructrices) :
+    - `latitude`/`longitude` : posées depuis le candidat le mieux classé seulement
+      si le lead n'a pas encore de coordonnées (on ne remplace pas une position
+      déjà connue, ex. lat/lng publiées par le portail).
+    - `address` : renseignée avec l'adresse probable uniquement si l'adresse
+      courante est vide, factice, ou seulement approximative (« … (approx.) »).
+    """
+    if not resolution or not resolution.get("ok"):
+        return False
+    probable = (resolution.get("adresse_probable") or "").strip()
+    if not probable:
+        return False
+
+    # Coordonnées du candidat correspondant à l'adresse probable (le mieux classé).
+    cands = resolution.get("candidats") or []
+    top = next((c for c in cands if (c.get("adresse") or "") == probable), None)
+    if top is None and cands:
+        top = cands[0]
+    lat = lng = None
+    if top and top.get("latitude") is not None and top.get("longitude") is not None:
+        try:
+            lat = float(top["latitude"])
+            lng = float(top["longitude"])
+        except (TypeError, ValueError):
+            lat = lng = None
+
+    at = _now()
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT address, latitude, longitude FROM leads "
+                "WHERE id = ? AND agency_id = ?",
+                (lead_id, agency_id),
+            ).fetchone()
+            if not row:
+                return False
+            cur_addr = (row["address"] if not isinstance(row, (tuple, list)) else row[0]) or ""
+            cur_lat = row["latitude"] if not isinstance(row, (tuple, list)) else row[1]
+            cur_lng = row["longitude"] if not isinstance(row, (tuple, list)) else row[2]
+
+            sets: list[str] = []
+            params: list = []
+            addr_l = cur_addr.strip().lower()
+            addr_is_replaceable = (
+                addr_l in _ADDR_BAD or "(approx." in addr_l
+            )
+            if addr_is_replaceable:
+                sets.append("address = ?")
+                params.append(probable)
+            if lat is not None and lng is not None and (cur_lat is None or cur_lng is None):
+                sets.append("latitude = ?")
+                sets.append("longitude = ?")
+                params.append(lat)
+                params.append(lng)
+            if not sets:
+                return False
+            sets.append("updated_at = ?")
+            params.append(at)
+            params.extend([lead_id, agency_id])
+            conn.execute(
+                f"UPDATE leads SET {', '.join(sets)} WHERE id = ? AND agency_id = ?",
+                params,
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("apply_resolution_to_lead %s différé: %s", lead_id, str(exc)[:160])
+        return False
+    return True
+
+
 def _parse(payload) -> dict | None:
     if not payload:
         return None

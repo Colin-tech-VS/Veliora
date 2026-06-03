@@ -105,7 +105,11 @@ class AddressMatchQueue:
 def resolve_and_store_lead_address(lead_id: int, agency_id: str) -> dict:
     """Résout l'adresse d'un lead et persiste le résultat. Idempotent."""
     from crawler.address_match.resolver import resolve_address_for_lead
-    from crawler.address_match.storage import get_lead_features, save_address_match
+    from crawler.address_match.storage import (
+        apply_resolution_to_lead,
+        get_lead_features,
+        save_address_match,
+    )
     from crawler.storage import get_lead
 
     lead = get_lead(lead_id, agency_id)
@@ -121,5 +125,8 @@ def resolve_and_store_lead_address(lead_id: int, agency_id: str) -> dict:
         logger.warning("resolve_address lead %s: %s", lead_id, str(exc)[:160])
         return {"error": True, "reason": str(exc)[:200], "lead_id": lead_id}
     save_address_match(lead_id, agency_id, resolution)
+    # Adresse réelle la plus précise (idéalement exacte) → table `leads` pour que
+    # la carte place le marqueur au bon endroit au lieu du centroïde ville/CP.
+    apply_resolution_to_lead(lead_id, agency_id, resolution)
     resolution["lead_id"] = lead_id
     return resolution

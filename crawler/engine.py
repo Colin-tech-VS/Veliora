@@ -1290,6 +1290,26 @@ class CrawlerEngine:
         )
         return repaired2, fetched2, coherent2, reason2 or coh_reason
 
+    def _submit_address_match(self, saved: dict, lead: LeadData) -> None:
+        """Soumet le lead au rapprochement d'adresse DPE/BAN/cadastre (carte).
+
+        Standardisé pour TOUTES les sources et TOUS les chemins d'enregistrement
+        (vérifié, minimal, réparé) : chaque prospect reçoit la meilleure adresse
+        réelle approximative — idéalement exacte — pour la carte.
+        """
+        if not self._address_queue or not saved or not saved.get("id"):
+            return
+        lead_id = int(saved["id"])
+        try:
+            from crawler.address_match.storage import save_lead_features
+
+            feats = (getattr(lead, "raw_extras", None) or {}).get("listing_features")
+            if feats:
+                save_lead_features(lead_id, self._agency_id or "", feats)
+        except Exception:
+            logger.debug("save_lead_features ignoré", exc_info=True)
+        self._address_queue.submit_lead(lead_id)
+
     def _save_repaired_lead(
         self,
         lead: LeadData,
@@ -1311,6 +1331,7 @@ class CrawlerEngine:
         )
         if not saved or not saved.get("id"):
             return False
+        self._submit_address_match(saved, lead)
         if was_retired:
             reactivate_lead_after_repair(int(saved["id"]), self._agency_id or "")
         result.leads_found += 1
@@ -1712,6 +1733,7 @@ class CrawlerEngine:
                         result.leads_saved += 1
                     else:
                         result.leads_updated += 1
+                    self._submit_address_match(saved_try, lead)
                     add_crawl_log(
                         source_id or adapter.source_id,
                         url,
@@ -1788,16 +1810,7 @@ class CrawlerEngine:
                     int(saved["id"]),
                     is_update=not saved.get("created"),
                 )
-            if self._address_queue:
-                try:
-                    from crawler.address_match.storage import save_lead_features
-
-                    feats = (lead.raw_extras or {}).get("listing_features")
-                    if feats:
-                        save_lead_features(int(saved["id"]), self._agency_id or "", feats)
-                except Exception:
-                    logger.debug("save_lead_features ignoré", exc_info=True)
-                self._address_queue.submit_lead(int(saved["id"]))
+            self._submit_address_match(saved, lead)
             summary = f"{lead.owner} — {lead.address or 'adresse OK'}"
             verif = saved.get("verification", "")
             if saved.get("created"):
