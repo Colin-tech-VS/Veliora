@@ -51,11 +51,6 @@
     padding: 1rem 1.25rem;
   }
 
-  .brand-text .brand-tagline {
-    max-width: none;
-    font-size: 0.7rem;
-  }
-
   .sidebar-nav {
     overflow-y: auto;
     flex: 1;
