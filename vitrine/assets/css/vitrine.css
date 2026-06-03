@@ -777,6 +777,198 @@ body.vitrine main {
 .v-roi-row:last-of-type { border-bottom: none; }
 .v-roi-foot { margin: 0.5rem 0 0; font-size: 0.72rem; color: var(--v-muted); }
 
+/* Homepage — comment ça marche + offre 500 € */
+.v-home-how {
+  background: var(--v-white);
+  border-top: 1px solid var(--v-border);
+  border-bottom: 1px solid var(--v-border);
+}
+
+.v-home-how-flow {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2rem) clamp(2.5rem, 5vw, 3rem);
+  max-width: var(--v-max);
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+  counter-reset: none;
+}
+
+.v-home-how-step {
+  position: relative;
+  background: var(--v-cream);
+  border: 1px solid var(--v-border);
+  border-radius: var(--v-radius);
+  padding: 1.15rem 1rem 1.25rem;
+}
+
+.v-home-how-step h3 {
+  margin: 0.5rem 0 0.35rem;
+  font-family: var(--v-serif);
+  font-size: 1rem;
+  line-height: 1.25;
+  color: var(--v-ink);
+}
+
+.v-home-how-step p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--v-muted);
+  line-height: 1.45;
+}
+
+.v-home-how-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--v-navy);
+  color: var(--v-cream);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.v-home-how-foot {
+  max-width: var(--v-max);
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 4vw, 2rem) clamp(2rem, 4vw, 2.5rem);
+  font-size: 0.92rem;
+  color: var(--v-muted);
+  text-align: center;
+}
+
+.v-home-500 {
+  background: linear-gradient(165deg, var(--v-navy) 0%, #1a3340 55%, var(--v-navy) 100%);
+  color: var(--v-cream);
+}
+
+.v-home-500 .v-label {
+  color: var(--v-brass);
+}
+
+.v-home-500-grid {
+  max-width: var(--v-max);
+  margin: 0 auto;
+  padding: clamp(2.5rem, 5vw, 3.5rem) clamp(1rem, 4vw, 2rem);
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
+  gap: clamp(2rem, 4vw, 3rem);
+  align-items: start;
+}
+
+.v-home-500-pay h2 {
+  font-family: var(--v-serif);
+  font-size: clamp(2.25rem, 5vw, 3rem);
+  margin: 0.25rem 0 0.5rem;
+  color: var(--v-cream);
+  line-height: 1.1;
+}
+
+.v-home-500-period {
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: var(--v-font);
+  opacity: 0.85;
+}
+
+.v-home-500-ttc {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+.v-home-500-lead {
+  margin: 0 0 1.25rem;
+  font-size: 1rem;
+  line-height: 1.55;
+  opacity: 0.92;
+}
+
+.v-home-500-roi {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--v-radius);
+  padding: 1rem 1.15rem;
+  margin-bottom: 1.5rem;
+}
+
+.v-home-500-roi strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--v-brass);
+}
+
+.v-home-500-roi p {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.v-home-500-roi-highlight {
+  color: var(--v-brass);
+  font-weight: 700;
+}
+
+.v-home-500-roi-foot {
+  margin: 0.35rem 0 0 !important;
+  font-size: 0.75rem !important;
+  opacity: 0.65 !important;
+}
+
+.v-home-500 a:not(.v-btn) {
+  color: var(--v-brass);
+}
+
+.v-home-500-inclus-title {
+  margin: 0 0 1rem;
+  font-family: var(--v-serif);
+  font-size: 1.2rem;
+  color: var(--v-cream);
+}
+
+.v-home-500-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.v-home-500-list li {
+  position: relative;
+  padding-left: 1.35rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  opacity: 0.92;
+}
+
+.v-home-500-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  background: var(--v-brass);
+}
+
+.v-home-500-honest {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  opacity: 0.75;
+  line-height: 1.45;
+}
+
+.v-home-500-link {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
 /* Pricing */
 .v-pricing {
   padding: clamp(3rem, 6vw, 4rem) clamp(1rem, 4vw, 2rem);
@@ -1892,6 +2084,14 @@ body.vitrine-legal { background: var(--v-cream); }
   .v-nav-links .v-btn { width: 100%; justify-content: center; min-height: 44px; }
 
   .v-suite-grid { grid-template-columns: 1fr; }
+
+  .v-home-how-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .v-home-500-grid {
+    grid-template-columns: 1fr;
+  }
 
   .v-hero-actions { flex-direction: column; }
   .v-hero-actions .v-btn { width: 100%; }

@@ -120,35 +120,20 @@ const radarMatchCache = new Map();
 const radarMatchInFlight = new Set();
 
 const viewTitles = {
-  dashboard: { title: "Briefing du marché", subtitle: "Vos vendeurs à contacter en priorité ce matin" },
-  analyze: { title: "Analyser une annonce", subtitle: "Collez l’URL d’une fiche — avis et score en direct" },
-  playbook: { title: "Scripts d'appel", subtitle: "Quoi dire, quand appeler, comment relancer" },
-  leads: { title: "Vos prospects", subtitle: "Classés par priorité mandat (Score Mandat™)" },
-  crawler: { title: "Veille portails", subtitle: "Choisissez vos sites — Veliora alimente le briefing" },
-  pipeline: { title: "Mon pipeline", subtitle: "Vos affaires en cours — de la prise en charge à la vente" },
-  transactions: { title: "Affaires", subtitle: "Toutes les affaires de l'agence, étape par étape" },
-  commissions: { title: "Commissions", subtitle: "Suivi des ventes conclues — part agence et part agent" },
-  map: {
-    title: "Carte",
-    subtitle: "Vos annonces, votre agence et votre position (mobile & bureau)",
-  },
-  estimateur: {
-    title: "Estimateur de prix",
-    subtitle: "Fourchette indicative DVF (ventes réelles) + critères du bien",
-  },
-  portail: {
-    title: "Portail annonces",
-    subtitle: "Publiez vos biens sur veliora.fr/annonces",
-  },
-  mandates: { title: "Mandats", subtitle: "Mandats de vente et de location" },
-  clients: {
-    title: "Acheteurs / Locataires",
-    subtitle: "Ajout manuel ou import CSV / Excel",
-  },
-  ai: {
-    title: "Assistant IA",
-    subtitle: "Pose une question, analyse ton portefeuille, prépare l'action",
-  },
+  dashboard: { title: "Briefing", subtitle: "Qui appeler en premier aujourd'hui" },
+  analyze: { title: "Analyser une URL", subtitle: "Collez un lien d'annonce — score immédiat" },
+  playbook: { title: "Scripts", subtitle: "Phrases prêtes pour vos appels" },
+  leads: { title: "Prospects", subtitle: "Annonces à contacter — triées par priorité" },
+  crawler: { title: "Portails", subtitle: "Sites surveillés pour alimenter le briefing" },
+  pipeline: { title: "Mon pipeline", subtitle: "Vos affaires en cours — parcours en 11 étapes" },
+  transactions: { title: "Affaires", subtitle: "Toute l'agence — une action par carte, étape par étape" },
+  commissions: { title: "Commissions", subtitle: "Ventes conclues et parts agence / agent" },
+  map: { title: "Carte", subtitle: "Annonces et position sur le terrain" },
+  estimateur: { title: "Estimateur", subtitle: "Fourchette de prix (DVF + critères)" },
+  portail: { title: "Annonces web", subtitle: "Publier sur veliora.fr" },
+  mandates: { title: "Mandats", subtitle: "Contrats vente et location" },
+  clients: { title: "Clients", subtitle: "Acquéreurs et locataires — rapprochement auto" },
+  ai: { title: "Assistant", subtitle: "Questions sur votre activité" },
 };
 
 function apiErrorMessage(status, path, body, res) {
@@ -833,6 +818,13 @@ async function loadDataCore() {
   }
   scheduleDrawerCacheWarm();
 }
+
+/** Recharge prospects + briefing (ex. après finalisation d'une affaire). */
+window.velioraReloadLeads = async () => {
+  await loadDataCore();
+  syncRadarFromLeads(LEADS);
+  renderAll();
+};
 
 async function fetchRadarSummary() {
   try {

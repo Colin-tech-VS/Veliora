@@ -1531,6 +1531,32 @@ def withdraw_lead_incoherent(
     return True
 
 
+def retire_lead_after_sale(lead_id: int, agency_id: str) -> bool:
+    """Retire une fiche du radar Prospects après clôture transaction (vendu/loué)."""
+    lead = get_lead(lead_id, agency_id)
+    if not lead:
+        return False
+    reason = "Transaction finalisée — bien vendu ou loué"
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    note_line = f"[{stamp}] {reason}"
+    prev_notes = (lead.get("notes") or "").strip()
+    notes = f"{prev_notes}\n{note_line}".strip() if prev_notes else note_line
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE leads SET
+               status = 'retire',
+               pipeline = 'vendu',
+               notes = ?,
+               updated_at = ?
+               WHERE id = ?""",
+            (notes, _now(), lead_id),
+        )
+        conn.commit()
+    label = (lead.get("address") or lead.get("owner") or f"#{lead_id}")[:80]
+    add_activity("contact", f"Affaire conclue — {label} retiré des prospects", agency_id)
+    return True
+
+
 def get_lead_by_source_url(source_url: str, agency_id: str | None = None) -> dict | None:
     with get_connection() as conn:
         if agency_id:

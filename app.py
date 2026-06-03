@@ -2061,14 +2061,28 @@ def api_mandate_validate(mandate_id: str):
 @app.route("/api/transactions/<int:lead_id>/buyer", methods=["POST"])
 def api_transaction_buyer(lead_id: int):
     """Rapproche un acquéreur / locataire (étape 7)."""
-    from crm.mandates.storage import get_property_client
+    from crm.mandates.storage import get_property_client, list_property_clients
+    from crm.matching.service import eligible_clients_for_lead
     from crm.transactions.storage import set_progress
 
     aid = _aid()
+    lead = get_lead(lead_id, aid)
+    if not lead:
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
     data = request.get_json(silent=True) or {}
     client_id = (data.get("client_id") or "").strip()
-    if client_id and not get_property_client(client_id, aid):
-        return jsonify({"ok": False, "error": "Client introuvable"}), 404
+    if client_id:
+        if not get_property_client(client_id, aid):
+            return jsonify({"ok": False, "error": "Client introuvable"}), 404
+        allowed = {
+            c["client_id"]
+            for c in eligible_clients_for_lead(lead, list_property_clients(aid))
+        }
+        if client_id not in allowed:
+            return jsonify({
+                "ok": False,
+                "error": "Ce profil ne correspond pas à ce bien (secteur, budget, type ou pièces).",
+            }), 400
     prog = set_progress(aid, lead_id, buyer_client_id=client_id or None)
     return jsonify({"ok": True, "progress": prog})
 
@@ -2138,7 +2152,10 @@ def api_transaction_finalize(lead_id: int):
     )
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     set_progress(aid, lead_id, sold_at=now)
-    return jsonify({"ok": True, "commission": comm})
+    from crawler.storage import retire_lead_after_sale
+
+    retire_lead_after_sale(lead_id, aid)
+    return jsonify({"ok": True, "commission": comm, "retired_from_prospects": True})
 
 
 @app.route("/api/transactions/<int:lead_id>/email", methods=["POST"])

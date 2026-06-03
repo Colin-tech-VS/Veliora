@@ -158,6 +158,8 @@ def score_client_for_lead(lead: dict, client: dict) -> dict | None:
     segment = (client.get("segment") or "acheteur").lower()
     expected_tx = _SEGMENT_TX.get(segment, "vente")
     lead_tx = (lead.get("transaction_type") or "vente").lower()
+    if lead_tx != expected_tx:
+        return None
 
     lead_type = _guess_type(lead)
     if not _type_compatible(lead_type, client.get("property_type")):
@@ -408,6 +410,33 @@ def build_lead_matches(lead: dict, clients: list[dict], *, top_n: int = 8) -> di
     if not matches:
         out["diagnostics"] = _diagnose_lead_matches(lead, clients)
     return out
+
+
+def eligible_clients_for_lead(
+    lead: dict,
+    clients: list[dict],
+    *,
+    top_n: int = 50,
+) -> list[dict]:
+    """Acquéreurs ou locataires compatibles avec le bien (sélecteur workflow)."""
+    lead_tx = (lead.get("transaction_type") or "vente").lower()
+    expected_segment = "acheteur" if lead_tx == "vente" else "locataire"
+    out: list[dict] = []
+    for client in _active_clients(clients):
+        if (client.get("segment") or "").lower() != expected_segment:
+            continue
+        scored = score_client_for_lead(lead, client)
+        if not scored or scored["score"] < _MIN_DISPLAY_SCORE:
+            continue
+        out.append(
+            {
+                **scored,
+                "full_name": scored.get("name") or client.get("full_name"),
+                "segment_label": "Acquéreur" if expected_segment == "acheteur" else "Locataire",
+            }
+        )
+    out.sort(key=lambda m: m["score"], reverse=True)
+    return out[:top_n]
 
 
 def demand_counts(lead: dict, clients: list[dict]) -> dict:

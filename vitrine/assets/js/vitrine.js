@@ -93,7 +93,10 @@
       };
       setPrice("home-price-ht", ht);
       setPrice("home-hero-price-ht", ht);
+      setPrice("home-price-ht-2", ht);
+      setPrice("home-price-ht-block", ht);
       setPrice("home-price-ttc", ttc);
+      setPrice("home-price-ttc-block", ttc);
       setPrice("trial-price-ht", ht);
       setPrice("legal-price-ht", ht);
       setPrice("footer-price-ht", ht);

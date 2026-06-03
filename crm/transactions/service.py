@@ -23,17 +23,17 @@ from __future__ import annotations
 from crawler.storage import get_connection, get_leads
 
 STAGES: list[tuple[str, str, str]] = [
-    ("prospect", "Détecté", "Prendre en charge"),
-    ("pris_en_charge", "Pris en charge", "Appeler & estimer"),
-    ("contacte", "Contacté / estimé", "Créer le mandat"),
-    ("mandat_cree", "Mandat créé", "Valider (vendeur + agent)"),
-    ("mandat_valide", "Mandat validé", "Publier l'annonce"),
-    ("publie", "Annonce publiée", "Rapprocher un acquéreur"),
-    ("acquereur", "Acquéreur rapproché", "Planifier la visite"),
-    ("visite", "Visite / négociation", "Préparer le dossier acquéreur"),
-    ("dossier_acquereur", "Dossier acquéreur", "Compromis (notaire)"),
-    ("compromis", "Compromis / notaire", "Finaliser la vente"),
-    ("vendu", "Vendu", "Affaire close"),
+    ("prospect", "Nouveau", "Prendre en charge"),
+    ("pris_en_charge", "En charge", "Appeler"),
+    ("contacte", "Contacté", "Créer le mandat"),
+    ("mandat_cree", "Mandat", "Valider"),
+    ("mandat_valide", "Mandat OK", "Publier"),
+    ("publie", "En ligne", "Rapprocher"),
+    ("acquereur", "Client trouvé", "Visite"),
+    ("visite", "Visite", "Dossier"),
+    ("dossier_acquereur", "Dossier", "Compromis"),
+    ("compromis", "Compromis", "Finaliser"),
+    ("vendu", "Terminé", "Clôturé"),
 ]
 _STAGE_INDEX = {key: i for i, (key, _l, _n) in enumerate(STAGES)}
 _STAGE_LABEL = {key: label for key, label, _n in STAGES}

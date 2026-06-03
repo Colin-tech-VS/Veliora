@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from crm.matching.service import (  # noqa: E402
     build_client_matches,
     build_lead_matches,
+    eligible_clients_for_lead,
     score_client_for_lead,
 )
 
@@ -100,6 +101,18 @@ class MatchingTests(unittest.TestCase):
         r = build_lead_matches(_lead(), [_client()])
         self.assertGreater(r["counts"]["total"], 0)
         self.assertTrue(r["top_matches"])
+
+    def test_locataire_ignored_on_vente_lead(self):
+        s = score_client_for_lead(_lead(transaction_type="vente"), _client(segment="locataire"))
+        self.assertIsNone(s)
+
+    def test_eligible_clients_for_lead_filters_segment(self):
+        rows = eligible_clients_for_lead(
+            _lead(transaction_type="vente"),
+            [_client(), _client(id="c2", segment="locataire", cities=["Lyon"], budget_max=900)],
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["client_id"], "c1")
 
     def test_surface_unknown_not_eliminated(self):
         s = score_client_for_lead(_lead(surface=None), _client(surface_min=80))

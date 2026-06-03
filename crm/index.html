@@ -11,7 +11,7 @@
   <title>Veliora — Radar mandats · Score Mandat™</title>
   <link rel="manifest" href="/crm/manifest.webmanifest">
   <link rel="stylesheet" href="/crm/assets/css/styles.css?v=63">
-  <link rel="stylesheet" href="/crm/assets/css/transactions.css?v=1">
+  <link rel="stylesheet" href="/crm/assets/css/transactions.css?v=2">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=37">
 </head>
 <body>
@@ -34,36 +34,28 @@
 
       <nav class="sidebar-nav">
         <div class="nav-section">
-          <div class="nav-section-label">Pilotage</div>
+          <div class="nav-section-label">Marché</div>
           <button class="nav-item active" data-view="dashboard">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            Score Mandat™
+            Briefing
           </button>
-          <button class="nav-item" data-view="playbook">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-            Guide commercial
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-section-label">Prospection</div>
           <button class="nav-item" data-view="leads">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
             Prospects
             <span class="nav-badge" id="badge-leads">0</span>
           </button>
-          <button class="nav-item" data-view="pipeline">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
-            Mon pipeline
-          </button>
-          <button class="nav-item" data-view="map">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m0 0L9 7"/></svg>
-            Carte
+          <button class="nav-item" data-view="crawler">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
+            Portails
           </button>
         </div>
 
         <div class="nav-section">
-          <div class="nav-section-label">Transactions</div>
+          <div class="nav-section-label">Affaires</div>
+          <button class="nav-item" data-view="pipeline">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+            Pipeline
+          </button>
           <button class="nav-item" data-view="transactions">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M3 7h18M3 12h18M3 17h18"/><circle cx="6.5" cy="7" r="1.4" fill="currentColor"/><circle cx="10.5" cy="12" r="1.4" fill="currentColor"/><circle cx="15.5" cy="17" r="1.4" fill="currentColor"/></svg>
             Affaires
@@ -75,39 +67,35 @@
         </div>
 
         <div class="nav-section">
-          <div class="nav-section-label">Estimation &amp; mandats</div>
-          <button class="nav-item" data-view="estimateur">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Estimateur
-          </button>
-          <button class="nav-item" data-view="portail">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3m2-16h10M9 7h1m-1 4h1m4-4h1m-1 4h1"/></svg>
-            Portail annonces
+          <div class="nav-section-label">Outils</div>
+          <button class="nav-item" data-view="clients">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M16 11V7a4 4 0 00-8 0v4M5 11h14v10H5V11z"/></svg>
+            Clients
           </button>
           <button class="nav-item" data-view="mandates">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             Mandats
           </button>
-          <button class="nav-item" data-view="clients">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M16 11V7a4 4 0 00-8 0v4M5 11h14v10H5V11z"/></svg>
-            Acheteurs / Locataires
+          <button class="nav-item" data-view="estimateur">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8V7m0 10v1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Estimateur
           </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-section-label">Assistant</div>
+          <button class="nav-item" data-view="portail">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0H5m14 0h2m-16 0H3m2-16h10M9 7h1m-1 4h1m4-4h1m-1 4h1"/></svg>
+            Annonces web
+          </button>
+          <button class="nav-item" data-view="map">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-1.447-.894L15 4m0 13V4m0 0L9 7"/></svg>
+            Carte
+          </button>
+          <button class="nav-item" data-view="playbook">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+            Scripts
+          </button>
           <button class="nav-item nav-item-ai" data-view="ai">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path d="M12 2.5l1.7 3.6 3.8.5-2.8 2.6.7 3.8L12 11.2 8.6 13l.7-3.8L6.5 6.6l3.8-.5L12 2.5z"/><path d="M5 17.5l1 2 2.2.3-1.6 1.5.4 2.2L5 22.4 3 23.5l.4-2.2L1.8 19.8 4 19.5l1-2z"/><path d="M19 14l1.1 2.3 2.5.4-1.8 1.7.4 2.5L19 19.8 16.8 21l.4-2.5-1.8-1.7 2.5-.4L19 14z"/></svg>
-            Conseiller Veliora
-            <span class="nav-badge nav-badge-ai" id="badge-ai">aide</span>
-          </button>
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-section-label">Veille marché</div>
-          <button class="nav-item" data-view="crawler">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/></svg>
-            Mes portails
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true"><path d="M12 2.5l1.7 3.6 3.8.5-2.8 2.6.7 3.8L12 11.2 8.6 13l.7-3.8L6.5 6.6l3.8-.5L12 2.5z"/></svg>
+            Assistant
+            <span class="nav-badge nav-badge-ai" id="badge-ai">IA</span>
           </button>
         </div>
       </nav>
@@ -182,26 +170,18 @@
           </button>
         </nav>
 
-        <section class="ux-workflow" id="ux-workflow" aria-label="Votre journée type avec Veliora">
+        <section class="ux-workflow" id="ux-workflow" aria-label="Parcours Veliora">
           <div class="ux-workflow-step">
-            <em>Matin</em>
             <strong>1. Briefing</strong>
-            <span>Ouvrez le radar : les vendeurs les plus prometteurs sont en tête de liste.</span>
+            <span>Qui appeler.</span>
           </div>
           <div class="ux-workflow-step">
-            <em>Journée</em>
-            <strong>2. Appels</strong>
-            <span>Script d’appel, SMS et relances depuis chaque fiche prospect.</span>
+            <strong>2. Affaires</strong>
+            <span>Mandat → client → vente.</span>
           </div>
           <div class="ux-workflow-step">
-            <em>Suivi</em>
-            <strong>3. Pipeline</strong>
-            <span>Glissez les dossiers : contact → RDV → mandat signé.</span>
-          </div>
-          <div class="ux-workflow-step">
-            <em>Marché</em>
-            <strong>4. Veille</strong>
-            <span>Activez vos portails pour alimenter le radar automatiquement.</span>
+            <strong>3. Portails</strong>
+            <span>Alimenter le marché.</span>
           </div>
         </section>
 
@@ -511,8 +491,8 @@
         <div class="view" id="view-playbook">
           <div class="playbook-hero">
             <div>
-              <h2 class="playbook-title">Guide commercial</h2>
-              <p class="playbook-subtitle" id="playbook-subtitle">Conseils, opportunités et scripts d'appel — tout en un seul endroit</p>
+              <h2 class="playbook-title">Scripts d'appel</h2>
+              <p class="playbook-subtitle" id="playbook-subtitle">Phrases prêtes pour vos rendez-vous</p>
             </div>
             <button type="button" class="btn btn-secondary btn-sm" id="playbook-refresh-btn">Actualiser</button>
           </div>
@@ -550,22 +530,16 @@
 
         <!-- Leads -->
         <div class="view" id="view-leads">
-          <p class="leads-view-lead">Prospects classés par <strong>Score Mandat™</strong> — opportunités détectées sur votre marché.</p>
+          <p class="leads-view-lead">Annonces à contacter — les plus prioritaires en premier. Les biens <strong>vendus</strong> disparaissent de cette liste.</p>
           <div class="import-listing-bar">
-            <p class="import-listing-hint">Analyse ponctuelle d'une annonce ? <button type="button" class="btn btn-ghost btn-sm" id="leads-goto-analyze">Mode 2 — Analyser une URL</button></p>
+            <p class="import-listing-hint">Une URL précise ? <button type="button" class="btn btn-ghost btn-sm" id="leads-goto-analyze">Analyser</button></p>
           </div>
           <div class="filters-bar scrollbar-none">
             <button class="filter-chip active" data-filter="all">Tous <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="hot-mandate">Score élevé <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="sans-agence">Sans agence <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="avec-agence">Avec agence <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="hot-mandate">Priorité <span class="count">0</span></button>
             <button class="filter-chip" data-filter="vente">Vente <span class="count">0</span></button>
             <button class="filter-chip" data-filter="location">Location <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="particulier">Particuliers <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="nouveau">Nouveaux <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="retire" title="Fiches retirées (informations incohérentes)">Retirés <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="price-drop">Baisses <span class="count">0</span></button>
-            <button class="filter-chip" data-filter="dvf-sous-marche">Sous marché DVF <span class="count">0</span></button>
+            <button class="filter-chip" data-filter="retire" title="Vendus ou retirés">Archives <span class="count">0</span></button>
             <div class="filters-spacer"></div>
             <label class="leads-city-filter-wrap" for="leads-city-filter" title="Filtrer les prospects par ville">
               <span>Ville</span>
@@ -930,7 +904,7 @@
         <!-- Mandats -->
         <div class="view" id="view-mandates">
           <div class="module-intro">
-            <p>Mandats de vente et de location — remplissage, aperçu et envoi au vendeur ou bailleur.</p>
+            <p>Créer, valider et envoyer un mandat.</p>
           </div>
           <div class="mandates-toolbar">
             <div class="mandates-toolbar-group">
@@ -1024,6 +998,7 @@
 
         <!-- Acheteurs / Locataires -->
         <div class="view" id="view-clients">
+          <p class="leads-view-lead">Profils utilisés pour le <strong>rapprochement automatique</strong> dans les affaires (secteur, budget, type de bien).</p>
           <div class="clients-toolbar">
             <div class="clients-segments">
               <button type="button" class="btn btn-sm btn-primary active" data-client-segment="all">Tous</button>
@@ -1458,8 +1433,8 @@
   <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
   <script src="/crm/assets/js/portal.js?v=1"></script>
-  <script src="/crm/assets/js/transactions.js?v=1"></script>
-  <script src="/crm/assets/js/app.js?v=88"></script>
+  <script src="/crm/assets/js/transactions.js?v=3"></script>
+  <script src="/crm/assets/js/app.js?v=89"></script>
   <script src="/crm/assets/js/ai.js?v=5"></script>
   <script>
     if ("serviceWorker" in navigator) {
