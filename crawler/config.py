@@ -302,6 +302,13 @@ PRICE_MIN_EUR = PRICE_MIN_SALE_EUR
 PRICE_MAX_EUR = PRICE_MAX_SALE_EUR
 PRICE_TYPICAL_MAX_EUR = 3_000_000
 
+# Fourchette surface habitable (m²) par type, pour éviter de mélanger terrains/parkings
+# avec des logements. Plafonds généreux (grandes maisons/lofts) mais réglables par env.
+SURFACE_MIN_SALE_M2 = int(os.getenv("SURFACE_MIN_SALE_M2", "5"))
+SURFACE_MAX_SALE_M2 = int(os.getenv("SURFACE_MAX_SALE_M2", "500"))
+SURFACE_MIN_RENT_M2 = int(os.getenv("SURFACE_MIN_RENT_M2", "8"))
+SURFACE_MAX_RENT_M2 = int(os.getenv("SURFACE_MAX_RENT_M2", "300"))
+
 # ─── Veille automatique (portails + prospects) ───
 
 def _env_bool(name: str, default: str) -> bool:
