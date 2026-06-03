@@ -1591,6 +1591,7 @@ def save_lead(
     agency_id: str | None = None,
     require_verification: bool = True,
     deep_refresh: bool = False,
+    veille_recrawl: bool = False,
 ) -> dict | None:
     """Enregistre ou met à jour après vérification obligatoire des données."""
     from crawler.validation import (
@@ -1624,8 +1625,8 @@ def save_lead(
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
     effective_require_verification = require_verification
-    if deep_refresh and existing_row:
-        # Mise à jour par annonce : enregistrer dès que la fiche reste identifiable.
+    if existing_row and (deep_refresh or veille_recrawl):
+        # Recrawl veille / fiche existante : fusionner prix, adresse, contacts sans bloquer.
         effective_require_verification = False
 
     verification, partial = resolve_crawl_verification(
@@ -2064,23 +2065,26 @@ def get_crawl_logs_for_job(job_id: str, limit: int = 80) -> list[dict]:
         ]
 
 
-def get_source_lead_urls(source_id: str, agency_id: str) -> list[str]:
+def get_source_lead_urls(
+    source_id: str, agency_id: str, *, active_only: bool = True
+) -> list[str]:
     """URLs déjà crawlées pour cette source (recrawl systématique)."""
     src = get_source(source_id, agency_id)
     if not src:
         return []
     name = src.get("name") or ""
     url_like = _source_url_like(src.get("domain") or "", src.get("base_url") or "")
+    status_clause = " AND COALESCE(status, 'nouveau') != 'retire'" if active_only else ""
     with get_connection() as conn:
         rows = conn.execute(
-            """SELECT source_url FROM leads
+            f"""SELECT source_url FROM leads
                WHERE agency_id = ?
                AND source_url IS NOT NULL AND source_url != ''
                AND (
                    source_id = ?
                    OR ((source_id IS NULL OR source_id = '') AND LOWER(source) = LOWER(?))
                    OR source_url LIKE ?
-               )""",
+               ){status_clause}""",
             (agency_id, source_id, name, url_like),
         ).fetchall()
     return [str(r["source_url"]) for r in rows if r["source_url"]]

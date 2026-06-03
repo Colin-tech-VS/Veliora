@@ -108,6 +108,7 @@ class CrawlerEngine:
         self._bg_interval_sec = 300
         self._source_deadline: float | None = None
         self._veille_mode = False
+        self._veille_recrawl_urls: set[str] = set()
         self._lock = threading.Lock()
         self._job_lock = threading.Lock()
 
@@ -499,10 +500,23 @@ class CrawlerEngine:
                 progress=pct,
                 message=f"Site {i + 1}/{len(sources)} — {src['name']}…",
             )
-            from crawler.config import CRAWL_VEILLE_SOURCE_MAX_SEC
-
             if veille_mode:
-                self._source_deadline = time.monotonic() + CRAWL_VEILLE_SOURCE_MAX_SEC
+                from crawler.config import veille_source_budget_sec
+
+                n_existing = len(
+                    self._existing_lead_urls_for_source(src["id"])
+                )
+                self._source_deadline = time.monotonic() + veille_source_budget_sec(
+                    n_existing
+                )
+                if job_id and n_existing:
+                    update_crawl_job(
+                        job_id,
+                        message=(
+                            f"Recrawl obligatoire de {n_existing} fiche(s) en base "
+                            f"— puis découverte de nouvelles annonces…"
+                        ),
+                    )
             try:
                 r = self._crawl_source(
                     src["id"], job_id, city=city, veille_mode=veille_mode
@@ -520,6 +534,7 @@ class CrawlerEngine:
             finally:
                 if veille_mode:
                     self._source_deadline = None
+                    self._veille_recrawl_urls = set()
             if self._crawl_stopped(job_id):
                 return
             total.leads_found += r.leads_found
@@ -829,24 +844,34 @@ class CrawlerEngine:
         listing_urls, fetch_err = self._collect_listing_urls(
             url, adapter, job_id, source_id, discover_seeds=discover_seeds, city=city
         )
-        if fetch_err:
+
+        targets, self._veille_recrawl_urls = self._prepare_listing_targets(
+            listing_urls or [], source_id
+        )
+        if fetch_err and not targets:
             result.errors.append(fetch_err)
             return result
+        if fetch_err and targets and self._veille_recrawl_urls:
+            result.warnings.append(
+                CrawlError.issue(
+                    CrawlError.FETCH_FAILED,
+                    "Exploration limitée — recrawl des fiches déjà en base",
+                )
+            )
 
-        listing_urls = self._prioritize_recrawl_urls(listing_urls, source_id)
-
-        if listing_urls:
-            cap = MAX_LISTINGS_PER_SCAN if MAX_LISTINGS_PER_SCAN > 0 else len(listing_urls)
-            if self._crawl_city:
-                from crawler.config import CITY_CRAWL_MAX_LISTINGS
-
-                if CITY_CRAWL_MAX_LISTINGS > 0:
-                    cap = min(cap, CITY_CRAWL_MAX_LISTINGS) if cap else CITY_CRAWL_MAX_LISTINGS
-            targets = listing_urls[:cap]
+        if targets:
             if job_id:
-                pages_est = max(1, min(MAX_SEARCH_PAGES, (len(listing_urls) // 25) + 1))
+                pages_est = max(1, min(MAX_SEARCH_PAGES, (len(targets) // 25) + 1))
                 eta = estimate_crawl_seconds(len(targets), pages_est)
-                limit_msg = f"{len(targets)} annonce(s) — durée estimée {format_eta(eta)}"
+                n_recrawl = len(self._veille_recrawl_urls)
+                if self._veille_mode and n_recrawl:
+                    n_new = max(0, len(targets) - n_recrawl)
+                    limit_msg = (
+                        f"Veille — {n_recrawl} fiche(s) en base (mise à jour) "
+                        f"+ {n_new} nouvelle(s) — {format_eta(eta)}"
+                    )
+                else:
+                    limit_msg = f"{len(targets)} annonce(s) — durée estimée {format_eta(eta)}"
                 update_crawl_job(
                     job_id,
                     progress=50,
@@ -870,8 +895,12 @@ class CrawlerEngine:
                     break
                 if not result.can_process_more_listings():
                     break
-                if self._crawl_city and not listing_url_likely_in_city(
-                    listing_url, self._crawl_city
+                norm_url = normalize_listing_url(listing_url)
+                is_veille_recrawl = norm_url in self._veille_recrawl_urls
+                if (
+                    self._crawl_city
+                    and not is_veille_recrawl
+                    and not listing_url_likely_in_city(listing_url, self._crawl_city)
                 ):
                     result.out_of_city += 1
                     add_crawl_log(
@@ -1187,6 +1216,59 @@ class CrawlerEngine:
 
         return all_links, None
 
+    def _existing_lead_urls_for_source(self, source_id: str | None) -> list[str]:
+        """Toutes les URLs de fiches actives pour ce portail (recrawl veille)."""
+        if not source_id or not self._agency_id:
+            return []
+        existing_valid: list[str] = []
+        seen: set[str] = set()
+        for raw in get_source_lead_urls(source_id, self._agency_id):
+            u = normalize_listing_url(raw)
+            if u in seen:
+                continue
+            ok, _ = validate_listing_url_import(u)
+            if not ok:
+                ok, _ = validate_listing_url(u)
+            if ok:
+                seen.add(u)
+                existing_valid.append(u)
+        return existing_valid
+
+    def _prepare_listing_targets(
+        self,
+        discovered: list[str],
+        source_id: str | None,
+    ) -> tuple[list[str], set[str]]:
+        """
+        Veille : toutes les fiches en base d'abord (sans plafond), puis nouvelles URLs (plafonnées).
+        Crawl manuel : recrawl prioritaire + plafond global inchangé.
+        """
+        if self._veille_mode:
+            existing_valid = self._existing_lead_urls_for_source(source_id)
+            existing_set = set(existing_valid)
+            seen = set(existing_set)
+            new_urls: list[str] = []
+            for raw in discovered:
+                u = normalize_listing_url(raw)
+                if u in seen:
+                    continue
+                seen.add(u)
+                new_urls.append(u)
+            from crawler.config import CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS
+
+            if CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS > 0:
+                new_urls = new_urls[:CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS]
+            return list(existing_valid) + new_urls, existing_set
+
+        ordered = self._prioritize_recrawl_urls(discovered, source_id)
+        cap = MAX_LISTINGS_PER_SCAN if MAX_LISTINGS_PER_SCAN > 0 else len(ordered)
+        if self._crawl_city:
+            from crawler.config import CITY_CRAWL_MAX_LISTINGS
+
+            if CITY_CRAWL_MAX_LISTINGS > 0:
+                cap = min(cap, CITY_CRAWL_MAX_LISTINGS) if cap else CITY_CRAWL_MAX_LISTINGS
+        return ordered[:cap], set()
+
     def _prioritize_recrawl_urls(
         self,
         discovered: list[str],
@@ -1196,22 +1278,8 @@ class CrawlerEngine:
         if not source_id or not self._agency_id:
             return discovered
 
-        existing = [
-            normalize_listing_url(u)
-            for u in get_source_lead_urls(source_id, self._agency_id)
-        ]
-        existing_valid: list[str] = []
-        seen: set[str] = set()
-        for u in existing:
-            if u in seen:
-                continue
-            ok, _ = validate_listing_url_import(u)
-            if not ok:
-                ok, _ = validate_listing_url(u)
-            if ok:
-                seen.add(u)
-                existing_valid.append(u)
-
+        existing_valid = self._existing_lead_urls_for_source(source_id)
+        seen: set[str] = set(existing_valid)
         ordered: list[str] = list(existing_valid)
         for u in discovered:
             u = normalize_listing_url(u)
@@ -1538,6 +1606,9 @@ class CrawlerEngine:
             get_lead_by_source_url(url, self._agency_id) if self._agency_id else None
         )
         is_recrawl = existing_row is not None
+        if not skip_city_check and self._veille_mode:
+            if normalize_listing_url(url) in self._veille_recrawl_urls:
+                skip_city_check = True
         if job_id:
             if deep_refresh:
                 msg = "Mise à jour poussée — type, téléphone, email…"
@@ -1838,6 +1909,7 @@ class CrawlerEngine:
             job_id=job_id,
             agency_id=self._agency_id,
             deep_refresh=deep_refresh,
+            veille_recrawl=is_recrawl and self._veille_mode,
         )
 
         if saved and not saved.get("verified"):
@@ -1860,6 +1932,7 @@ class CrawlerEngine:
                         job_id=job_id,
                         agency_id=self._agency_id,
                         deep_refresh=deep_refresh,
+                        veille_recrawl=is_recrawl and self._veille_mode,
                     )
 
         if saved and saved.get("id") and saved.get("verified"):

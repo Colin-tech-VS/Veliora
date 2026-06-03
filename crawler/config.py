@@ -340,6 +340,27 @@ CRAWL_VEILLE_SOURCE_MAX_SEC = max(
     120,
     int(os.getenv("CRAWL_VEILLE_SOURCE_MAX_SEC", "420") or "420"),
 )
+# Budget temps veille : +N secondes par fiche déjà en base (recrawl obligatoire)
+CRAWL_VEILLE_SEC_PER_EXISTING = max(
+    2,
+    int(os.getenv("CRAWL_VEILLE_SEC_PER_EXISTING", "4") or "4"),
+)
+CRAWL_VEILLE_SOURCE_MAX_CAP_SEC = max(
+    CRAWL_VEILLE_SOURCE_MAX_SEC,
+    int(os.getenv("CRAWL_VEILLE_SOURCE_MAX_CAP_SEC", "3600") or "3600"),
+)
+# Plafond découverte (nouvelles URLs) par portail en veille — les fiches existantes ne comptent pas dedans
+CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS = int(
+    os.getenv("CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS", str(CITY_CRAWL_MAX_LISTINGS))
+    or str(CITY_CRAWL_MAX_LISTINGS)
+)
+
+
+def veille_source_budget_sec(existing_lead_count: int) -> int:
+    """Durée max par portail en veille : base + temps pour recrawler toutes les fiches en base."""
+    n = max(0, int(existing_lead_count))
+    budget = CRAWL_VEILLE_SOURCE_MAX_SEC + n * CRAWL_VEILLE_SEC_PER_EXISTING
+    return min(CRAWL_VEILLE_SOURCE_MAX_CAP_SEC, budget)
 
 
 def antibot_portals_crawl_enabled() -> bool:
@@ -364,6 +385,9 @@ def background_crawl_config() -> dict:
         "lead_refresh_interval_sec": CRAWL_LEAD_REFRESH_INTERVAL_SEC,
         "lead_refresh_stale_hours": CRAWL_LEAD_REFRESH_STALE_HOURS,
         "lead_refresh_max_per_run": CRAWL_LEAD_REFRESH_MAX_PER_RUN,
+        "veille_recheck_all_existing": True,
+        "veille_discovery_max_listings": CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS,
+        "veille_source_max_cap_sec": CRAWL_VEILLE_SOURCE_MAX_CAP_SEC,
         "antibot_portals_enabled": antibot_portals_crawl_enabled(),
         "proxies_configured": proxies_enabled(),
         "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
