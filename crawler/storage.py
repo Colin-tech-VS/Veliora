@@ -1472,7 +1472,9 @@ def save_lead(
             loc_changed = False
             if existing_row:
                 loc_changed = (
-                    (existing_row.get("city") or "") != (lead_city or "")
+                    (existing_row.get("address") or "").strip().lower()
+                    != (lead.address or "").strip().lower()
+                    or (existing_row.get("city") or "") != (lead_city or "")
                     or (existing_row.get("postcode") or "") != (lead_postcode or "")
                     or (existing_row.get("sector") or "") != (lead_sector or "")
                 )
@@ -1482,6 +1484,10 @@ def save_lead(
                     "dvf_delta_pct = NULL, dvf_median_m2 = NULL, dvf_sector = NULL, "
                     "dvf_reference_period = NULL"
                 )
+            # Adresse/ville/CP modifiés au recrawl → les coordonnées en base sont
+            # périmées. On les efface pour forcer un nouveau géocodage, sinon le
+            # bien resterait affiché à l'ANCIENNE adresse sur la carte.
+            geo_touch = ", latitude = NULL, longitude = NULL" if loc_changed else ""
             conn.execute(
                 f"""UPDATE leads SET
                    first_name = ?, last_name = ?, phone = ?, email = ?,
@@ -1491,9 +1497,11 @@ def save_lead(
                    source = ?, source_id = ?, listing_type = ?, agency = ?,
                    score = ?, mandate_score = ?, mandate_score_reason = ?,
                    priority_tier = ?, score_explanation = ?, scores_computed_at = ?,
-                   missing_fields = ?, listing_title = ?, facts_audit = ?,
+                   missing_fields = ?,
+                   listing_title = COALESCE(NULLIF(?, ''), listing_title),
+                   facts_audit = COALESCE(?, facts_audit),
                    listing_image_url = COALESCE(NULLIF(?, ''), listing_image_url),
-                   updated_at = ?{dvf_touch}
+                   updated_at = ?{dvf_touch}{geo_touch}
                    WHERE source_url = ? AND agency_id = ?""",
                 (
                     lead.first_name,
