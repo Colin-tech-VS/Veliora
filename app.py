@@ -1621,9 +1621,9 @@ def _job_response(job: dict) -> dict:
 
 @app.route("/api/crawler/status")
 def api_crawler_status():
-    from crawler.storage import crawl_veille_readiness, expire_stale_crawl_jobs
+    from crawler.storage import crawl_veille_readiness, maybe_expire_stale_crawl_jobs
 
-    expire_stale_crawl_jobs()
+    maybe_expire_stale_crawl_jobs()
     agency_id = _aid()
     status = engine.status()
     stats = get_stats(agency_id)
@@ -1670,14 +1670,23 @@ def api_crawler_live_frame():
 
 @app.route("/api/crawler/jobs/<job_id>")
 def api_crawl_job(job_id):
+    from velora_db.connection import DatabaseBusyError
+    from crawler.storage import peek_crawl_job_for_poll
+
+    agency_id = _aid()
+    lite = request.args.get("lite") in ("1", "true", "yes")
+    include_logs = request.args.get("logs") in ("1", "true", "yes")
+
     try:
-        job = get_crawl_job(job_id, _aid())
+        from_cache = False
+        job = None
+        if lite and not include_logs:
+            job = peek_crawl_job_for_poll(job_id, agency_id)
+            from_cache = job is not None
+        if job is None:
+            job = get_crawl_job(job_id, agency_id)
         if not job:
             return jsonify({"error": "Job introuvable"}), 404
-
-        lite = request.args.get("lite") in ("1", "true", "yes")
-        done = job["status"] in ("completed", "failed")
-        include_logs = request.args.get("logs") in ("1", "true", "yes")
 
         payload = {**job}
         if lite and not include_logs:
@@ -1689,8 +1698,18 @@ def api_crawl_job(job_id):
         payload["leads"] = None
         payload["sources"] = None
         payload["stats"] = None
+        if from_cache:
+            payload["_from_cache"] = True
 
         return jsonify(payload)
+    except DatabaseBusyError:
+        cached = peek_crawl_job_for_poll(job_id, agency_id) if lite else None
+        if cached:
+            payload = {**cached, "logs": [], "leads": None, "sources": None, "stats": None}
+            payload["_from_cache"] = True
+            payload["_database_busy"] = True
+            return jsonify(payload), 200
+        raise
     except Exception as exc:
         logging.exception("crawl job %s", job_id)
         return jsonify({"error": f"État du crawl indisponible : {exc}"}), 500

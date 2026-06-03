@@ -43,7 +43,7 @@ _POOL_ACQUIRE_BACKOFF = float(os.getenv("DATABASE_POOL_ACQUIRE_BACKOFF", "0.35")
 # pool et les requêtes web échouent en « base saturée ». On borne donc le
 # nombre de connexions que ces threads de fond peuvent détenir EN MÊME TEMPS,
 # pour toujours laisser des créneaux libres au web.
-_BG_THREAD_PREFIXES = ("veliora-crawl", "veliora-dvf", "veliora-addr")
+_BG_THREAD_PREFIXES = ("veliora-crawl", "veliora-dvf", "veliora-addr", "veliora-lead")
 _pg_pool_max = 0
 _bg_db_sem: threading.Semaphore | None = None
 _bg_db_lock = threading.Lock()
@@ -68,7 +68,12 @@ def _get_bg_db_semaphore() -> threading.Semaphore | None:
         return None
     with _bg_db_lock:
         if _bg_db_sem is None:
-            reserve_default = max(2, round(_pg_pool_max * 0.4))
+            # Réserve web ≈ threads Gunicorn + marge (évite que le crawl vide le pool).
+            try:
+                gunicorn_threads = int(os.getenv("GUNICORN_THREADS", "8"))
+            except ValueError:
+                gunicorn_threads = 8
+            reserve_default = max(3, min(_pg_pool_max - 2, gunicorn_threads + 2))
             reserve = int(os.getenv("DATABASE_WEB_RESERVE", str(reserve_default)))
             cap = max(1, _pg_pool_max - max(0, reserve))
             _bg_db_sem = threading.BoundedSemaphore(cap)
@@ -389,36 +394,31 @@ def _get_postgres_pool():
         if not url:
             _pg_pool_failed = True
             return None
-        # Détection du mode pooler Supabase :
-        #   - port 5432 = session mode (limite stricte ~15 connexions sur free tier)
-        #   - port 6543 = transaction mode (centaines de connexions OK)
-        # En session mode on serre la ceinture pour ne PAS saturer le pooler.
-        is_session_mode = ":5432" in url and "pooler" in url
-        if is_session_mode:
+        # Supabase : port 6543 = pooler transaction (recommandé prod) ;
+        # port 5432 = session ou direct — plafond connexions très bas.
+        parsed = urlparse(url)
+        port = parsed.port or 5432
+        is_tx_pooler = port == 6543 or ":6543/" in url or ":6543?" in url
+        is_session_pooler = "pooler" in url and port == 5432
+        if is_session_pooler or (not is_tx_pooler and port == 5432):
             logger.warning(
-                "DATABASE_URL pointe sur le pooler Supabase en mode session "
-                "(port 5432) — limité à ~15 connexions. Passez sur le port "
-                "6543 (transaction mode) pour scaler proprement."
+                "DATABASE_URL en port 5432 (session ou direct) — connexions "
+                "limitées. Utilisez le pooler Supabase port 6543 (transaction) "
+                "sur Scalingo (voir SUPABASE.md / .env.example)."
             )
         scalingo = bool(os.getenv("SCALINGO_APP", "").strip())
-        if is_session_mode:
-            # Pooler Supabase en mode session : plafond strict, on reste bas.
-            default_pool_max = "3"
-        elif scalingo:
-            # Transaction pooler (port 6543) : on peut élargir sans risque.
-            # Le pool était à 6 alors que gunicorn tourne avec 8 threads web
-            # PLUS des threads de fond (crawl, DVF, scoring, maps) : 6 était
-            # systématiquement saturé. On élargit pour absorber la concurrence.
-            default_pool_max = "12"
+        if is_tx_pooler:
+            default_pool_max = "16" if scalingo else "10"
+        elif is_session_pooler or port == 5432:
+            default_pool_max = "4" if scalingo else "3"
         else:
-            default_pool_max = "8"
+            default_pool_max = "12" if scalingo else "8"
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
         global _pg_pool_max
         _pg_pool_max = pool_max
-        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "8"))
-        # File d'attente bornée : au-delà on échoue vite (503 propre + retry
-        # côté client) plutôt que d'empiler 40 requêtes et d'exploser la latence.
-        pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "20"))
+        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "10"))
+        # File courte : 503 + retry client plutôt que 20 requêtes bloquées.
+        pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "8"))
         # `hostaddr` injecté pour court-circuiter la résolution DNS IPv6 sur
         # les hébergeurs sans IPv6 sortant (Scalingo, Heroku, certains conteneurs).
         ipv4_kwargs = _resolve_ipv4_hostaddr(url)

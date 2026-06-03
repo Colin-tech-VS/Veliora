@@ -47,7 +47,7 @@ const state = {
 const POLL_IDLE_MS = 18000;
 const POLL_CRAWL_MS = 12000;
 /** Pendant un crawl, le worker Flask est occupé — poll léger, timeouts longs. */
-const CRAWL_JOB_POLL_MS = 3000;
+const CRAWL_JOB_POLL_MS = 4500;
 const CRAWL_JOB_POLL_TIMEOUT_MS = 90000;
 const CRAWL_LEADS_REFRESH_MS = 20000;
 let backgroundPollTimer = null;
@@ -314,6 +314,13 @@ async function api(path, options = {}) {
         },
         timeoutMs,
       );
+      if (res.status === 503 && !isPost && attempt < maxAttempts - 1) {
+        const peek = await res.clone().json().catch(() => ({}));
+        if (peek?.code === "database_busy") {
+          await sleep(600 + attempt * 400);
+          continue;
+        }
+      }
       return parseApiResponse(res, path);
     } catch (err) {
       lastError = err;

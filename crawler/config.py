@@ -42,7 +42,7 @@ SAVE_CRAWL_SNAPSHOT = os.getenv("SAVE_CRAWL_SNAPSHOT", "true").lower() in ("1", 
 
 # DVF en parallèle pendant le crawl (ne ralentit pas Playwright)
 DVF_PARALLEL_DURING_CRAWL = True
-_default_dvf_workers = "2" if IS_SCALINGO else "3"
+_default_dvf_workers = "1" if IS_SCALINGO else "3"
 DVF_PARALLEL_WORKERS = int(os.getenv("DVF_PARALLEL_WORKERS", _default_dvf_workers))
 DVF_QUEUE_DRAIN_TIMEOUT_SEC = int(os.getenv("DVF_QUEUE_DRAIN_TIMEOUT_SEC", "120"))
 DVF_RECOMPARE_HOURS = 48
@@ -54,7 +54,7 @@ ADDRESS_MATCH_DURING_CRAWL = os.getenv("ADDRESS_MATCH_DURING_CRAWL", "true").low
     "true",
     "yes",
 )
-_default_addr_workers = "2" if IS_SCALINGO else "3"
+_default_addr_workers = "1" if IS_SCALINGO else "3"
 ADDRESS_MATCH_WORKERS = int(os.getenv("ADDRESS_MATCH_WORKERS", _default_addr_workers))
 ADDRESS_MATCH_DRAIN_TIMEOUT_SEC = int(
     os.getenv("ADDRESS_MATCH_DRAIN_TIMEOUT_SEC", "150")

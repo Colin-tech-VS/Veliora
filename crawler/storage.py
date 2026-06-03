@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -851,6 +852,63 @@ def get_leads_stale_for_refresh(
 
 # ─── Crawl jobs ───
 
+# Cache mémoire pour le polling UI (évite une requête SQL toutes les 3 s pendant un crawl).
+_crawl_job_cache: dict[tuple[str, str], dict] = {}
+_crawl_job_cache_lock = threading.Lock()
+_CRAWL_JOB_CACHE_TTL_SEC = float(os.getenv("CRAWL_JOB_CACHE_TTL_SEC", "90"))
+_last_expire_stale_at = 0.0
+_EXPIRE_STALE_MIN_INTERVAL_SEC = float(os.getenv("CRAWL_EXPIRE_STALE_INTERVAL_SEC", "45"))
+
+
+def _crawl_job_cache_key(job_id: str, agency_id: str) -> tuple[str, str]:
+    return (job_id, agency_id)
+
+
+def _touch_crawl_job_cache(job: dict | None) -> None:
+    if not job or not job.get("id"):
+        return
+    aid = (job.get("agency_id") or "").strip()
+    if not aid:
+        return
+    with _crawl_job_cache_lock:
+        _crawl_job_cache[_crawl_job_cache_key(job["id"], aid)] = {
+            "job": copy.deepcopy(job),
+            "ts": time.monotonic(),
+        }
+
+
+def _merge_crawl_job_cache(job_id: str, fields: dict) -> None:
+    with _crawl_job_cache_lock:
+        for (jid, _aid), entry in _crawl_job_cache.items():
+            if jid != job_id:
+                continue
+            row = entry["job"]
+            for key, val in fields.items():
+                row[key] = val
+            entry["ts"] = time.monotonic()
+
+
+def peek_crawl_job_for_poll(job_id: str, agency_id: str) -> dict | None:
+    """État du job depuis le cache (sans SQL) — utilisé par le polling « lite »."""
+    with _crawl_job_cache_lock:
+        entry = _crawl_job_cache.get(_crawl_job_cache_key(job_id, agency_id))
+    if not entry:
+        return None
+    if time.monotonic() - entry["ts"] > _CRAWL_JOB_CACHE_TTL_SEC:
+        return None
+    return copy.deepcopy(entry["job"])
+
+
+def maybe_expire_stale_crawl_jobs() -> int:
+    """expire_stale_crawl_jobs au plus une fois toutes les N secondes (évite la saturation pool)."""
+    global _last_expire_stale_at
+    now = time.monotonic()
+    if now - _last_expire_stale_at < _EXPIRE_STALE_MIN_INTERVAL_SEC:
+        return 0
+    _last_expire_stale_at = now
+    return expire_stale_crawl_jobs()
+
+
 def create_crawl_job(
     job_type: str,
     target_url: str,
@@ -906,6 +964,10 @@ def update_crawl_job(job_id: str, **fields) -> None:
     with get_connection() as conn:
         conn.execute(f"UPDATE crawl_jobs SET {', '.join(sets)} WHERE id = ?", values)
         conn.commit()
+    # Mise à jour cache pour les polls lite sans relire la base.
+    raw_fields = {k: v for k, v in fields.items() if k in allowed}
+    if raw_fields:
+        _merge_crawl_job_cache(job_id, raw_fields)
 
 
 def get_crawl_job(job_id: str, agency_id: str | None = None) -> dict | None:
@@ -917,7 +979,10 @@ def get_crawl_job(job_id: str, agency_id: str | None = None) -> dict | None:
             ).fetchone()
         else:
             row = conn.execute("SELECT * FROM crawl_jobs WHERE id = ?", (job_id,)).fetchone()
-        return _row_to_job(row) if row else None
+        job = _row_to_job(row) if row else None
+    if job:
+        _touch_crawl_job_cache(job)
+    return job
 
 
 def mark_crawl_jobs_interrupted_on_startup() -> int:
@@ -1033,7 +1098,7 @@ def get_pending_or_running_crawl_job(
     lane: str = "any",
 ) -> dict | None:
     """Job en cours — par file : portal (veille portails) ou refresh (fiches), sans se bloquer."""
-    expire_stale_crawl_jobs()
+    maybe_expire_stale_crawl_jobs()
     types: tuple[str, ...] | None = None
     if lane == "portal":
         types = tuple(PORTAL_CRAWL_JOB_TYPES)
@@ -1060,7 +1125,7 @@ def get_pending_or_running_crawl_job(
 
 
 def get_active_crawl_job(agency_id: str | None = None) -> dict | None:
-    expire_stale_crawl_jobs()
+    maybe_expire_stale_crawl_jobs()
     with get_connection() as conn:
         if agency_id:
             row = conn.execute(
