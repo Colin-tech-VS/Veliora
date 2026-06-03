@@ -1268,6 +1268,16 @@ body {
   .estimateur-layout {
     grid-template-columns: 1fr;
   }
+  /* Mobile : le formulaire de critères passe AVANT la fiche/le sélecteur de bien.
+     Sinon le formulaire se retrouvait sous la fiche du bien en cours et obligeait
+     à scroller toute la fiche avant de pouvoir saisir/estimer. */
+  .estimateur-layout .estimateur-main {
+    order: -1;
+  }
+  .estimateur-sidebar {
+    position: static;
+    top: auto;
+  }
 }
 
 @keyframes estFadeUp {

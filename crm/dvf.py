@@ -355,6 +355,7 @@ def _prices_from_csv_rows(
     max_age_months: int = DVF_MAX_AGE_MONTHS,
 ) -> tuple[list[float], list[int]]:
     prices: list[float] = []
+    postcodes: list[str] = []
     years: set[int] = set()
     cutoff = date.today() - timedelta(days=30 * max(1, max_age_months))
     reader = csv.DictReader(io.StringIO(raw))
@@ -387,7 +388,10 @@ def _prices_from_csv_rows(
         pm2 = vf / surf
         if 500 <= pm2 <= 25_000:
             prices.append(pm2)
-    return prices, sorted(years)
+            # Code postal de la vente : permet d'affiner la médiane au CP exact
+            # (bien plus précis que la commune entière, comme Meilleurs Agents).
+            postcodes.append((row.get("code_postal") or "").strip())
+    return prices, sorted(years), postcodes
 
 
 def _format_dvf_period(years: list[int]) -> str | None:
@@ -512,7 +516,12 @@ def compute_price_stats(
     if not code_commune:
         return None
 
-    cache_key = arrondissement_code or _postcode_to_arrondissement(postcode) or code_commune
+    base_cache = arrondissement_code or _postcode_to_arrondissement(postcode) or code_commune
+    # Cache distinct par code postal : deux quartiers d'une même commune n'ont
+    # pas la même médiane → ne pas servir l'un pour l'autre.
+    norm_postcode = (postcode or "").strip()
+    norm_postcode = norm_postcode if (len(norm_postcode) == 5 and norm_postcode.isdigit()) else ""
+    cache_key = f"{base_cache}|cp{norm_postcode}" if norm_postcode else base_cache
     cached = _load_cached_stats(cache_key, type_local)
     if cached:
         return cached
@@ -532,22 +541,24 @@ def compute_price_stats(
         arrondissement_code=arrondissement_code,
     )
     prices: list[float] = []
+    prices_postcodes: list[str] = []
     sale_years: list[int] = []
     source_detail = "commune"
-    stats_code = cache_key
+    stats_code = base_cache
 
-    def _merge_csv_prices(raw: str, cc: str) -> tuple[list[float], list[int]]:
-        p, y = _prices_from_csv_rows(raw, code_commune=cc, type_local=tlocal)
-        return p, y
+    def _merge_csv_prices(raw: str, cc: str) -> tuple[list[float], list[int], list[str]]:
+        p, y, pcs = _prices_from_csv_rows(raw, code_commune=cc, type_local=tlocal)
+        return p, y, pcs
 
     for cc in candidates:
         for year in ("2025", "2024", "2023"):
             raw = _fetch_commune_csv(cc, year)
             if not raw:
                 continue
-            rows_prices, rows_years = _merge_csv_prices(raw, cc)
+            rows_prices, rows_years, rows_pcs = _merge_csv_prices(raw, cc)
             if len(rows_prices) >= 8:
                 prices = rows_prices
+                prices_postcodes = rows_pcs
                 sale_years = rows_years
                 stats_code = cc
                 source_detail = f"commune_{year}" if cc == code_commune else f"arrondissement_{cc}_{year}"
@@ -562,13 +573,14 @@ def compute_price_stats(
             raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
             if not raw:
                 continue
-            chunk, chunk_years = _merge_csv_prices(raw, cc)
+            chunk, chunk_years, _chunk_pcs = _merge_csv_prices(raw, cc)
             merged_prices.extend(chunk)
             merged_years.update(chunk_years)
             if len(merged_prices) >= 120:
                 break
         if len(merged_prices) >= 20:
             prices = merged_prices
+            prices_postcodes = []  # repli multi-communes : pas de filtre CP fiable
             sale_years = sorted(merged_years)
             stats_code = code_commune
             source_detail = f"ville_{code_commune}"
@@ -583,13 +595,14 @@ def compute_price_stats(
             raw = _fetch_commune_csv(cc, "2025") or _fetch_commune_csv(cc, "2024")
             if not raw:
                 continue
-            chunk, chunk_years = _merge_csv_prices(raw, cc)
+            chunk, chunk_years, _chunk_pcs = _merge_csv_prices(raw, cc)
             dept_prices.extend(chunk)
             dept_years.update(chunk_years)
             if len(dept_prices) >= 120:
                 break
         if len(dept_prices) >= 20:
             prices = dept_prices
+            prices_postcodes = []  # repli départemental : pas de filtre CP
             sale_years = sorted(dept_years)
             stats_code = code_commune
             source_detail = f"departement_{dept}"
@@ -604,6 +617,17 @@ def compute_price_stats(
         }
         return result
 
+    # Affinage au code postal : si on connaît le CP du bien et qu'on a assez de
+    # ventes au MÊME CP, on restreint la médiane à ce CP (granularité quartier,
+    # bien plus proche de Meilleurs Agents que la médiane communale entière).
+    geo_level = "commune"
+    if norm_postcode and len(prices_postcodes) == len(prices):
+        cp_prices = [pm for pm, pc in zip(prices, prices_postcodes) if pc == norm_postcode]
+        if len(cp_prices) >= 8:
+            prices = cp_prices
+            source_detail = f"{source_detail}+cp{norm_postcode}"
+            geo_level = "postcode"
+
     median = statistics.median(prices)
     reference_period = _format_dvf_period(sale_years)
     result = {
@@ -613,6 +637,8 @@ def compute_price_stats(
         "median_m2": round(median, 0),
         "mean_m2": round(statistics.mean(prices), 0),
         "sample_count": len(prices),
+        "geo_level": geo_level,
+        "postcode": norm_postcode or None,
         "reference_period": reference_period,
         "reference_months": DVF_MAX_AGE_MONTHS,
         "source": "etalab_geo_dvf",
@@ -736,6 +762,7 @@ def compare_listing_to_dvf(
         "dvf_median_m2": median,
         "dvf_mean_m2": stats.get("mean_m2"),
         "dvf_sample_count": stats.get("sample_count"),
+        "dvf_geo_level": stats.get("geo_level") or "commune",
         "dvf_reference_period": stats.get("reference_period"),
         "dvf_reference_months": stats.get("reference_months"),
         "delta_pct": delta_pct,
