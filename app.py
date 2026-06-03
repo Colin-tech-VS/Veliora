@@ -983,6 +983,93 @@ def api_lead_price_estimate(lead_id):
     return jsonify(result)
 
 
+@app.route("/api/leads/manual", methods=["POST"])
+def api_lead_manual_create():
+    """Crée un prospect saisi manuellement depuis l'estimateur.
+
+    Le bien est tagué source = « Estimation » (vs annonces crawlées « Détecté »)
+    et apparaît dans la liste des prospects. Une estimation est calculée et
+    persistée dans la foulée si des critères sont fournis.
+    """
+    from crawler.extractors import LeadData
+    from crawler.storage import save_lead
+
+    agency_id = _aid()
+    data = request.get_json(silent=True) or {}
+
+    try:
+        surface = float(data.get("surface")) if data.get("surface") not in (None, "") else None
+    except (TypeError, ValueError):
+        surface = None
+    try:
+        price = int(float(data.get("price"))) if data.get("price") not in (None, "") else None
+    except (TypeError, ValueError):
+        price = None
+
+    address = (data.get("address") or "").strip() or None
+    city = (data.get("city") or "").strip() or None
+    if not (address or city):
+        return jsonify({"ok": False, "error": "Adresse ou ville requise."}), 400
+    if not surface or surface <= 0:
+        return jsonify({"ok": False, "error": "Surface (m²) requise."}), 400
+
+    prop_type = (data.get("property_type") or "appartement").strip().lower()
+    type_label = {
+        "appartement": "Appartement",
+        "maison": "Maison",
+        "studio": "Studio",
+        "terrain": "Terrain",
+    }.get(prop_type, "Bien")
+    title = (data.get("property_title") or "").strip() or (
+        f"{type_label} {surface:g} m²" + (f" — {city}" if city else "")
+    )
+
+    lead = LeadData(
+        first_name=(data.get("first_name") or "").strip() or None,
+        last_name=(data.get("last_name") or "").strip() or None,
+        phone=(data.get("phone") or "").strip() or None,
+        email=(data.get("email") or "").strip() or None,
+        address=address,
+        city=city,
+        postcode=(data.get("postcode") or "").strip() or None,
+        surface=surface,
+        price=price,
+        transaction_type="vente",
+        source="Estimation",
+        source_url=f"estimation://{agency_id}/{uuid.uuid4().hex}",
+        type="particulier",
+    )
+    lead.raw_extras["listing_title"] = title
+
+    try:
+        saved = save_lead(lead, agency_id=agency_id, require_verification=False)
+    except Exception as exc:
+        logging.exception("POST /api/leads/manual save")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    if not saved or not saved.get("id"):
+        return jsonify({"ok": False, "error": "Création du prospect impossible."}), 500
+    lead_id = saved["id"]
+
+    full_lead = get_lead(lead_id, agency_id)
+    estimate = None
+    inputs = dict(data.get("inputs") or {})
+    inputs.setdefault("surface", surface)
+    inputs.setdefault("property_type", prop_type)
+    try:
+        from crm.estimator.service import build_price_estimate
+
+        estimate = build_price_estimate(full_lead, inputs)
+        if estimate.get("ok"):
+            from crm.estimator.storage import save_lead_estimate
+
+            save_lead_estimate(lead_id, agency_id, estimate)
+            full_lead = get_lead(lead_id, agency_id)
+    except Exception:
+        logging.exception("estimate after manual lead create %s", lead_id)
+
+    return jsonify({"ok": True, "lead": full_lead, "estimate": estimate}), 201
+
+
 @app.route("/api/leads/<int:lead_id>/matches")
 def api_lead_matches(lead_id):
     """Acquéreurs / locataires compatibles + transaction la plus pertinente."""

@@ -7254,6 +7254,74 @@ body:has(.crawl-dock.open) .script-dock.open {
   padding: 0.1rem 0.35rem;
 }
 
+/* ── Badge provenance « Estimation » (vs « Détecté » pour les crawls) ── */
+.origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.origin-badge-est {
+  color: var(--v-brass, #9a7349);
+  background: rgba(154, 115, 73, 0.12);
+  border: 1px solid rgba(154, 115, 73, 0.28);
+}
+.origin-badge-sm {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+}
+
+/* Pastille « Estimé » sur un lead crawlé déjà passé par l'estimateur. */
+.estimated-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #15803d;
+  background: rgba(21, 128, 61, 0.1);
+  border: 1px solid rgba(21, 128, 61, 0.22);
+  border-radius: 20px;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── Estimateur : bloc création « Nouveau bien » ── */
+.estimateur-newlead-btn {
+  width: 100%;
+  margin: 0.6rem 0;
+}
+.estimateur-newlead-note {
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+.estimateur-newlead-note strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--v-ink);
+}
+.drawer-estimator-owner {
+  margin-bottom: 0.4rem;
+}
+.drawer-estimator-owner-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--v-brass, #9a7349);
+  margin: 0.6rem 0 0.4rem;
+}
+
 /* ─── Vitrine theme — titres & cartes ─── */
 .view-header h1,
 .view-header h2,
