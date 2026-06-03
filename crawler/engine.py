@@ -1985,9 +1985,13 @@ class CrawlerEngine:
 
         interval = max(60, int(interval or CRAWL_BACKGROUND_INTERVAL_SEC))
         with self._lock:
-            if self.running:
+            thread_alive = self._thread is not None and self._thread.is_alive()
+            if self.running and thread_alive:
                 self._bg_interval_sec = interval
                 return
+            if self.running and not thread_alive:
+                logger.warning("Veille auto — thread mort, redémarrage")
+                self.running = False
             self.running = True
             self._bg_interval_sec = interval
             self._thread = threading.Thread(
@@ -2108,8 +2112,15 @@ class CrawlerEngine:
         from crawler.storage import get_active_crawl_job
 
         active = get_active_crawl_job()
+        bg_alive = self._thread is not None and self._thread.is_alive()
+        lead_alive = (
+            self._lead_refresh_thread is not None and self._lead_refresh_thread.is_alive()
+        )
         return {
             "running": self.running,
+            "background_thread_alive": bg_alive,
+            "lead_refresh_thread_alive": lead_alive,
+            "veille_effective": self.running and bg_alive,
             "active_job": active,
             "is_crawling": active is not None,
             "background_interval_sec": self._bg_interval_sec,

@@ -36,6 +36,7 @@ const state = {
   selectedLead: null,
   drawerEditExpanded: false,
   crawlerRunning: false,
+  veilleEffective: false,
   backgroundCrawl: null,
   loading: false,
   pendingCrawlUrl: null,
@@ -715,6 +716,10 @@ function applyBootstrapPayload(data) {
   SOURCE_STATS = data.source_stats || [];
   if (data.crawler && typeof data.crawler === "object") {
     state.crawlerRunning = !!data.crawler.running;
+    state.veilleEffective = !!(
+      data.crawler.veille_effective ??
+      (data.crawler.running && data.crawler.background_thread_alive !== false)
+    );
     state.backgroundCrawl = data.crawler;
   }
   if (data.settings && typeof data.settings === "object") {
@@ -769,7 +774,8 @@ async function loadDataCore() {
   }
 
   if (crawlerResult.status === "fulfilled") {
-    state.crawlerRunning = crawlerResult.value.running;
+    state.crawlerRunning = !!crawlerResult.value.running;
+    state.veilleEffective = !!crawlerResult.value.veille_effective;
     state.backgroundCrawl = crawlerResult.value;
   } else {
     console.warn("État crawl indisponible", crawlerResult.reason);
@@ -4681,13 +4687,25 @@ function syncCrawlerUI() {
   const cfg = state.backgroundCrawl || {};
   const intervalMin = Math.max(1, Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60));
 
+  const veilleOk =
+    state.veilleEffective ??
+    cfg.veille_effective ??
+    (state.crawlerRunning && cfg.background_thread_alive !== false);
   if (state.crawlerRunning) {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause`;
-    dot?.classList.remove("paused");
+    if (veilleOk) {
+      dot?.classList.remove("paused");
+    } else {
+      dot?.classList.add("paused");
+    }
     if (label) {
-      label.textContent = cfg.lead_refresh_enabled
-        ? `Veille auto · ~${intervalMin} min`
-        : "Veille auto active";
+      if (!veilleOk && cfg.background_thread_alive === false) {
+        label.textContent = "Veille à relancer";
+      } else {
+        label.textContent = cfg.lead_refresh_enabled
+          ? `Veille auto · ~${intervalMin} min`
+          : "Veille auto active";
+      }
     }
   } else {
     btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Démarrer`;
@@ -4709,8 +4727,18 @@ function updateCrawlerVeilleHint(status) {
   const mins = Math.round((cfg.background_interval_sec || cfg.interval_sec || 300) / 60);
   const lines = [];
 
-  if (state.crawlerRunning) {
+  const effective =
+    state.veilleEffective ??
+    cfg.veille_effective ??
+    (state.crawlerRunning && cfg.background_thread_alive !== false);
+  if (state.crawlerRunning && cfg.background_thread_alive === false) {
+    lines.push(
+      "Veille signalée active mais le fil serveur est arrêté — cliquez Pause puis Démarrer, ou redéployez.",
+    );
+  } else if (effective) {
     lines.push(`Veille active — passage portails environ toutes les ${mins} min.`);
+  } else if (state.crawlerRunning) {
+    lines.push(`Veille en cours de démarrage… (≈ ${mins} min entre chaque passage).`);
   } else {
     lines.push("Veille en pause — cliquez Démarrer pour relancer la détection automatique.");
   }
@@ -7769,7 +7797,8 @@ async function runBackgroundPoll() {
     }
 
     const status = await api("/crawler/status");
-    state.crawlerRunning = status.running;
+    state.crawlerRunning = !!status.running;
+    state.veilleEffective = !!status.veille_effective;
     state.backgroundCrawl = status;
     updateCrawlerVeilleHint(status);
     syncCrawlerUI();

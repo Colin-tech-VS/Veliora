@@ -25,12 +25,7 @@ def _bootstrap_db() -> None:
 
 _bootstrap_db()
 
-try:
-    from crawler.engine import bootstrap_background_services
-
-    bootstrap_background_services()
-except Exception:
-    logging.exception("Veille auto — échec au démarrage WSGI")
+# Veille auto : démarrée dans gunicorn.conf.py post_fork (pas ici — --preload casse les threads).
 
 # Workers Gunicorn (--preload) : une seule init DB partagée
 application.config["PRELOADED"] = True
