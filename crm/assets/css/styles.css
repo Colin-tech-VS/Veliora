@@ -228,6 +228,81 @@ body {
   color: var(--brand-accent-light);
 }
 
+/* Navigation regroupée (accordéon) */
+.nav-group {
+  margin-bottom: 0.15rem;
+}
+
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-sidebar);
+  font-size: 0.9rem;
+  font-weight: 450;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.nav-group-toggle:hover {
+  background: var(--bg-sidebar-hover);
+  color: var(--text-inverse);
+}
+
+.nav-group-toggle .nav-group-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.nav-group-toggle .nav-group-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  opacity: 0.5;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.nav-group.open > .nav-group-toggle .nav-group-chevron {
+  transform: rotate(90deg);
+}
+
+/* Un groupe est mis en avant quand l'un de ses écrans est actif */
+.nav-group.has-active > .nav-group-toggle {
+  color: var(--text-inverse);
+}
+
+.nav-group.has-active > .nav-group-toggle .nav-group-icon {
+  opacity: 1;
+  color: var(--brand-accent-light);
+}
+
+.nav-group-items {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 1.45rem;
+  padding-left: 0.45rem;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.nav-group.open > .nav-group-items {
+  display: flex;
+}
+
+.nav-group-items .nav-item {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: 0.875rem;
+}
+
 .nav-badge {
   margin-left: auto;
   background: var(--brand-accent);
@@ -1051,10 +1126,11 @@ body {
 .col-score-mandat { width: 8.5rem; }
 
 .drawer-mandate-hero {
-  padding: 1rem 1.15rem;
-  margin-bottom: 1rem;
-  background: linear-gradient(145deg, rgba(11, 18, 32, 0.04), rgba(42, 74, 92, 0.06));
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 0.85rem;
+  background: linear-gradient(145deg, rgba(11, 18, 32, 0.05), rgba(42, 74, 92, 0.09));
   border: 1px solid var(--border);
+  border-left: 4px solid var(--brand-gold-dark, #9a7b2e);
   border-radius: var(--radius-md);
 }
 
@@ -1090,6 +1166,25 @@ body {
   margin: 0;
   font-size: 0.78rem;
   color: var(--text-secondary);
+}
+
+/* Marché (DVF) regroupé sous le score */
+.drawer-mandate-market {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+}
+
+/* Rapprochement acquéreurs/locataires mis en avant juste sous le score */
+.drawer-matches--featured {
+  border: 1px solid var(--brand-accent, #2a4a5c);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(42, 74, 92, 0.04);
 }
 
 @media (max-width: 900px) {
@@ -3084,6 +3179,31 @@ tr.lead-row-flash td {
   font-weight: 500;
 }
 
+/* Méta repliée dans la cellule Propriété (type + source) */
+.lead-property-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+/* Cellule Prix · Marché regroupée */
+.lead-price-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.lead-price-market {
+  font-size: 0.75rem;
+}
+
+.lead-price-market:empty {
+  display: none;
+}
+
 .score-pill {
   display: inline-flex;
   align-items: center;
@@ -4548,10 +4668,71 @@ tr.lead-row-flash td {
   background: rgba(245, 158, 11, 0.1);
 }
 
+/* Progression du workflow transaction (11 étapes) */
+.lead-journey-progress {
+  margin-bottom: 0.6rem;
+}
+
+.lead-journey-progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.15);
+  overflow: hidden;
+}
+
+.lead-journey-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--brand-600, #0f766e);
+  transition: width var(--duration-normal, 0.2s) ease;
+}
+
+.lead-journey-progress-label {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.lead-journey-status {
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.lead-journey-next {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg-surface, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.lead-journey-next-kicker {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.lead-journey-next strong {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
 .lead-journey-actions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.5rem;
+}
+
+/* Le bouton « Prendre en charge / Continuer dans Affaires » occupe toute la largeur */
+.lead-journey-actions #drawer-journey-affaire {
+  grid-column: 1 / -1;
 }
 
 .lead-journey-actions .btn {
@@ -6389,6 +6570,9 @@ body:has(.crawl-dock.open) .script-dock.open {
   margin-top: 0;
 }
 .mandate-form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -6397,6 +6581,34 @@ body:has(.crawl-dock.open) .script-dock.open {
   padding: 0.35rem 0 0.15rem;
   border-bottom: 1px solid var(--border);
   margin: 0 0 0.25rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.mandate-form-section-title::-webkit-details-marker {
+  display: none;
+}
+/* Chevron de pliage */
+.mandate-form-section-title::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--duration-normal, 0.2s) ease;
+}
+.mandate-form-section[open] > .mandate-form-section-title::before {
+  transform: rotate(90deg);
+}
+.mandate-form-section-title:hover {
+  color: var(--text-primary, #1e293b);
+}
+.mandate-form-section-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding-top: 0.5rem;
 }
 .mandate-field-req {
   color: #dc2626;

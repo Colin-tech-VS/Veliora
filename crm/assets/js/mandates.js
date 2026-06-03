@@ -377,16 +377,36 @@ function renderMandateFieldsForm(fieldDefs, values) {
   const form = document.getElementById("mandate-fields-form");
   if (!form) return;
   const esc = mandateDeps.escapeHtml;
-  let html = "";
-  let currentSection = null;
+  // Regroupe les champs par section -> blocs repliables (<details>), pour réduire
+  // la densité : seule la 1re section est ouverte, les autres se déplient au clic.
+  const groups = [];
+  let current = null;
   fieldDefs.forEach((f) => {
     const section = f.section || "";
-    if (section && section !== currentSection) {
-      currentSection = section;
-      html += `<div class="mandate-form-section"><h3 class="mandate-form-section-title">${esc(section)}</h3></div>`;
+    if (!current || section !== current.section) {
+      current = { section, fields: [] };
+      groups.push(current);
     }
-    const val = values[f.key] ?? f.default ?? "";
-    html += renderMandateFieldInput(f, val, esc);
+    current.fields.push(f);
+  });
+  let html = "";
+  let sectionIndex = 0;
+  groups.forEach((g) => {
+    const inner = g.fields
+      .map((f) => renderMandateFieldInput(f, values[f.key] ?? f.default ?? "", esc))
+      .join("");
+    if (g.section) {
+      const open = sectionIndex === 0 ? " open" : "";
+      sectionIndex += 1;
+      html +=
+        `<details class="mandate-form-section"${open}>` +
+        `<summary class="mandate-form-section-title">${esc(g.section)}</summary>` +
+        `<div class="mandate-form-section-fields">${inner}</div>` +
+        `</details>`;
+    } else {
+      // Champs sans section : toujours visibles, en tête de formulaire.
+      html += inner;
+    }
   });
   form.innerHTML = html;
 

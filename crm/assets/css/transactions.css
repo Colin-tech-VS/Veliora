@@ -3,6 +3,14 @@
 .tx-view { padding: 0.5rem 0 2rem; }
 .tx-header { margin-bottom: 1rem; }
 .tx-intro { color: var(--text-muted, #5b6b78); margin: 0 0 0.75rem; font-size: 0.95rem; max-width: 52rem; }
+.tx-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.75rem;
+}
+.tx-toolbar-hint { font-size: 0.8rem; color: var(--text-muted, #5b6b78); }
 
 .tx-guide {
   background: var(--surface-2, #f5f8fa);

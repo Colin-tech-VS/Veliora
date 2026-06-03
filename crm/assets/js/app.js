@@ -1796,6 +1796,32 @@ function setupNavigation() {
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
+  // Groupes repliables de la sidebar (un seul ouvert à la fois)
+  document.querySelectorAll(".nav-group-toggle").forEach((toggle) => {
+    toggle.addEventListener("click", () => {
+      const group = toggle.closest(".nav-group");
+      const willOpen = !group.classList.contains("open");
+      document.querySelectorAll(".nav-group").forEach((g) => {
+        g.classList.toggle("open", g === group && willOpen);
+        g.querySelector(".nav-group-toggle")?.setAttribute(
+          "aria-expanded",
+          String(g === group && willOpen),
+        );
+      });
+    });
+  });
+}
+
+// Ouvre/illumine le groupe contenant l'écran actif, ferme les autres.
+function syncNavGroups(view) {
+  document.querySelectorAll(".nav-group").forEach((group) => {
+    const hasActive = !!group.querySelector(`.nav-item[data-view="${view}"]`);
+    group.classList.toggle("has-active", hasActive);
+    group.classList.toggle("open", hasActive);
+    group
+      .querySelector(".nav-group-toggle")
+      ?.setAttribute("aria-expanded", String(hasActive));
+  });
 }
 
 async function switchView(view) {
@@ -1815,6 +1841,7 @@ async function switchView(view) {
   document.querySelectorAll(".nav-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
+  syncNavGroups(view);
   document.querySelectorAll(".mobile-bottom-nav button").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === view);
   });
@@ -3081,6 +3108,17 @@ function setupDrawer() {
         btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
         btn.textContent = isOpen ? "Moins d'actions" : "Plus d'actions";
       }
+      return;
+    }
+    if (e.target.closest("#drawer-journey-affaire")) {
+      e.preventDefault();
+      closeDrawer();
+      switchView("transactions");
+      showToast(
+        "Retrouvez cette annonce dans Affaires : prenez-la en charge puis suivez chaque étape.",
+        "info",
+        5000,
+      );
       return;
     }
     if (e.target.closest("#drawer-journey-mandat")) {
@@ -6045,16 +6083,18 @@ function renderLeadRow(lead) {
           <div class="lead-property-text">
             <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}${estimatedChip}</div>
             <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
+            <div class="lead-property-meta">${getTypeBadge(lead)} <span class="source-tag">${lead.source}</span></div>
           </div>
         </div>
       </td>
-      <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
-      <td>${getTypeBadge(lead)}</td>
+      <td>
+        <div class="lead-price-cell">
+          <span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}
+          <div class="lead-price-market">${renderDvfBadge(lead) || ""}</div>
+        </div>
+      </td>
       <td>${getStatusBadge(lead.status)}</td>
-      <td><span class="source-tag">${lead.source}</span></td>
-      <td>${renderDvfBadge(lead) || '<span class="text-muted">—</span>'}</td>
-      <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
-      <td class="lead-actions-cell lead-delete-cell">${getLeadDeleteButtonHtml(lead)}</td>
+      <td class="lead-actions-cell">${getLeadActionsHtml(lead)} ${getLeadDeleteButtonHtml(lead)}</td>
     </tr>`;
 }
 
@@ -6073,7 +6113,7 @@ function renderLeads() {
     gridWrapper.style.display = "none";
 
     if (!leads.length) {
-      tableContainer.innerHTML = `<tr><td colspan="10"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
+      tableContainer.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
       return;
     }
 
@@ -6545,39 +6585,50 @@ function renderFactsVerificationHtml(lead) {
 }
 
 function renderLeadJourneyHtml(lead) {
-  const current = leadPipelineKey(lead);
-  const currentIdx = PIPELINE_STAGES.findIndex((s) => s.key === current);
-  const isLost = current === "perdu";
-  const stepsHtml = PIPELINE_STAGES.filter((s) => s.key !== "perdu")
-    .map((s, i) => {
-      let cls = "lead-journey-step";
-      if (isLost) cls += "";
-      else if (i < currentIdx) cls += " is-done";
-      else if (s.key === current) cls += " is-current";
-      return `<span class="${cls}">${s.label}</span>`;
-    })
-    .join("");
-  const lostHtml = isLost
-    ? `<span class="lead-journey-step is-lost">Perdu</span>`
-    : "";
+  // Source de vérité : le workflow transaction (11 étapes, cockpit Affaires).
+  const tx = lead.transaction || {};
+  const txStarted = !!tx.stage && tx.stage !== "prospect";
+  const stepTotal = tx.stage_total || 11;
+  const stepIdx = tx.stage_index != null ? tx.stage_index + 1 : null;
+  const pct = stepIdx ? Math.round((stepIdx / stepTotal) * 100) : 0;
+  const stageLabel = tx.stage_label || "";
+  const nextAction =
+    tx.next_action ||
+    "Prenez en charge cette annonce pour démarrer le suivi de l'affaire.";
   const notes = (lead.notes || "").trim();
   const notesPreview = notes
     ? escapeHtml(notes.length > 220 ? `${notes.slice(0, 220)}…` : notes)
     : "<em>Aucune note — complétez dans le formulaire ci-dessous.</em>";
   const txLabel = lead.transaction_type === "location" ? "location" : "vente";
 
+  const progressHtml = stepIdx
+    ? `<div class="lead-journey-progress" title="Étape ${stepIdx} sur ${stepTotal}">
+        <div class="lead-journey-progress-bar"><span style="width:${pct}%"></span></div>
+        <span class="lead-journey-progress-label">Étape ${stepIdx}/${stepTotal}${stageLabel ? ` · ${escapeHtml(stageLabel)}` : ""}</span>
+      </div>`
+    : `<p class="lead-journey-status">Annonce repérée — pas encore une affaire suivie.</p>`;
+
+  const startCta = txStarted
+    ? `<button type="button" class="btn btn-primary btn-sm" id="drawer-journey-affaire">Continuer dans Affaires →</button>`
+    : `<button type="button" class="btn btn-primary btn-sm" id="drawer-journey-affaire">▶ Prendre en charge cette annonce</button>`;
+
   return `
     <div class="lead-journey" id="drawer-journey-block">
-      <div class="lead-journey-title">Parcours de A à Z</div>
-      <div class="lead-journey-steps">${stepsHtml}${lostHtml}</div>
+      <div class="lead-journey-title">Workflow de l'affaire</div>
+      ${progressHtml}
+      <div class="lead-journey-next">
+        <span class="lead-journey-next-kicker">Prochaine étape</span>
+        <strong>${escapeHtml(nextAction)}</strong>
+      </div>
       <div class="lead-journey-actions">
-        <button type="button" class="btn btn-primary btn-sm" id="drawer-journey-call">Appeler</button>
+        ${startCta}
+        <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-call">Appeler</button>
         <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-script">Script</button>
         <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-mandat">Créer mandat</button>
         <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-livret">Livret PDF</button>
       </div>
       <div class="lead-journey-notes"><strong>Suivi :</strong> ${notesPreview}</div>
-      <p class="form-hint" style="margin:0.5rem 0 0;font-size:0.75rem">Mandat ${txLabel} → dossier client, photos, notes → bouton Imprimer / PDF dans l’éditeur de mandat.</p>
+      <p class="form-hint" style="margin:0.5rem 0 0;font-size:0.75rem">Le suivi pas-à-pas (mandat ${txLabel} → client → visite → vente) se pilote dans l'onglet <strong>Affaires</strong> : une carte, une action.</p>
     </div>`;
 }
 
@@ -7546,8 +7597,6 @@ function buildDrawerBodyHtml(lead) {
         : "Publication inconnue";
   const ms = lead.mandate_score || 0;
   return `
-    ${buildDrawerLeadImageHtml(lead)}
-    ${renderLeadJourneyHtml(lead)}
     <div class="drawer-mandate-hero">
       <span class="drawer-mandate-kicker">Score Mandat™</span>
       <div class="drawer-mandate-score-row">
@@ -7555,15 +7604,20 @@ function buildDrawerBodyHtml(lead) {
         <span class="drawer-mandate-reco">${escapeHtml(mandateCallRecommendation(ms))}</span>
       </div>
       <p class="drawer-mandate-reason">${escapeHtml(lead.mandate_score_reason || "—")}</p>
-      <p class="drawer-mandate-hint">Opportunité du marché · ${escapeHtml(lead.city || lead.sector || "secteur")}</p>
+      <div class="drawer-mandate-market">
+        <span class="drawer-mandate-hint">Opportunité du marché · ${escapeHtml(lead.city || lead.sector || "secteur")}</span>
+        ${renderDvfBadge(lead)}
+      </div>
       <div class="drawer-mandate-demand" id="drawer-mandate-demand" hidden></div>
     </div>
-    ${renderFactsVerificationHtml(lead)}
-    ${buildDrawerDvfHtml(lead)}
-    <div class="drawer-section drawer-matches" id="drawer-matches" data-lead-id="${lead.id}">
-      <div class="drawer-section-title">Acquéreurs &amp; locataires compatibles</div>
+    <div class="drawer-section drawer-matches drawer-matches--featured" id="drawer-matches" data-lead-id="${lead.id}">
+      <div class="drawer-section-title">Rapprochement — acquéreurs &amp; locataires compatibles</div>
       <p class="drawer-matches-loading">Recherche de correspondances…</p>
     </div>
+    ${buildDrawerLeadImageHtml(lead)}
+    ${renderLeadJourneyHtml(lead)}
+    ${renderFactsVerificationHtml(lead)}
+    ${buildDrawerDvfHtml(lead)}
     ${renderDrawerEstimatorCta(lead)}
     ${renderDrawerEditSection(lead)}
     <div class="drawer-section drawer-readonly-summary">
