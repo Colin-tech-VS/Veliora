@@ -54,5 +54,6 @@ MAX_HISTORY_MESSAGES = int(os.getenv("AI_MAX_HISTORY", "16"))
 RECENT_ACTIVITY_LIMIT = int(os.getenv("AI_RECENT_ACTIVITY", "25"))
 
 # Top N annonces et clients résumés dans le contexte système.
-TOP_LEADS_IN_CONTEXT = int(os.getenv("AI_TOP_LEADS", "15"))
+# 0 = pas de section « top N » séparée (évite que l'IA dise « top 15 ») — index compact uniquement.
+TOP_LEADS_IN_CONTEXT = int(os.getenv("AI_TOP_LEADS", "0"))
 TOP_CLIENTS_IN_CONTEXT = int(os.getenv("AI_TOP_CLIENTS", "15"))

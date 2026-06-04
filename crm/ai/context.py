@@ -214,7 +214,14 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
         "5. Sépare les sections par `---` si besoin.\n"
         "6. Termine par `### Prochaine étape` : 1 à 3 actions concrètes en puces.\n"
         "7. **Ne jamais** afficher `ACTION_JSON`, du JSON brut ni de blocs ```json dans le corps visible.\n"
-        "Utilise `**gras**` pour noms, prix et ids prospect ; évite les pavés de texte."
+        "Utilise `**gras**` pour noms, prix et ids prospect ; évite les pavés de texte.\n"
+        "\n"
+        "### Lister les prospects (liste complète, priorités, briefing…)\n"
+        f"- Le portefeuille compte **{len(sorted_leads)} prospects** — ne dis jamais « top 15 » ni « j'en affiche 15 ».\n"
+        "- Dans le chat : **maximum 10 lignes** `#id` (les plus prioritaires selon Score Mandat™ / pipeline).\n"
+        "- Ensuite une phrase du type « … et **{max(0, len(sorted_leads) - 10)} autres** dans Prospects ».\n"
+        "- Puis **obligatoirement** la ligne seule `[[VOIR_TOUT_PROSPECTS]]` (l'interface affiche le bouton Voir tout).\n"
+        "- Ne liste pas 50 puces : l'agent utilisera le bouton pour le tableau complet."
     )
     lines.append("")
     lines.append("## Indicateurs clés (prospects / annonces crawlées)")
@@ -243,24 +250,23 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
         for lead in top_leads:
             lines.append("- " + _short_lead(lead))
 
-    # Index complet (compact) du reste du portefeuille : l'IA doit pouvoir
-    # répondre sur N'IMPORTE QUELLE annonce, pas seulement le top 15.
-    remaining = sorted_leads[len(top_leads):LEAD_INDEX_CAP]
-    if remaining:
+    # Index compact : toutes les fiches (pas de « top 15 » dans le prompt).
+    index_leads = sorted_leads[len(top_leads) : LEAD_INDEX_CAP]
+    if index_leads:
         lines.append("")
         lines.append(
-            f"## Index prospects / annonces ({len(remaining)} autres — format compact)"
+            f"## Répertoire prospects ({len(sorted_leads)} au total — index compact, pas un extrait « top »)"
         )
         lines.append(
             "Chaque ligne = **prospect** crawlé (pas un client acheteur). "
-            "Référence utilisateur : #id · titre · ville · prix · SM."
+            "Référence : #id · titre · ville · prix · SM. Pour une liste dans le chat : max 10 lignes + `[[VOIR_TOUT_PROSPECTS]]`."
         )
-        for lead in remaining:
+        for lead in index_leads:
             lines.append("- " + _lead_index_line(lead))
         if len(sorted_leads) > LEAD_INDEX_CAP:
             lines.append(
-                f"- … +{len(sorted_leads) - LEAD_INDEX_CAP} annonces non listées ici "
-                "(demande-les par ville, prix ou Score Mandat™ et je les retrouve)."
+                f"- … +{len(sorted_leads) - LEAD_INDEX_CAP} prospects non indexés ici "
+                "(filtre par ville, prix ou Score Mandat™)."
             )
 
     if top_clients:
@@ -301,7 +307,9 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
         '{"action": "update_pipeline", "lead_id": 123, "pipeline": "contacte", "note": "Premier appel OK"}\n'
         "```\n\n"
         "Actions reconnues : `update_pipeline`, `add_note`, `set_followup`, `remember`.\n"
-        "`lead_id` = id **prospect** (#123 dans le texte), pas un client.\n"
+        "**Obligatoire** pour `update_pipeline`, `add_note`, `set_followup` : champ entier `lead_id` "
+        "(même id que `#123` dans ton texte). Sans `lead_id`, le bouton CTA échoue.\n"
+        "Si une seule fiche est concernée dans le message, reprends son `#id` dans `lead_id`.\n"
         "Pipeline prospect uniquement : `nouveau`, `a_contacter`, `contacte`, `rdv`, `mandat`, `perdu`."
     )
     return "\n".join(lines)

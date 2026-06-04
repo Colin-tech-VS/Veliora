@@ -194,18 +194,77 @@
     return results;
   }
 
+  const VOIR_TOUT_MARKER = /\[\[VOIR_TOUT_PROSPECTS\]\]/gi;
+
   function stripActionBlocks(text) {
     let s = String(text || "");
     s = s.replace(/ACTION_JSON\s*```json\s*[\s\S]*?```/gi, "");
     s = s.replace(/ACTION_JSON\s*```json[\s\S]*$/i, "");
     s = s.replace(/```json\s*\{[\s\S]*$/i, "");
     s = s.replace(/ACTION_JSON\s*$/i, "");
+    s = s.replace(VOIR_TOUT_MARKER, "");
     return s.trim();
+  }
+
+  function parseLeadId(raw) {
+    if (raw == null || raw === "") return null;
+    const n = parseInt(String(raw).trim().replace(/^#/, ""), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  function extractProspectIdsFromText(text) {
+    const ids = [];
+    const seen = new Set();
+    const re = /#(\d{1,6})\b/g;
+    let m;
+    while ((m = re.exec(String(text || ""))) !== null) {
+      const id = parseInt(m[1], 10);
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  function resolveLeadIdFromAction(action, contextText) {
+    const a = action || {};
+    for (const key of ["lead_id", "prospect_id", "id"]) {
+      const id = parseLeadId(a[key]);
+      if (id) return id;
+    }
+    for (const field of ["note", "content", "message", "label", "title"]) {
+      const text = a[field];
+      if (!text) continue;
+      const hash = String(text).match(/#(\d{1,6})\b/);
+      if (hash) return parseInt(hash[1], 10);
+      const explicit = String(text).match(/\blead[_\s-]?id\s*[:=]\s*(\d{1,6})\b/i);
+      if (explicit) return parseInt(explicit[1], 10);
+    }
+    const ids = extractProspectIdsFromText(contextText);
+    if (ids.length === 1) return ids[0];
+    return null;
+  }
+
+  function actionNeedsLeadId(action) {
+    const n = (action?.action || "").toLowerCase();
+    return n === "update_pipeline" || n === "add_note" || n === "set_followup";
+  }
+
+  function normalizeActions(actions, contextText) {
+    return (actions || []).map((raw) => {
+      const a = { ...raw };
+      if (!actionNeedsLeadId(a)) return a;
+      const leadId = resolveLeadIdFromAction(a, contextText);
+      if (leadId) a.lead_id = leadId;
+      return a;
+    });
   }
 
   function actionLabel(action) {
     const a = action || {};
-    const id = a.lead_id ? ` #${a.lead_id}` : "";
+    const lid = resolveLeadIdFromAction(a, "");
+    const id = lid ? ` #${lid}` : "";
     switch (a.action) {
       case "update_pipeline":
         return `Pipeline${id} → ${a.pipeline || "—"}`;
@@ -220,10 +279,18 @@
     }
   }
 
-  function renderActionsHtml(actions) {
-    if (!actions.length) return "";
-    const rows = actions
+  function renderActionsHtml(actions, contextText) {
+    const normalized = normalizeActions(actions, contextText);
+    if (!normalized.length) return "";
+    const rows = normalized
       .map((a, i) => {
+        const needs = actionNeedsLeadId(a);
+        const lid = resolveLeadIdFromAction(a, contextText);
+        if (needs && !lid) {
+          return `<button type="button" class="ai-action-btn ai-action-disabled" disabled title="Précisez l'id prospect (#60) dans l'action IA">
+            ${escapeHtml(actionLabel(a))} — id manquant
+          </button>`;
+        }
         return `<button type="button" class="ai-action-btn" data-action-idx="${i}">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg>
             ${escapeHtml(actionLabel(a))}
@@ -231,6 +298,33 @@
       })
       .join("");
     return `<div class="ai-actions"><span class="ai-actions-label">Actions proposées</span>${rows}</div>`;
+  }
+
+  function shouldShowVoirToutProspects(visibleText) {
+    if (/\[\[VOIR_TOUT_PROSPECTS\]\]/i.test(String(visibleText || ""))) return true;
+    const t = String(visibleText || "");
+    const listIntent = /prospect|annonces|liste|priorit|briefing|portefeuille/i.test(t);
+    const nIds = extractProspectIdsFromText(t).length;
+    return nIds >= 6 || (listIntent && nIds >= 3);
+  }
+
+  function renderVoirToutProspectsCta() {
+    return `<div class="ai-cta-row">
+      <button type="button" class="ai-cta-btn ai-cta-voir-tout">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        Voir tous les prospects
+      </button>
+    </div>`;
+  }
+
+  function bindVoirToutProspects(root) {
+    if (!root) return;
+    root.querySelectorAll(".ai-cta-voir-tout:not([data-bound])").forEach((btn) => {
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", () => {
+        if (typeof switchView === "function") switchView("leads");
+      });
+    });
   }
 
   function ensureMessagesContainer() {
@@ -292,6 +386,7 @@
     node.classList.remove("ai-msg-streaming");
     const actions = extractActions(fullText);
     const visible = stripActionBlocks(fullText) || "…";
+    const normalized = normalizeActions(actions, visible);
     const bubble = node.querySelector(".ai-msg-bubble");
     if (bubble) {
       bubble.innerHTML = renderMarkdownLite(visible);
@@ -299,14 +394,20 @@
     }
 
     const body = node.querySelector(".ai-msg-body");
-    if (body && actions.length) {
-      const actionsHtml = renderActionsHtml(actions);
-      body.insertAdjacentHTML("beforeend", actionsHtml);
-      const btns = body.querySelectorAll(".ai-action-btn");
-      btns.forEach((btn) => {
-        const idx = parseInt(btn.dataset.actionIdx, 10);
-        btn.addEventListener("click", () => runAction(btn, actions[idx]));
-      });
+    if (body) {
+      if (shouldShowVoirToutProspects(fullText) || shouldShowVoirToutProspects(visible)) {
+        body.insertAdjacentHTML("beforeend", renderVoirToutProspectsCta());
+        bindVoirToutProspects(body);
+      }
+      if (normalized.length) {
+        const actionsHtml = renderActionsHtml(normalized, visible);
+        body.insertAdjacentHTML("beforeend", actionsHtml);
+        const btns = body.querySelectorAll(".ai-action-btn:not(.ai-action-disabled)");
+        btns.forEach((btn) => {
+          const idx = parseInt(btn.dataset.actionIdx, 10);
+          btn.addEventListener("click", () => runAction(btn, normalized[idx], visible));
+        });
+      }
     }
     scrollToBottom();
   }
@@ -320,9 +421,18 @@
   }
 
   // ── Exécution d'une action validée ──
-  async function runAction(btn, action) {
+  async function runAction(btn, action, contextText) {
     if (!btn || !action) return;
     if (btn.dataset.running === "1") return;
+    const payload = { ...action };
+    if (actionNeedsLeadId(payload)) {
+      const lid = resolveLeadIdFromAction(payload, contextText || "");
+      if (!lid) {
+        deps().showToast("Id prospect manquant — mentionnez #60 dans la réponse ou relancez l'IA", "error");
+        return;
+      }
+      payload.lead_id = lid;
+    }
     btn.dataset.running = "1";
     btn.disabled = true;
     const original = btn.innerHTML;
@@ -331,7 +441,7 @@
       const res = await fetch(`${deps().API}/ai/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...deps().getAuthHeaders() },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action: payload }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
