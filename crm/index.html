@@ -1141,43 +1141,86 @@
   <!-- Loader crawl -->
   <div class="crawl-loader" id="crawl-loader">
     <div class="crawl-loader-card">
-      <div class="crawl-loader-header">
-        <div class="crawl-loader-scene" aria-hidden="true">
-          <div class="crawl-scene-sky">
-            <div class="crawl-cloud crawl-cloud-1"></div>
-            <div class="crawl-cloud crawl-cloud-2"></div>
-          </div>
-          <div class="crawl-scene-city">
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
-          <div class="crawl-scene-house">
-            <div class="crawl-house-roof"></div>
-            <div class="crawl-house-body">
-              <div class="crawl-house-window crawl-house-window-left"></div>
-              <div class="crawl-house-window crawl-house-window-right"></div>
-              <div class="crawl-house-door"></div>
-            </div>
-          </div>
-          <div class="crawl-scene-search">
-            <div class="crawl-search-ring"></div>
-            <div class="crawl-search-handle"></div>
-          </div>
-          <div class="crawl-scene-badge crawl-badge-m2">m²</div>
-          <div class="crawl-scene-badge crawl-badge-euro">€</div>
-          <div class="crawl-scene-badge crawl-badge-pin">📍</div>
-          <div class="crawl-scene-key">🔑</div>
+
+      <!-- En-tête : statut + titre + actions -->
+      <div class="crawl-loader-head">
+        <div class="crawl-head-status">
+          <span class="crawl-status-pulse" aria-hidden="true"></span>
+          <p class="crawl-loader-title" id="crawl-loader-title">Veille en cours</p>
         </div>
         <div class="crawl-loader-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-close-btn" title="Arrêter la veille et fermer">✕ Fermer</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — la veille continue, notification à la fin">⤓ Arrière-plan</button>
-          <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn" title="Arrêter la veille">Arrêter</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-minimize-btn" title="Réduire — la veille continue en arrière-plan">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M4 20l7-7M20 4l-7 7"/></svg>
+            Réduire
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" id="crawl-cancel-btn">Arrêter</button>
+          <button type="button" class="crawl-close-x" id="crawl-close-btn" aria-label="Fermer">×</button>
         </div>
       </div>
-      <p class="crawl-loader-title" id="crawl-loader-title">Veille en cours</p>
+
+      <!-- Stepper de phases -->
+      <div class="crawl-phase-track" id="crawl-phase-track" aria-hidden="true">
+        <div class="crawl-phase-step" data-phase="discovery">
+          <div class="crawl-phase-dot">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          </div>
+          <span>Découverte</span>
+        </div>
+        <div class="crawl-phase-line"></div>
+        <div class="crawl-phase-step" data-phase="analysis">
+          <div class="crawl-phase-dot">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path d="M4 6h16M4 10h16M4 14h10"/></svg>
+          </div>
+          <span>Lecture</span>
+        </div>
+        <div class="crawl-phase-line"></div>
+        <div class="crawl-phase-step" data-phase="verify">
+          <div class="crawl-phase-dot">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+          </div>
+          <span>Vérification</span>
+        </div>
+        <div class="crawl-phase-line"></div>
+        <div class="crawl-phase-step" data-phase="save">
+          <div class="crawl-phase-dot">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path d="M20 6L9 17l-5-5"/></svg>
+          </div>
+          <span>Enregistrement</span>
+        </div>
+      </div>
+
+      <!-- Portail + annonce en cours -->
       <div class="crawl-target" id="crawl-loader-target">
         <span class="crawl-target-site" id="crawl-loader-site" hidden></span>
         <span class="crawl-target-detail" id="crawl-loader-detail"></span>
       </div>
+
+      <!-- Étape courante -->
+      <p class="crawl-loader-step" id="crawl-loader-step">
+        <span class="crawl-step-dot" aria-hidden="true"></span>
+        <span id="crawl-loader-step-text">Initialisation…</span>
+      </p>
+
+      <!-- Barre de progression -->
+      <div class="crawl-loader-bar">
+        <div class="crawl-loader-fill" id="crawl-loader-fill">
+          <span class="crawl-bar-walker" aria-hidden="true">🏠</span>
+        </div>
+      </div>
+      <div class="crawl-loader-progressline">
+        <span class="crawl-loader-pct" id="crawl-loader-pct">0%</span>
+        <span class="crawl-eta" id="crawl-loader-eta"></span>
+      </div>
+
+      <!-- Compteurs temps réel -->
+      <div class="crawl-stats" id="crawl-loader-stats" aria-live="polite">
+        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-analyzed">0</span><span class="crawl-stat-lbl">analysées</span></div>
+        <div class="crawl-stat crawl-stat-ok"><span class="crawl-stat-val" id="cls-verified">0</span><span class="crawl-stat-lbl">vérifiées</span></div>
+        <div class="crawl-stat crawl-stat-new"><span class="crawl-stat-val" id="cls-new">0</span><span class="crawl-stat-lbl">nouveaux</span></div>
+        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-updated">0</span><span class="crawl-stat-lbl">mis à jour</span></div>
+      </div>
+
+      <!-- Mini-navigateur animé (activité live) -->
       <div class="crawl-activity" id="crawl-activity" data-phase="loading" aria-hidden="true">
         <div class="crawl-activity-bar">
           <span class="cab-dot"></span><span class="cab-dot"></span><span class="cab-dot"></span>
@@ -1195,24 +1238,11 @@
           <span class="cav-live-badge" id="crawl-activity-live" hidden>● LIVE</span>
         </div>
       </div>
-      <p class="crawl-loader-step" id="crawl-loader-step"><span class="crawl-step-dot" aria-hidden="true"></span><span id="crawl-loader-step-text">Initialisation…</span></p>
-      <div class="crawl-loader-bar">
-        <div class="crawl-loader-fill" id="crawl-loader-fill">
-          <span class="crawl-bar-walker" aria-hidden="true">🏠</span>
-        </div>
-      </div>
-      <div class="crawl-loader-progressline">
-        <span class="crawl-loader-pct" id="crawl-loader-pct">0%</span>
-        <span class="crawl-eta" id="crawl-loader-eta"></span>
-      </div>
-      <div class="crawl-stats" id="crawl-loader-stats" aria-live="polite">
-        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-analyzed">0</span><span class="crawl-stat-lbl">analysées</span></div>
-        <div class="crawl-stat crawl-stat-ok"><span class="crawl-stat-val" id="cls-verified">0</span><span class="crawl-stat-lbl">vérifiées</span></div>
-        <div class="crawl-stat crawl-stat-new"><span class="crawl-stat-val" id="cls-new">0</span><span class="crawl-stat-lbl">nouveaux</span></div>
-        <div class="crawl-stat"><span class="crawl-stat-val" id="cls-updated">0</span><span class="crawl-stat-lbl">à jour</span></div>
-      </div>
-      <p class="crawl-loader-tip" id="crawl-loader-tip">On parcourt le marché immobilier pour vous…</p>
+
+      <!-- Conseil rotatif + journal d'activité -->
+      <p class="crawl-loader-tip" id="crawl-loader-tip">Analyse du marché en cours…</p>
       <ul class="crawl-loader-feed" id="crawl-loader-feed" aria-live="polite"></ul>
+
     </div>
   </div>
 

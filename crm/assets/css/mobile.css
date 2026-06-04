@@ -1,5 +1,11 @@
 /* Veliora CRM — Mobile-first responsive */
 
+/* Touch : évite le délai 300 ms et les conflits de scroll sur les liens nav */
+.nav-item,
+.nav-group-toggle {
+  touch-action: manipulation;
+}
+
 .mobile-nav-toggle,
 .mobile-bottom-nav {
   display: none;
@@ -27,11 +33,14 @@
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex !important;
     flex-direction: column;
+    /* Empêche la sidebar hors-écran d'intercepter les événements tactiles */
+    pointer-events: none;
   }
 
   .sidebar.open {
     transform: translateX(0);
     box-shadow: 8px 0 40px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
   }
 
   .sidebar-overlay {
@@ -1595,12 +1604,13 @@
 }
 
 /* Crawl dock + loader (tous écrans) */
+.crawl-loader-head,
 .crawl-loader-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 
 .crawl-loader-actions {
