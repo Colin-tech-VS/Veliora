@@ -1814,12 +1814,13 @@ class CrawlerEngine:
         if not (getattr(stub, "source_url", None) or "").startswith("http"):
             stub = LeadData(source_url=url, source=adapter.source_name)
         stub.source_url = url
-        if not (stub.owner or "").strip() or stub.owner == "—":
+        # owner est une @property (first_name + last_name) — pas de setter.
+        if not ((stub.first_name or "").strip() or (stub.last_name or "").strip()):
             path_hint = urlparse(url).path.rstrip("/").split("/")[-1][:80]
-            stub.owner = path_hint or "Annonce"
+            stub.first_name = path_hint or "Annonce"
         if not (stub.raw_extras or {}).get("listing_title"):
             stub.raw_extras = dict(stub.raw_extras or {})
-            stub.raw_extras.setdefault("listing_title", stub.owner)
+            stub.raw_extras.setdefault("listing_title", stub.owner or stub.first_name)
         saved = save_lead(
             stub,
             source_id=source_id or adapter.source_id,
