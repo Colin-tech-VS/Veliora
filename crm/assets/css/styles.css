@@ -5456,18 +5456,39 @@ body:has(.crawl-dock.open) .script-dock.open {
 .crawl-phase-track {
   display: flex;
   align-items: flex-start;
+  width: 100%;
   margin: 0 0 1.15rem;
 }
 
+/* Chaque phase occupe une colonne égale → les libellés restent centrés sous
+   leur pastille et ne touchent jamais les bords de la carte. */
 .crawl-phase-step {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
-  flex-shrink: 0;
+}
+
+/* Trait de liaison dessiné par la phase elle-même : d'une pastille à la
+   suivante. Toujours présent (ne se fait jamais écraser à 0) et jamais coupé. */
+.crawl-phase-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 13px;                /* centré verticalement sur les pastilles de 28px */
+  left: calc(50% + 18px);   /* bord droit de la pastille (14px) + petite marge */
+  right: calc(-50% + 18px); /* rejoint le bord gauche de la pastille suivante */
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+  transition: background 0.4s var(--ease-out);
 }
 
 .crawl-phase-dot {
+  position: relative;
+  z-index: 1;
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -5482,23 +5503,21 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 
 .crawl-phase-step span {
-  font-size: 0.6rem;
+  font-size: clamp(0.46rem, 2vw, 0.6rem);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.01em;
   color: var(--text-muted);
-  white-space: nowrap;
+  text-align: center;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow-wrap: break-word;
   transition: color 0.3s ease;
 }
 
+/* Anciens traits de liaison désormais gérés via ::before sur chaque phase. */
 .crawl-phase-line {
-  flex: 1;
-  height: 2px;
-  background: var(--border);
-  margin: 13px 3px 0; /* centre verticalement avec les dots */
-  border-radius: 1px;
-  transition: background 0.4s ease;
-  align-self: flex-start;
+  display: none;
 }
 
 /* Phase active */
@@ -5532,7 +5551,7 @@ body:has(.crawl-dock.open) .script-dock.open {
   color: #16a34a;
 }
 
-.crawl-phase-line.done {
+.crawl-phase-step.done::before {
   background: #22c55e;
 }
 
