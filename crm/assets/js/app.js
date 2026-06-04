@@ -1048,28 +1048,26 @@ function formatEtaTotal(sec) {
   return m ? `~${h} h ${m} min` : `~${h} h`;
 }
 
+// Ferme le tiroir mobile (sidebar + overlay). Appelée aussi par la navigation
+// pour garantir la fermeture même sur iOS Safari (cf. setupNavigation).
+function closeMobileSidebar() {
+  document.getElementById("sidebar")?.classList.remove("open");
+  document.getElementById("sidebar-overlay")?.classList.remove("open");
+}
+
 function setupMobileNav() {
   const toggle = document.getElementById("mobile-nav-toggle");
-  const sidebar = document.getElementById("sidebar");
   const overlay = document.getElementById("sidebar-overlay");
-  const close = () => {
-    sidebar?.classList.remove("open");
-    overlay?.classList.remove("open");
-  };
   toggle?.addEventListener("click", () => {
-    sidebar?.classList.toggle("open");
+    document.getElementById("sidebar")?.classList.toggle("open");
     overlay?.classList.toggle("open");
   });
-  overlay?.addEventListener("click", close);
-  // Délégation d'événement : plus fiable sur mobile (touch, groupes ouverts/fermés)
-  sidebar?.addEventListener("click", (e) => {
-    if (e.target.closest(".nav-item[data-view]")) close();
-  });
+  overlay?.addEventListener("click", closeMobileSidebar);
 
   document.querySelectorAll(".mobile-bottom-nav button").forEach((btn) => {
     btn.addEventListener("click", () => {
       switchView(btn.dataset.view);
-      close();
+      closeMobileSidebar();
       document.querySelectorAll(".mobile-bottom-nav button").forEach((b) => {
         b.classList.toggle("active", b === btn);
       });
@@ -1795,7 +1793,13 @@ async function init() {
 
 function setupNavigation() {
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
-    btn.addEventListener("click", () => switchView(btn.dataset.view));
+    // Listener direct sur chaque bouton : sur iOS Safari les clics ne remontent
+    // pas de façon fiable vers un conteneur non interactif (<aside>), donc on
+    // déclenche navigation ET fermeture du tiroir mobile ici même.
+    btn.addEventListener("click", () => {
+      switchView(btn.dataset.view);
+      closeMobileSidebar();
+    });
   });
   // Groupes repliables de la sidebar (un seul ouvert à la fois)
   document.querySelectorAll(".nav-group-toggle").forEach((toggle) => {
