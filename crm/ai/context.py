@@ -47,8 +47,16 @@ def _fmt_price(lead: dict) -> str:
 
 
 def _short_lead(lead: dict) -> str:
-    bits = [f"#{lead.get('id')}"]
-    title = lead.get("listing_title") or lead.get("address") or "annonce"
+    """Prospect = annonce crawlée (vendeur / propriétaire à mandater) — pas un acheteur."""
+    lid = lead.get("id")
+    bits = [f"PROSPECT annonce #{lid}"]
+    owner = (lead.get("owner") or "").strip()
+    if owner and owner != "—":
+        bits.append(f"vendeur={owner[:60]}")
+    lead_type = (lead.get("type") or "").strip()
+    if lead_type:
+        bits.append(f"type={lead_type}")
+    title = lead.get("listing_title") or lead.get("address") or "bien"
     bits.append(str(title)[:80])
     bits.append(_fmt_price(lead))
     if lead.get("surface"):
@@ -56,7 +64,7 @@ def _short_lead(lead: dict) -> str:
     if lead.get("city"):
         bits.append(str(lead.get("city")))
     pipeline = lead.get("pipeline") or lead.get("status") or "—"
-    bits.append(f"pipeline={pipeline}")
+    bits.append(f"pipeline_prospect={pipeline}")
     score = lead.get("mandate_score") or 0
     if score:
         bits.append(f"Score Mandat™ {score}/100")
@@ -68,8 +76,8 @@ def _short_lead(lead: dict) -> str:
 
 def _lead_index_line(lead: dict) -> str:
     """Ligne ultra-compacte pour l'index complet des annonces (budget tokens maîtrisé)."""
-    bits = [f"#{lead.get('id')}"]
-    title = lead.get("listing_title") or lead.get("address") or "annonce"
+    bits = [f"PROSPECT #{lead.get('id')}"]
+    title = lead.get("listing_title") or lead.get("address") or "bien"
     bits.append(str(title)[:48])
     if lead.get("city"):
         bits.append(str(lead.get("city")))
@@ -86,9 +94,12 @@ LEAD_INDEX_CAP = 150
 
 
 def _short_client(c: dict) -> str:
+    """Acheteur/locataire = fiche Clients (recherche d'achat/location) — pas une annonce."""
     name = c.get("full_name") or " ".join(filter(None, [c.get("first_name"), c.get("last_name")])) or "Sans nom"
     seg = (c.get("segment") or "acheteur").lower()
-    bits = [f"#{c.get('id')}", name, seg]
+    cid = str(c.get("id") or "")
+    short_ref = cid[:8] if len(cid) >= 8 else cid
+    bits = [f"CLIENT {seg}", f"ref={short_ref}", name]
     if c.get("budget_min") or c.get("budget_max"):
         bits.append(
             f"budget {_fmt_int(c.get('budget_min'))}–{_fmt_int(c.get('budget_max'))} €"
@@ -166,41 +177,58 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
     lines.append("## Mission")
     lines.append(
         "- Conseille, analyse, priorise les actions commerciales du jour.\n"
-        "- Tu as la vision complète du portefeuille (annonces crawlées, acheteurs/locataires, pipeline).\n"
-        "- Si on te demande de modifier une fiche, propose une action structurée en JSON "
+        "- Tu as la vision du portefeuille : **prospects/annonces** (veille crawl) et **clients acheteurs/locataires** (recherche).\n"
+        "- Si on te demande de modifier une fiche **prospect**, propose une action structurée en JSON "
         "uniquement dans le bloc ACTION_JSON en fin de message (jamais au milieu du texte).\n"
         "- Réponds en **français correct** (accents é à è ù ç œ, symbole €, signe ≥) — "
         "jamais de caractères cassés du type « analysÃ© » ou « â¬ ».\n"
         "- Ton professionnel et chaleureux ; va droit au but."
     )
     lines.append("")
+    lines.append("## Lexique Veliora — ne jamais confondre")
+    lines.append(
+        "| Concept CRM | Qui c'est | Où dans les données | Identifiant dans tes réponses |\n"
+        "|---|---|---|---|\n"
+        "| **Prospect** / **annonce** | Vendeur ou propriétaire d'un bien **à mandater** (particulier, PAP, portail…) | Sections « PROSPECT » / « annonces » ci-dessous | **`#123`** (nombre seul) → lien fiche prospect |\n"
+        "| **Client acheteur** | Personne qui **cherche à acheter** | Section « CLIENT acheteur » | **Pas de `#id`** — nom + budget ; ref interne `ref=…` si besoin |\n"
+        "| **Client locataire** | Personne qui **cherche à louer** | Section « CLIENT locataire » | **Pas de `#id`** — nom + loyer max ; ref interne `ref=…` |\n"
+        "\n"
+        "Règles strictes :\n"
+        "- Le **pipeline** (`nouveau`, `a_contacter`, `mandat`…) s'applique **uniquement aux prospects/annonces**, jamais aux clients acheteurs/locataires.\n"
+        "- Le **Score Mandat™** et la **veille portails** concernent **uniquement les prospects**.\n"
+        "- Le **budget min/max**, **segment acheteur/locataire** et **villes recherchées** concernent **uniquement les clients**, pas les prospects.\n"
+        "- Ne dis jamais qu'un **prospect** est un acheteur, ni qu'un **client** est une annonce crawlée.\n"
+        "- Le champ `owner` / vendeur d'une annonce = **propriétaire à démarcher**, pas un client acheteur.\n"
+        "- Pour rapprocher : tu proposes des **annonces (#id)** qui matchent un **client (acheteur/locataire)** — deux mondes distincts."
+    )
+    lines.append("")
     lines.append("## Mise en forme obligatoire (Markdown lisible dans l'UI)")
     lines.append(
         "Structure **toutes** tes réponses ainsi :\n"
-        "1. Un titre `##` (ex. `## Correspondances annonces ↔ acheteurs`).\n"
-        "2. Pour **chaque acheteur/locataire** : un sous-titre `### Prénom Nom` puis une ligne "
-        "résumé en gras : budget, type, pièces, surface, villes.\n"
-        "3. Sous chaque acheteur : liste à puces `-` avec les annonces pertinentes, une par ligne :\n"
-        "   `- **#ID** · [titre court] · **ville** · **prix €** · courte note (dans/sous budget…)`\n"
-        "   Utilise toujours le préfixe `#` devant l'id annonce (ex. `#60`) pour que l'interface crée un lien cliquable.\n"
-        "4. Sépare les sections par une ligne `---` si besoin.\n"
-        "5. Termine par `### Prochaine étape` : 1 à 3 actions concrètes en puces.\n"
-        "6. **Ne jamais** afficher `ACTION_JSON`, du JSON brut ni de blocs ```json dans le corps "
-        "visible — place-les seulement après tout le texte utilisateur, sur une ligne seule "
-        "`ACTION_JSON` puis le bloc json (l'interface le masque et affiche des boutons).\n"
-        "Utilise `**gras**` pour noms, prix et ids ; évite les pavés de texte."
+        "1. Un titre `##` (ex. `## Annonces à proposer aux acheteurs`).\n"
+        "2. Pour un **matching** : sous-titre `### Client — Prénom Nom (acheteur ou locataire)` puis budget, critères.\n"
+        "3. Sous ce client : puces avec **annonces prospects** uniquement :\n"
+        "   `- **#60** · [titre] · **ville** · **prix €** · note (dans budget, surface OK…)`\n"
+        "   Le préfixe **`#` + nombre** = id **prospect/annonce** uniquement (lien CRM).\n"
+        "4. Pour parler **d'un prospect seul** : `### Prospect #60 — [titre]` (pipeline, vendeur, Score Mandat™).\n"
+        "5. Sépare les sections par `---` si besoin.\n"
+        "6. Termine par `### Prochaine étape` : 1 à 3 actions concrètes en puces.\n"
+        "7. **Ne jamais** afficher `ACTION_JSON`, du JSON brut ni de blocs ```json dans le corps visible.\n"
+        "Utilise `**gras**` pour noms, prix et ids prospect ; évite les pavés de texte."
     )
     lines.append("")
-    lines.append("## Indicateurs clés")
+    lines.append("## Indicateurs clés (prospects / annonces crawlées)")
     lines.append(
-        f"- Annonces totales : {_fmt_int(stats.get('total'))} "
+        f"- Prospects (annonces) totaux : {_fmt_int(stats.get('total'))} "
         f"(particuliers : {_fmt_int(stats.get('particuliers'))}, "
         f"sans agence : {_fmt_int(stats.get('sans_agence'))})"
     )
     lines.append(
-        f"- Nouveaux à contacter : {_fmt_int(stats.get('nouveaux'))} · "
-        f"Mandats en cours : {_fmt_int(stats.get('mandats'))}"
+        f"- Prospects nouveaux à contacter : {_fmt_int(stats.get('nouveaux'))} · "
+        f"Prospects en mandat : {_fmt_int(stats.get('mandats'))}"
     )
+    if actifs:
+        lines.append(f"- Clients acheteurs/locataires actifs : {len(actifs)}")
     if pipeline_counts:
         pipeline_str = ", ".join(f"{k}={v}" for k, v in sorted(pipeline_counts.items(), key=lambda x: -x[1])[:6])
         lines.append(f"- Pipeline détaillé : {pipeline_str}")
@@ -209,7 +237,9 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
 
     if top_leads:
         lines.append("")
-        lines.append(f"## Top {len(top_leads)} annonces (par Score Mandat™ décroissant)")
+        lines.append(
+            f"## Top {len(top_leads)} prospects / annonces (Score Mandat™ — vendeurs à mandater)"
+        )
         for lead in top_leads:
             lines.append("- " + _short_lead(lead))
 
@@ -219,9 +249,12 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
     if remaining:
         lines.append("")
         lines.append(
-            f"## Index complet des annonces ({len(remaining)} autres — format compact)"
+            f"## Index prospects / annonces ({len(remaining)} autres — format compact)"
         )
-        lines.append("Pour répondre sur n'importe quelle annonce : id · titre · ville · prix · score (SM).")
+        lines.append(
+            "Chaque ligne = **prospect** crawlé (pas un client acheteur). "
+            "Référence utilisateur : #id · titre · ville · prix · SM."
+        )
         for lead in remaining:
             lines.append("- " + _lead_index_line(lead))
         if len(sorted_leads) > LEAD_INDEX_CAP:
@@ -232,7 +265,12 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
 
     if top_clients:
         lines.append("")
-        lines.append(f"## Acheteurs / locataires actifs ({len(top_clients)} affichés)")
+        lines.append(
+            f"## Clients — acheteurs & locataires ({len(top_clients)} affichés, hors veille)"
+        )
+        lines.append(
+            "Personnes en recherche d'un bien. **Ne pas** confondre avec les prospects/annonces ci-dessus."
+        )
         for c in top_clients:
             lines.append("- " + _short_client(c))
 
@@ -252,19 +290,19 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
             lines.append(f"- {m.get('content')}")
 
     lines.append("")
-    lines.append("## Format des actions modifiantes")
+    lines.append("## Format des actions modifiantes (prospects uniquement)")
     lines.append(
-        "Si tu proposes une action concrète (mettre à jour un prospect, ajouter une note, planifier "
-        "une relance…), termine ta réponse par un bloc :\n\n"
+        "Les actions JSON ne modifient **que les fiches prospect/annonce** (`lead_id` entier), "
+        "**jamais** un client acheteur/locataire (UUID, module Clients).\n"
+        "Si on te demande de modifier un **client** acheteur/locataire : explique que ce n'est pas "
+        "automatisé via l'assistant — l'agent doit le faire dans le menu **Clients**.\n\n"
+        "Pour un **prospect**, termine par :\n\n"
         "ACTION_JSON ```json\n"
         '{"action": "update_pipeline", "lead_id": 123, "pipeline": "contacte", "note": "Premier appel OK"}\n'
         "```\n\n"
-        "Actions reconnues côté UI : `update_pipeline`, `add_note`, `set_followup`, "
-        "`remember`. L'agent valide chaque action d'un clic — toi tu te contentes "
-        "de la suggérer.\n"
-        "Valeurs `pipeline` acceptées (et uniquement celles-ci) : `nouveau`, "
-        "`a_contacter`, `contacte`, `rdv`, `mandat`, `perdu`. N'invente jamais "
-        "d'autre valeur."
+        "Actions reconnues : `update_pipeline`, `add_note`, `set_followup`, `remember`.\n"
+        "`lead_id` = id **prospect** (#123 dans le texte), pas un client.\n"
+        "Pipeline prospect uniquement : `nouveau`, `a_contacter`, `contacte`, `rdv`, `mandat`, `perdu`."
     )
     return "\n".join(lines)
 
