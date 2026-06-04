@@ -2069,7 +2069,59 @@ class CrawlerEngine:
                         listings_done=result.listings_processed,
                     )
         else:
-            if saved and not saved.get("verified"):
+            if saved and saved.get("id") and not saved.get("verified"):
+                # On remonte TOUJOURS l'annonce, même incomplète : la fiche est
+                # enregistrée (verified=0), étiquetée « à vérifier », et reste
+                # triée plus bas grâce à son score (champs manquants). Mieux vaut
+                # une piste à compléter qu'une veille qui ne ramène rien.
+                detail = saved.get("verification") or format_missing_fields(lead.missing_fields())
+                errs = saved.get("errors") or []
+                if errs:
+                    detail = f"{detail} — {', '.join(errs)}"
+                self._submit_address_match(saved, lead)
+                from crawler.lead_changes import diff_lead_fields, record_lead_change
+
+                created = bool(saved.get("created"))
+                details = diff_lead_fields(None, lead) if created else []
+                if created:
+                    result.leads_saved += 1
+                else:
+                    result.leads_updated += 1
+                add_activity(
+                    "new" if created else "crawl",
+                    f"{'Nouveau prospect' if created else 'Mise à jour'} à vérifier — "
+                    f"{lead.owner or 'Vendeur'} — {detail[:60]}",
+                    self._agency_id,
+                )
+                record_lead_change(
+                    job_id=job_id,
+                    agency_id=self._agency_id,
+                    lead_id=int(saved["id"]),
+                    change_type="created" if created else "updated",
+                    summary=f"À vérifier — {lead.owner or 'Vendeur'}",
+                    details=details,
+                    source_name=adapter.source_name,
+                    listing_url=url,
+                    owner_label=lead.owner,
+                )
+                issue = CrawlError.issue(CrawlError.INCOMPLETE_DATA, detail, url)
+                result.warnings.append(issue)
+                add_crawl_log(
+                    source_id or adapter.source_id,
+                    url,
+                    "saved_unverified",
+                    f"Fiche remontée à vérifier — {detail[:80]}",
+                    job_id,
+                )
+                if job_id:
+                    update_crawl_job(
+                        job_id,
+                        message=f"Prospect à vérifier — {lead.owner or 'compléter la fiche'}",
+                        leads_saved=result.leads_saved,
+                        leads_updated=result.leads_updated,
+                        leads_found=result.leads_found,
+                    )
+            elif saved and not saved.get("verified"):
                 detail = saved.get("verification") or format_missing_fields(lead.missing_fields())
                 errs = saved.get("errors") or []
                 if errs:
