@@ -1040,6 +1040,7 @@ class CrawlerEngine:
         discovery_scroll = discovery_scroll_lazy()
         zero_yield_pages = 0
         fallback_seeds_done = False
+        ai_discovery_attempts = 0
 
         if DOMAIN_WARMUP_ENABLED and CRAWL_SPEED_PROFILE == "quality" and adapter.config.base_url and start_url != adapter.config.base_url:
             warmup_domain(adapter.config.base_url, start_url)
@@ -1111,6 +1112,30 @@ class CrawlerEngine:
             batch = filter_listing_urls(
                 adapter.find_listings(fetched.html, page_url, limit=MAX_LISTING_LINKS)
             )
+            if len(batch) < 2:
+                from crawler.site_discovery import find_listing_links_adaptive
+
+                adaptive = find_listing_links_adaptive(
+                    fetched.html,
+                    page_url,
+                    base_url,
+                    adapter.config.listing_patterns,
+                    limit=MAX_LISTING_LINKS,
+                )
+                batch = filter_listing_urls(
+                    list(dict.fromkeys(batch + adaptive))[:MAX_LISTING_LINKS]
+                )
+            if len(batch) < 2 and ai_discovery_attempts < 2:
+                from crawler.ai_discovery import ai_discovery_enabled, ai_extract_listing_urls
+
+                if ai_discovery_enabled():
+                    ai_discovery_attempts += 1
+                    ai_batch = ai_extract_listing_urls(
+                        fetched.html, page_url, base_url, limit=35
+                    )
+                    batch = filter_listing_urls(
+                        list(dict.fromkeys(batch + ai_batch))[:MAX_LISTING_LINKS]
+                    )
             for link in batch:
                 if city and not listing_url_likely_in_city(link, city):
                     continue
@@ -1129,8 +1154,7 @@ class CrawlerEngine:
                 break
 
             if (
-                not city_slug
-                and not fallback_seeds_done
+                not fallback_seeds_done
                 and zero_yield_pages >= 3
                 and len(all_links) < 3
                 and pages_to_visit
@@ -1223,7 +1247,106 @@ class CrawlerEngine:
                 message=f"Exploration terminée — {len(visited_pages)} page(s), aucune annonce trouvée",
             )
 
+        if len(all_links) < 3:
+            rescue = self._last_resort_listing_discovery(
+                start_url,
+                adapter,
+                source_id,
+                job_id,
+                city=city,
+                portal_seeds=portal_seeds,
+                seen=seen,
+            )
+            for link in rescue:
+                if city and not listing_url_likely_in_city(link, city):
+                    continue
+                if link not in seen:
+                    seen.add(link)
+                    all_links.append(link)
+
         return all_links, None
+
+    def _last_resort_listing_discovery(
+        self,
+        start_url: str,
+        adapter: BaseAdapter,
+        source_id: str | None,
+        job_id: str | None,
+        *,
+        city: str | None,
+        portal_seeds: list[str],
+        seen: set[str],
+    ) -> list[str]:
+        """Repli : navigateur complet + heuristiques élargies + IA si clé API."""
+        from crawler.site_discovery import (
+            build_site_seed_urls,
+            find_listing_links_adaptive,
+        )
+
+        base_url = adapter.config.base_url or start_url
+        candidates = list(
+            dict.fromkeys(
+                [start_url, adapter.config.search_url or "", base_url]
+                + (portal_seeds or [])[:8]
+                + build_site_seed_urls(base_url, start_url)[:10]
+            )
+        )
+        found: list[str] = []
+        for page_url in candidates:
+            if not page_url or not page_url.startswith("http"):
+                continue
+            if job_id:
+                update_crawl_job(
+                    job_id,
+                    message=f"Repli découverte — nouvelle tentative sur {urlparse(page_url).netloc}…",
+                )
+            fetched = fetch_page(
+                page_url,
+                scroll_lazy=True,
+                referer=base_url,
+                prefer_browser=True,
+                fast_mode=False,
+            )
+            if not fetched.ok or not (fetched.html or "").strip():
+                continue
+            batch = filter_listing_urls(
+                adapter.find_listings(fetched.html, page_url, limit=MAX_LISTING_LINKS)
+            )
+            if len(batch) < 3:
+                adaptive = find_listing_links_adaptive(
+                    fetched.html,
+                    page_url,
+                    base_url,
+                    adapter.config.listing_patterns,
+                    limit=MAX_LISTING_LINKS,
+                )
+                batch = filter_listing_urls(
+                    list(dict.fromkeys(batch + adaptive))[:MAX_LISTING_LINKS]
+                )
+            if len(batch) < 3:
+                from crawler.ai_discovery import ai_extract_listing_urls
+
+                ai_links = ai_extract_listing_urls(
+                    fetched.html, page_url, base_url, limit=50
+                )
+                batch = filter_listing_urls(
+                    list(dict.fromkeys(batch + ai_links))[:MAX_LISTING_LINKS]
+                )
+            for link in batch:
+                if link in seen:
+                    continue
+                found.append(link)
+            if len(found) >= 5:
+                break
+        if found and job_id:
+            add_crawl_log(
+                source_id or adapter.source_id,
+                start_url,
+                "discovery_rescue",
+                f"Repli — {len(found)} annonce(s) repérée(s)",
+                job_id,
+            )
+        return found
 
     def _existing_lead_urls_for_source(self, source_id: str | None) -> list[str]:
         """Toutes les URLs de fiches actives pour ce portail (recrawl veille)."""

@@ -434,4 +434,5 @@ def background_crawl_config() -> dict:
         "antibot_readiness": antibot_portals_readiness(),
         "proxies_configured": proxies_enabled(),
         "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
+        "ai_discovery": (os.getenv("CRAWL_AI_DISCOVERY") or "auto").strip(),
     }

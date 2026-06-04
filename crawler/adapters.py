@@ -64,7 +64,7 @@ class BaseAdapter(ABC):
 
     def find_listings(self, html: str, page_url: str, limit: int = 150) -> list[str]:
         links = find_listing_links(html, page_url, self.config.listing_patterns, limit=limit)
-        if len(links) < max(3, limit // 15):
+        if len(links) < max(1, limit // 25):
             from crawler.site_discovery import find_listing_links_adaptive
 
             base = self.config.base_url or page_url
