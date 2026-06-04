@@ -425,6 +425,24 @@ def verify_lead_crawl_snapshot(lead: LeadData) -> VerificationResult:
     errors: list[str] = []
     if not lead.source_url or not lead.source_url.startswith("http"):
         errors.append("URL annonce invalide")
+        return VerificationResult(
+            ok=False,
+            complete=False,
+            errors=errors,
+            warnings=[],
+            score=0,
+        )
+
+    from crawler.listing_guard import validate_listing_url_import
+
+    if validate_listing_url_import(lead.source_url)[0]:
+        return VerificationResult(
+            ok=True,
+            complete=False,
+            errors=[],
+            warnings=["fiche URL — données à compléter après crawl"],
+            score=32,
+        )
 
     has_price = lead.price is not None and lead.price > 0
     has_surface = _surface_ok(lead.surface)

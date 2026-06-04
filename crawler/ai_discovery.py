@@ -16,8 +16,8 @@ from crawler.listing_guard import validate_listing_url
 
 logger = logging.getLogger(__name__)
 
-_HTML_MAX_CHARS = 28_000
-_TIMEOUT_SEC = 25
+_HTML_MAX_CHARS = 36_000
+_TIMEOUT_SEC = 28
 
 
 def ai_discovery_enabled() -> bool:

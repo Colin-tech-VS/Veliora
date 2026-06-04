@@ -16,10 +16,10 @@ _IS_DESKTOP = sys.platform in ("win32", "darwin")
 CRAWL_SPEED_PROFILE = os.getenv("CRAWL_SPEED_PROFILE", "fast").strip().lower()
 
 # Crawl local : arrêt découverte dès N liens (évite les pages vides)
-CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "20"))
+CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "35"))
 
 # Plafond annonces traitées par source quand une ville est ciblée (0 = illimité)
-CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "45"))
+CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "75"))
 
 # Scalingo / PaaS : pas de Chrome embarqué par défaut
 IS_SCALINGO = bool(os.getenv("SCALINGO_APP", "").strip())
@@ -64,16 +64,16 @@ ADDRESS_MATCH_DRAIN_TIMEOUT_SEC = int(
 MAX_LISTINGS_PER_SCAN = 0
 
 # Liens extraits des pages résultats — réduit pour des crawls plus rapides
-MAX_LISTING_LINKS = int(os.getenv("MAX_LISTING_LINKS", "120"))
+MAX_LISTING_LINKS = int(os.getenv("MAX_LISTING_LINKS", "180"))
 
 # Ne pas enchaîner le crawl des blocs « annonces similaires » (évite confusion + surcharge)
 CRAWL_SIMILAR_LISTINGS = False
 
 # Pages de résultats (pagination) à parcourir
-MAX_SEARCH_PAGES = int(os.getenv("MAX_SEARCH_PAGES", "12"))
+MAX_SEARCH_PAGES = int(os.getenv("MAX_SEARCH_PAGES", "18"))
 
 # Exploration site entier : pages index / catégories / pagination (BFS)
-MAX_SITE_DISCOVERY_PAGES = int(os.getenv("MAX_SITE_DISCOVERY_PAGES", "18"))
+MAX_SITE_DISCOVERY_PAGES = int(os.getenv("MAX_SITE_DISCOVERY_PAGES", "28"))
 
 # Découverte adaptative (heuristiques + multi-seeds)
 SITE_WIDE_CRAWL_ENABLED = os.getenv("SITE_WIDE_CRAWL_ENABLED", "true").lower() in (
@@ -350,7 +350,7 @@ CRAWL_LEAD_REFRESH_MAX_PER_RUN = max(
 # Veille auto : durée max par portail (évite blocage anti-bot — on passe au suivant)
 CRAWL_VEILLE_SOURCE_MAX_SEC = max(
     120,
-    int(os.getenv("CRAWL_VEILLE_SOURCE_MAX_SEC", "420") or "420"),
+    int(os.getenv("CRAWL_VEILLE_SOURCE_MAX_SEC", "540") or "540"),
 )
 # Budget temps veille : +N secondes par fiche déjà en base (recrawl obligatoire)
 CRAWL_VEILLE_SEC_PER_EXISTING = max(

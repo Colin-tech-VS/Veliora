@@ -360,7 +360,7 @@ class CrawlerEngine:
 
         status = "completed"
         if result.errors and not result.leads_saved and not result.leads_updated:
-            if result.leads_found > 0 or result.warnings:
+            if result.leads_found > 0 or result.warnings or result.partial:
                 status = "completed"
             elif veille_soft:
                 status = "completed"
@@ -424,9 +424,12 @@ class CrawlerEngine:
         self.refresh_adapters(self._agency_id)
         sources = get_sources_for_full_crawl(self._agency_id)
         if veille_mode:
-            from crawler.storage import is_antibot_source
+            from crawler.config import antibot_portals_crawl_enabled
 
-            sources = [s for s in sources if not is_antibot_source(s)]
+            if not antibot_portals_crawl_enabled():
+                from crawler.storage import is_antibot_source
+
+                sources = [s for s in sources if not is_antibot_source(s)]
         if not sources:
             update_crawl_job(
                 job_id,
@@ -476,7 +479,9 @@ class CrawlerEngine:
             message=f"{scope} — {len(sources)} portail(s) accessible(s) : {names_preview}{extra}…",
         )
 
-        if not veille_mode:
+        from crawler.config import antibot_portals_crawl_enabled
+
+        if not veille_mode or antibot_portals_crawl_enabled():
             self._prime_protected_sources(sources, job_id, city=city)
 
         total = CrawlResult()
@@ -550,6 +555,12 @@ class CrawlerEngine:
 
         if job_id:
             update_crawl_job(job_id, progress=95, message="Finalisation et enregistrement des résultats…")
+        if (
+            total.leads_saved + total.leads_updated == 0
+            and total.leads_found == 0
+            and sources
+        ):
+            self._global_rescue_pass(sources, total, job_id, city=city)
         self._finish_job(job_id, total, finish_label, veille_soft=veille_mode)
 
     def _prime_protected_sources(
@@ -625,6 +636,15 @@ class CrawlerEngine:
     def _job_import_listing(self, job_id: str, url: str) -> None:
         url = self._normalize_url(url)
         domain = urlparse(url).netloc.replace("www.", "") or "annonce"
+        if not self._looks_like_listing(url):
+            update_crawl_job(
+                job_id,
+                progress=12,
+                message=f"Page liste détectée — exploration des annonces sur {domain}…",
+            )
+            result = self._crawl_url_sync(url, job_id=job_id)
+            self._finish_job(job_id, result, f"Import — {domain}")
+            return
         update_crawl_job(
             job_id,
             progress=12,
@@ -960,6 +980,38 @@ class CrawlerEngine:
                         is_recrawl=get_lead_by_source_url(listing_url, None) is not None,
                     )
         else:
+            rescue = self._last_resort_listing_discovery(
+                url,
+                adapter,
+                source_id,
+                job_id,
+                city=city,
+                portal_seeds=discover_seeds or [],
+                seen=set(),
+            )
+            if rescue:
+                targets = rescue[: max(15, len(rescue))]
+                if job_id:
+                    update_crawl_job(
+                        job_id,
+                        progress=50,
+                        message=f"Repli — {len(targets)} annonce(s) repérée(s), extraction…",
+                        listings_total=len(targets),
+                    )
+                for i, listing_url in enumerate(targets):
+                    if self._crawl_stopped(job_id) or not result.can_process_more_listings():
+                        break
+                    self._process_listing(
+                        listing_url,
+                        adapter,
+                        result,
+                        source_id,
+                        job_id,
+                        index=i,
+                        total=len(targets),
+                    )
+            if result.leads_saved or result.leads_updated or result.leads_found:
+                return result
             issue = CrawlError.issue(CrawlError.NO_LISTINGS, url=url)
             result.errors.append(issue)
             add_crawl_log(source_id or adapter.source_id, url, "error", issue["message"], job_id)
@@ -971,6 +1023,63 @@ class CrawlerEngine:
                 )
 
         return result
+
+    def _global_rescue_pass(
+        self,
+        sources: list[dict],
+        total: CrawlResult,
+        job_id: str | None,
+        *,
+        city: str | None = None,
+    ) -> None:
+        """Dernière passe si le crawl multi-portails n'a rien remonté."""
+        if job_id:
+            update_crawl_job(
+                job_id,
+                progress=92,
+                message="Repli global — nouvelle passe sur les portails prioritaires…",
+            )
+        for src in sources[:5]:
+            if self._crawl_stopped(job_id):
+                return
+            adapter = self.adapters.get(src["id"])
+            if not adapter:
+                continue
+            start = (
+                apply_city_to_search_url(
+                    adapter.config.search_url or adapter.config.base_url,
+                    src["id"],
+                    city,
+                )
+                if city
+                else (adapter.config.search_url or adapter.config.base_url)
+            )
+            if not start or not start.startswith("http"):
+                continue
+            seen: set[str] = set()
+            rescue = self._last_resort_listing_discovery(
+                start,
+                adapter,
+                src["id"],
+                job_id,
+                city=city,
+                portal_seeds=[],
+                seen=seen,
+            )
+            for i, listing_url in enumerate(rescue[:20]):
+                if self._crawl_stopped(job_id) or not total.can_process_more_listings():
+                    return
+                self._process_listing(
+                    listing_url,
+                    adapter,
+                    total,
+                    src["id"],
+                    job_id,
+                    index=i,
+                    total=min(20, len(rescue)),
+                )
+            if total.leads_saved or total.leads_updated:
+                return
 
     def _collect_listing_urls(
         self,
@@ -1008,9 +1117,14 @@ class CrawlerEngine:
         seen: set[str] = set()
         base_url = adapter.config.base_url or start_url
         if city_slug:
-            # Crawl local : uniquement les seeds ciblant la ville (pas les pages
-            # nationales /acheter, /vente… qui ramèneraient toute la France).
+            # Crawl local : seeds ville d'abord ; chemins catalogue en repli si vide.
             seed_urls = list(dict.fromkeys(discover_seeds or [start_url]))
+            if len(seed_urls) < 4:
+                seed_urls = list(
+                    dict.fromkeys(
+                        seed_urls + build_site_seed_urls(base_url, start_url)[:14]
+                    )
+                )
         elif SITE_WIDE_CRAWL_ENABLED:
             seed_urls = list(
                 dict.fromkeys(
@@ -1031,9 +1145,9 @@ class CrawlerEngine:
         from crawler.human import discovery_scroll_lazy
 
         if CRAWL_SPEED_PROFILE in ("fast", "turbo"):
-            max_browse_pages = min(22, MAX_SITE_DISCOVERY_PAGES)
+            max_browse_pages = min(32, MAX_SITE_DISCOVERY_PAGES)
         elif CRAWL_SPEED_PROFILE == "balanced":
-            max_browse_pages = min(28, MAX_SITE_DISCOVERY_PAGES)
+            max_browse_pages = min(36, MAX_SITE_DISCOVERY_PAGES)
         else:
             max_browse_pages = max(MAX_SEARCH_PAGES, MAX_SITE_DISCOVERY_PAGES)
 
@@ -1041,6 +1155,7 @@ class CrawlerEngine:
         zero_yield_pages = 0
         fallback_seeds_done = False
         ai_discovery_attempts = 0
+        from crawler.discovery_pipeline import extract_listing_urls_from_page
 
         if DOMAIN_WARMUP_ENABLED and CRAWL_SPEED_PROFILE == "quality" and adapter.config.base_url and start_url != adapter.config.base_url:
             warmup_domain(adapter.config.base_url, start_url)
@@ -1109,33 +1224,16 @@ class CrawlerEngine:
 
             last_method = fetched.method
             links_before = len(all_links)
-            batch = filter_listing_urls(
-                adapter.find_listings(fetched.html, page_url, limit=MAX_LISTING_LINKS)
+            batch = extract_listing_urls_from_page(
+                adapter,
+                fetched.html,
+                page_url,
+                limit=MAX_LISTING_LINKS,
+                use_ai=ai_discovery_attempts < 4,
+                ai_attempt=ai_discovery_attempts < 4,
             )
-            if len(batch) < 2:
-                from crawler.site_discovery import find_listing_links_adaptive
-
-                adaptive = find_listing_links_adaptive(
-                    fetched.html,
-                    page_url,
-                    base_url,
-                    adapter.config.listing_patterns,
-                    limit=MAX_LISTING_LINKS,
-                )
-                batch = filter_listing_urls(
-                    list(dict.fromkeys(batch + adaptive))[:MAX_LISTING_LINKS]
-                )
-            if len(batch) < 2 and ai_discovery_attempts < 2:
-                from crawler.ai_discovery import ai_discovery_enabled, ai_extract_listing_urls
-
-                if ai_discovery_enabled():
-                    ai_discovery_attempts += 1
-                    ai_batch = ai_extract_listing_urls(
-                        fetched.html, page_url, base_url, limit=35
-                    )
-                    batch = filter_listing_urls(
-                        list(dict.fromkeys(batch + ai_batch))[:MAX_LISTING_LINKS]
-                    )
+            if batch and ai_discovery_attempts < 4:
+                ai_discovery_attempts += 1
             for link in batch:
                 if city and not listing_url_likely_in_city(link, city):
                     continue
@@ -1148,9 +1246,7 @@ class CrawlerEngine:
             else:
                 zero_yield_pages += 1
 
-            # On a déjà une belle moisson et les dernières pages ne donnent plus
-            # rien : inutile de continuer à explorer du vide → on passe à l'extraction.
-            if len(all_links) >= 12 and zero_yield_pages >= 3:
+            if len(all_links) >= 25 and zero_yield_pages >= 4:
                 break
 
             if (
@@ -1247,7 +1343,7 @@ class CrawlerEngine:
                 message=f"Exploration terminée — {len(visited_pages)} page(s), aucune annonce trouvée",
             )
 
-        if len(all_links) < 3:
+        if len(all_links) < 5:
             rescue = self._last_resort_listing_discovery(
                 start_url,
                 adapter,
@@ -1277,11 +1373,9 @@ class CrawlerEngine:
         portal_seeds: list[str],
         seen: set[str],
     ) -> list[str]:
-        """Repli : navigateur complet + heuristiques élargies + IA si clé API."""
-        from crawler.site_discovery import (
-            build_site_seed_urls,
-            find_listing_links_adaptive,
-        )
+        """Repli : navigateur complet + pipeline unifié + IA si clé API."""
+        from crawler.discovery_pipeline import extract_listing_urls_from_page
+        from crawler.site_discovery import build_site_seed_urls
 
         base_url = adapter.config.base_url or start_url
         candidates = list(
@@ -1309,34 +1403,19 @@ class CrawlerEngine:
             )
             if not fetched.ok or not (fetched.html or "").strip():
                 continue
-            batch = filter_listing_urls(
-                adapter.find_listings(fetched.html, page_url, limit=MAX_LISTING_LINKS)
+            batch = extract_listing_urls_from_page(
+                adapter,
+                fetched.html,
+                page_url,
+                limit=MAX_LISTING_LINKS,
+                use_ai=True,
+                ai_attempt=True,
             )
-            if len(batch) < 3:
-                adaptive = find_listing_links_adaptive(
-                    fetched.html,
-                    page_url,
-                    base_url,
-                    adapter.config.listing_patterns,
-                    limit=MAX_LISTING_LINKS,
-                )
-                batch = filter_listing_urls(
-                    list(dict.fromkeys(batch + adaptive))[:MAX_LISTING_LINKS]
-                )
-            if len(batch) < 3:
-                from crawler.ai_discovery import ai_extract_listing_urls
-
-                ai_links = ai_extract_listing_urls(
-                    fetched.html, page_url, base_url, limit=50
-                )
-                batch = filter_listing_urls(
-                    list(dict.fromkeys(batch + ai_links))[:MAX_LISTING_LINKS]
-                )
             for link in batch:
                 if link in seen:
                     continue
                 found.append(link)
-            if len(found) >= 5:
+            if len(found) >= 8:
                 break
         if found and job_id:
             add_crawl_log(
@@ -1717,6 +1796,64 @@ class CrawlerEngine:
 
             scrub_lead_address_for_storage(lead)
 
+    def _save_listing_snapshot(
+        self,
+        lead: LeadData,
+        url: str,
+        adapter: BaseAdapter,
+        result: CrawlResult,
+        source_id: str | None,
+        job_id: str | None,
+        *,
+        import_mode: bool,
+        deep_refresh: bool,
+        is_recrawl: bool,
+    ) -> bool:
+        """Dernier recours : enregistrer au minimum l'URL de fiche (tous types de crawl)."""
+        stub = lead
+        if not (getattr(stub, "source_url", None) or "").startswith("http"):
+            stub = LeadData(source_url=url, source=adapter.source_name)
+        stub.source_url = url
+        if not (stub.owner or "").strip() or stub.owner == "—":
+            path_hint = urlparse(url).path.rstrip("/").split("/")[-1][:80]
+            stub.owner = path_hint or "Annonce"
+        if not (stub.raw_extras or {}).get("listing_title"):
+            stub.raw_extras = dict(stub.raw_extras or {})
+            stub.raw_extras.setdefault("listing_title", stub.owner)
+        saved = save_lead(
+            stub,
+            source_id=source_id or adapter.source_id,
+            job_id=job_id,
+            agency_id=self._agency_id,
+            require_verification=False,
+            deep_refresh=deep_refresh or import_mode,
+            veille_recrawl=is_recrawl and self._veille_mode,
+        )
+        if not saved or not saved.get("id"):
+            return False
+        result.leads_found += 1
+        if saved.get("created"):
+            result.leads_saved += 1
+        else:
+            result.leads_updated += 1
+        self._submit_address_match(saved, stub)
+        add_crawl_log(
+            source_id or adapter.source_id,
+            url,
+            "saved_snapshot",
+            "Fiche enregistrée (URL / données minimales)",
+            job_id,
+        )
+        if job_id:
+            update_crawl_job(
+                job_id,
+                message=f"Prospect enregistré (minimal) — {stub.owner}",
+                leads_saved=result.leads_saved,
+                leads_updated=result.leads_updated,
+                leads_found=result.leads_found,
+            )
+        return True
+
     def _process_listing(
         self,
         url: str,
@@ -1805,6 +1942,20 @@ class CrawlerEngine:
             if fetched2.ok:
                 fetched = fetched2
         if not fetched.ok:
+            if import_mode or deep_refresh or self._veille_mode:
+                stub = LeadData(source_url=url, source=adapter.source_name)
+                if self._save_listing_snapshot(
+                    stub,
+                    url,
+                    adapter,
+                    result,
+                    source_id,
+                    job_id,
+                    import_mode=import_mode,
+                    deep_refresh=deep_refresh,
+                    is_recrawl=is_recrawl,
+                ):
+                    return
             issue = CrawlError.issue(
                 fetched.error_code or CrawlError.FETCH_FAILED,
                 fetched.error_detail,
@@ -2261,6 +2412,19 @@ class CrawlerEngine:
                 if job_id:
                     update_crawl_job(job_id, message=f"Vérification échouée — {detail[:80]}")
             else:
+                snap_saved = self._save_listing_snapshot(
+                    lead,
+                    url,
+                    adapter,
+                    result,
+                    source_id,
+                    job_id,
+                    import_mode=import_mode,
+                    deep_refresh=deep_refresh,
+                    is_recrawl=is_recrawl,
+                )
+                if snap_saved:
+                    return
                 missing = lead.missing_fields()
                 detail = format_missing_fields(missing)
                 issue = CrawlError.issue(

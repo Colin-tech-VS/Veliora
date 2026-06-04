@@ -928,26 +928,45 @@ def is_recommended_crawl_source(src: dict) -> bool:
 
 def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
     """Portails + réseaux agences + petites annonces pour la veille auto."""
-    from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO, CRAWL_INCLUDE_CUSTOM_IN_AUTO
+    from crawler.config import (
+        CRAWL_INCLUDE_CATALOG_IN_AUTO,
+        CRAWL_INCLUDE_CUSTOM_IN_AUTO,
+        antibot_portals_crawl_enabled,
+    )
     from crawler.immobilier_catalog import sync_immobilier_catalog_for_agency
+    from crawler.portals import resolve_base_portal_id
 
     seed_default_sources_for_agency(agency_id)
     if CRAWL_INCLUDE_CATALOG_IN_AUTO:
         sync_immobilier_catalog_for_agency(agency_id)
     sources: list[dict] = []
+    seen: set[str] = set()
     for s in get_sources(agency_id):
+        sid = s.get("id") or ""
+        if sid in seen or not s.get("enabled"):
+            continue
         if is_recommended_crawl_source(s):
             sources.append(s)
+            seen.add(sid)
+            continue
+        if (
+            antibot_portals_crawl_enabled()
+            and resolve_base_portal_id(sid)
+            and (s.get("search_url") or s.get("base_url") or "").startswith("http")
+        ):
+            sources.append(s)
+            seen.add(sid)
             continue
         if not CRAWL_INCLUDE_CUSTOM_IN_AUTO:
             continue
-        if not s.get("enabled") or not s.get("is_custom"):
+        if not s.get("is_custom"):
             continue
         if is_antibot_source(s):
             continue
         url = (s.get("search_url") or s.get("base_url") or "").strip()
         if url.startswith("http"):
             sources.append(s)
+            seen.add(sid)
     return sorted(sources, key=_source_sort_key)
 
 
@@ -1825,39 +1844,45 @@ def save_lead(
         lead, require_verification=effective_require_verification
     )
     if require_verification and not verification.ok:
-        if existing_row:
-            listing_title_hint = (
-                (lead.raw_extras or {}).get("listing_title")
-                or existing_row.get("listing_title")
-                or None
-            )
-            clean_addr, clean_city, clean_pc = _clean_location_values(
-                existing_row.get("address"),
-                existing_row.get("city"),
-                existing_row.get("postcode"),
-                listing_title_hint,
-            )
-            clean_city, clean_pc = _canonicalize_city_postcode_values(clean_city, clean_pc)
-            if (
-                clean_addr != existing_row.get("address")
-                or clean_city != existing_row.get("city")
-                or clean_pc != existing_row.get("postcode")
-            ):
-                with get_connection() as conn:
-                    conn.execute(
-                        """UPDATE leads
-                           SET address = ?, city = ?, postcode = ?, updated_at = ?
-                           WHERE id = ? AND agency_id = ?""",
-                        (clean_addr, clean_city, clean_pc, _now(), existing_row["id"], agency_id),
-                    )
-                    conn.commit()
-        return {
-            "id": existing_row["id"] if existing_row else None,
-            "created": False,
-            "verified": False,
-            "verification": verification.summary(),
-            "errors": verification.errors,
-        }
+        if not existing_row:
+            snap, _partial = resolve_crawl_verification(lead, require_verification=False)
+            if snap.ok:
+                verification = snap
+                partial = True
+        if not verification.ok:
+            if existing_row:
+                listing_title_hint = (
+                    (lead.raw_extras or {}).get("listing_title")
+                    or existing_row.get("listing_title")
+                    or None
+                )
+                clean_addr, clean_city, clean_pc = _clean_location_values(
+                    existing_row.get("address"),
+                    existing_row.get("city"),
+                    existing_row.get("postcode"),
+                    listing_title_hint,
+                )
+                clean_city, clean_pc = _canonicalize_city_postcode_values(clean_city, clean_pc)
+                if (
+                    clean_addr != existing_row.get("address")
+                    or clean_city != existing_row.get("city")
+                    or clean_pc != existing_row.get("postcode")
+                ):
+                    with get_connection() as conn:
+                        conn.execute(
+                            """UPDATE leads
+                               SET address = ?, city = ?, postcode = ?, updated_at = ?
+                               WHERE id = ? AND agency_id = ?""",
+                            (clean_addr, clean_city, clean_pc, _now(), existing_row["id"], agency_id),
+                        )
+                        conn.commit()
+            return {
+                "id": existing_row["id"] if existing_row else None,
+                "created": False,
+                "verified": False,
+                "verification": verification.summary(),
+                "errors": verification.errors,
+            }
 
     missing_json = json.dumps(lead.missing_fields() if partial else [])
 
