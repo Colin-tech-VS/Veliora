@@ -260,8 +260,11 @@ def build_system_prompt(agency_id: str, *, user_first_name: str | None = None) -
         '{"action": "update_pipeline", "lead_id": 123, "pipeline": "contacte", "note": "Premier appel OK"}\n'
         "```\n\n"
         "Actions reconnues côté UI : `update_pipeline`, `add_note`, `set_followup`, "
-        "`remember`, `propose_call`. L'agent valide chaque action d'un clic — toi tu te contentes "
-        "de la suggérer."
+        "`remember`. L'agent valide chaque action d'un clic — toi tu te contentes "
+        "de la suggérer.\n"
+        "Valeurs `pipeline` acceptées (et uniquement celles-ci) : `nouveau`, "
+        "`a_contacter`, `contacte`, `rdv`, `mandat`, `perdu`. N'invente jamais "
+        "d'autre valeur."
     )
     return "\n".join(lines)
 
