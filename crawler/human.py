@@ -14,9 +14,22 @@ from crawler.config import (
 def _speed_preset() -> dict[str, float]:
     return active_speed_preset()
 
-# Temps moyen chargement page + scroll (secondes)
-AVG_PAGE_FETCH_SEC = 12.0
-AVG_LISTING_FETCH_SEC = 18.0
+# Temps moyen de chargement par profil de vitesse (secondes)
+_AVG_LISTING_FETCH_BY_PROFILE: dict[str, float] = {
+    "quality": 16.0,
+    "balanced": 9.0,
+    "fast": 5.5,
+    "turbo": 3.0,
+}
+_AVG_PAGE_FETCH_BY_PROFILE: dict[str, float] = {
+    "quality": 10.0,
+    "balanced": 6.5,
+    "fast": 4.0,
+    "turbo": 2.5,
+}
+
+AVG_PAGE_FETCH_SEC = 4.0       # utilisé comme fallback
+AVG_LISTING_FETCH_SEC = 5.5    # utilisé comme fallback
 WARMUP_SEC = 4.0
 
 
@@ -87,17 +100,18 @@ def estimate_crawl_seconds(
     *,
     include_warmup: bool = True,
 ) -> int:
-    """Estimation du temps total (fourchette réaliste, crawl humain)."""
+    """Estimation du temps total selon le profil de vitesse actif."""
     listings_count = max(0, listings_count)
     search_pages = max(1, search_pages)
     p = _speed_preset()
-    avg_listing = (p["listing_min"] + p["listing_max"]) / 2 + AVG_LISTING_FETCH_SEC
-    avg_page = (p["search_min"] + p["search_max"]) / 2 + AVG_PAGE_FETCH_SEC
+    fetch_l = _AVG_LISTING_FETCH_BY_PROFILE.get(CRAWL_SPEED_PROFILE, AVG_LISTING_FETCH_SEC)
+    fetch_p = _AVG_PAGE_FETCH_BY_PROFILE.get(CRAWL_SPEED_PROFILE, AVG_PAGE_FETCH_SEC)
+    avg_listing = (p["listing_min"] + p["listing_max"]) / 2 + fetch_l
+    avg_page = (p["search_min"] + p["search_max"]) / 2 + fetch_p
     base = search_pages * avg_page + listings_count * avg_listing
     if include_warmup:
         base += float(p.get("warmup_sec", WARMUP_SEC))
-    # Marge imprévu (challenges, lenteur réseau)
-    return int(base * 1.15)
+    return int(base * 1.1)
 
 
 def format_eta(seconds: int) -> str:

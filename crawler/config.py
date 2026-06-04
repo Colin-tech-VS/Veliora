@@ -15,11 +15,11 @@ _IS_DESKTOP = sys.platform in ("win32", "darwin")
 # fast = rapide + fiable (défaut). balanced = prudent, quality = lent, turbo = agressif.
 CRAWL_SPEED_PROFILE = os.getenv("CRAWL_SPEED_PROFILE", "fast").strip().lower()
 
-# Crawl local : arrêt découverte dès N liens (évite 35 pages vides)
-CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "28"))
+# Crawl local : arrêt découverte dès N liens (évite les pages vides)
+CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "20"))
 
 # Plafond annonces traitées par source quand une ville est ciblée (0 = illimité)
-CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "90"))
+CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "45"))
 
 # Scalingo / PaaS : pas de Chrome embarqué par défaut
 IS_SCALINGO = bool(os.getenv("SCALINGO_APP", "").strip())
@@ -63,17 +63,17 @@ ADDRESS_MATCH_DRAIN_TIMEOUT_SEC = int(
 # Annonces traitées par crawl (0 = pas de plafond, jusqu'à MAX_LISTING_LINKS)
 MAX_LISTINGS_PER_SCAN = 0
 
-# Liens extraits des pages résultats + annonces similaires sur chaque fiche
-MAX_LISTING_LINKS = 500
+# Liens extraits des pages résultats — réduit pour des crawls plus rapides
+MAX_LISTING_LINKS = int(os.getenv("MAX_LISTING_LINKS", "120"))
 
 # Ne pas enchaîner le crawl des blocs « annonces similaires » (évite confusion + surcharge)
 CRAWL_SIMILAR_LISTINGS = False
 
 # Pages de résultats (pagination) à parcourir
-MAX_SEARCH_PAGES = int(os.getenv("MAX_SEARCH_PAGES", "30"))
+MAX_SEARCH_PAGES = int(os.getenv("MAX_SEARCH_PAGES", "12"))
 
 # Exploration site entier : pages index / catégories / pagination (BFS)
-MAX_SITE_DISCOVERY_PAGES = int(os.getenv("MAX_SITE_DISCOVERY_PAGES", "35"))
+MAX_SITE_DISCOVERY_PAGES = int(os.getenv("MAX_SITE_DISCOVERY_PAGES", "18"))
 
 # Découverte adaptative (heuristiques + multi-seeds)
 SITE_WIDE_CRAWL_ENABLED = os.getenv("SITE_WIDE_CRAWL_ENABLED", "true").lower() in (

@@ -1061,8 +1061,9 @@ function setupMobileNav() {
     overlay?.classList.toggle("open");
   });
   overlay?.addEventListener("click", close);
-  document.querySelectorAll(".sidebar .nav-item[data-view]").forEach((btn) => {
-    btn.addEventListener("click", close);
+  // Délégation d'événement : plus fiable sur mobile (touch, groupes ouverts/fermés)
+  sidebar?.addEventListener("click", (e) => {
+    if (e.target.closest(".nav-item[data-view]")) close();
   });
 
   document.querySelectorAll(".mobile-bottom-nav button").forEach((btn) => {
@@ -4410,6 +4411,28 @@ function ingestCrawlJobLogs(logs) {
   }
 }
 
+const _CRAWL_PHASE_ORDER = ["discovery", "analysis", "verify", "save"];
+
+function updateCrawlPhase(job) {
+  const msg = (job?.message || "").toLowerCase();
+  let phase = "discovery";
+  if (/enregistr|sauvegard|finalis|r[eé]sultat|dvf|comparatif|rapproch|adresses/.test(msg)) {
+    phase = "save";
+  } else if (/v[eé]rif|contr[oô]le|incoh[eé]r|rejet|retrait|r[eé]par|2e passage|recharg/.test(msg)) {
+    phase = "verify";
+  } else if (/annonce|lecture|chargement de l|t[eé]l[eé]phone|contact|clic|extraction|champs|type.*agence|type.*partic/.test(msg)) {
+    phase = "analysis";
+  }
+  const idx = _CRAWL_PHASE_ORDER.indexOf(phase);
+  document.querySelectorAll(".crawl-phase-step").forEach((el, i) => {
+    el.classList.toggle("active", el.dataset.phase === phase);
+    el.classList.toggle("done", i < idx);
+  });
+  document.querySelectorAll(".crawl-phase-line").forEach((el, i) => {
+    el.classList.toggle("done", i < idx);
+  });
+}
+
 function updateCrawlLoaderUI(job, title) {
   crawlState.lastJob = job;
   if (job?.source_id) crawlState.sourceId = job.source_id;
@@ -4429,6 +4452,7 @@ function updateCrawlLoaderUI(job, title) {
   document.getElementById("crawl-dock-pct").textContent = `${progress}%`;
   updateCrawlStats(job);
   updateEtaDisplay(job);
+  updateCrawlPhase(job);
   updateSourceCardsLive(job);
 }
 

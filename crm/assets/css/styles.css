@@ -5373,273 +5373,167 @@ body:has(.crawl-dock.open) .script-dock.open {
 .crawl-loader-card {
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
-  padding: 1.75rem 2rem 2rem;
-  box-shadow: var(--shadow-lg);
+  padding: 1.35rem 1.75rem 1.75rem;
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(42, 74, 92, 0.06);
   text-align: center;
-  min-width: min(360px, calc(100vw - 2rem));
-  max-width: min(480px, calc(100vw - 1.5rem));
+  min-width: min(380px, calc(100vw - 2rem));
+  max-width: min(500px, calc(100vw - 1.5rem));
   width: calc(100% - 2rem);
   border: 1px solid var(--border);
+  border-top: 3px solid var(--brand-blue, #2a4a5c);
   overflow: hidden;
+  animation: crawlCardIn 0.3s var(--ease-out);
 }
 
-.crawl-loader-header {
+@keyframes crawlCardIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ─── En-tête du loader ─── */
+.crawl-loader-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.crawl-head-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+/* Indicateur pulsant "en cours" */
+.crawl-status-pulse {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  animation: crawlStatusPulse 2s ease-in-out infinite;
+}
+
+@keyframes crawlStatusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+  50% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
 }
 
 .crawl-loader-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   flex-shrink: 0;
 }
 
-/* ─── Scène immobilier animée ─── */
-.crawl-loader-scene {
-  position: relative;
-  width: 200px;
-  height: 110px;
-  margin: 0 auto;
-  flex: 1;
-  max-width: 220px;
-}
-
-.crawl-scene-sky {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.12) 0%, rgba(154, 115, 73, 0.06) 55%, transparent 100%);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.crawl-cloud {
-  position: absolute;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 999px;
-  opacity: 0.7;
-  animation: crawlCloudDrift 12s linear infinite;
-}
-
-.crawl-cloud-1 {
-  width: 36px;
-  height: 12px;
-  top: 14px;
-  left: -40px;
-  box-shadow: 14px 2px 0 -2px rgba(255, 255, 255, 0.85);
-}
-
-.crawl-cloud-2 {
+/* Bouton × discret */
+.crawl-close-x {
   width: 28px;
-  height: 10px;
-  top: 28px;
-  left: -30px;
-  animation-delay: -5s;
-  animation-duration: 16s;
-  opacity: 0.5;
-}
-
-@keyframes crawlCloudDrift {
-  from { transform: translateX(0); }
-  to { transform: translateX(260px); }
-}
-
-.crawl-scene-city {
-  position: absolute;
-  bottom: 18px;
-  left: 8px;
-  right: 8px;
-  height: 32px;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  opacity: 0.35;
-}
-
-.crawl-scene-city span {
-  flex: 1;
-  background: var(--navy-800, #1e293b);
-  border-radius: 2px 2px 0 0;
-  animation: crawlCityPulse 2.4s ease-in-out infinite;
-}
-
-.crawl-scene-city span:nth-child(1) { height: 18px; animation-delay: 0s; }
-.crawl-scene-city span:nth-child(2) { height: 28px; animation-delay: 0.3s; }
-.crawl-scene-city span:nth-child(3) { height: 22px; animation-delay: 0.6s; }
-.crawl-scene-city span:nth-child(4) { height: 30px; animation-delay: 0.2s; }
-.crawl-scene-city span:nth-child(5) { height: 16px; animation-delay: 0.5s; }
-
-@keyframes crawlCityPulse {
-  0%, 100% { opacity: 0.5; transform: scaleY(1); }
-  50% { opacity: 0.85; transform: scaleY(1.06); transform-origin: bottom; }
-}
-
-.crawl-scene-house {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 56px;
-  z-index: 2;
-}
-
-.crawl-house-roof {
-  width: 0;
-  height: 0;
-  border-left: 30px solid transparent;
-  border-right: 30px solid transparent;
-  border-bottom: 22px solid var(--brand-primary);
-  margin: 0 auto;
-  filter: drop-shadow(0 2px 4px rgba(31, 78, 216, 0.25));
-  animation: crawlRoofGlow 3s ease-in-out infinite;
-}
-
-@keyframes crawlRoofGlow {
-  0%, 100% { filter: drop-shadow(0 2px 4px rgba(42, 74, 92, 0.2)); }
-  50% { filter: drop-shadow(0 2px 10px rgba(42, 74, 92, 0.55)); }
-}
-
-.crawl-house-body {
-  width: 48px;
-  height: 36px;
-  margin: 0 auto;
-  background: #f8fafc;
-  border: 2px solid #cbd5e1;
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  position: relative;
-  display: flex;
-  justify-content: space-around;
-  padding-top: 6px;
-}
-
-.crawl-house-window {
-  width: 10px;
-  height: 10px;
-  background: #fef08a;
-  border: 1px solid #eab308;
-  border-radius: 1px;
-  animation: crawlWindowFlicker 2.8s ease-in-out infinite;
-}
-
-.crawl-house-window-right {
-  animation-delay: 1.2s;
-}
-
-@keyframes crawlWindowFlicker {
-  0%, 45%, 100% { background: #fef08a; box-shadow: 0 0 6px rgba(250, 204, 21, 0.5); }
-  50%, 55% { background: #fde047; box-shadow: 0 0 12px rgba(250, 204, 21, 0.9); }
-}
-
-.crawl-house-door {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 12px;
-  height: 16px;
-  background: #64748b;
-  border-radius: 2px 2px 0 0;
-  animation: crawlDoorKnock 4s ease-in-out infinite;
-}
-
-@keyframes crawlDoorKnock {
-  0%, 88%, 100% { transform: translateX(-50%) scaleY(1); }
-  90% { transform: translateX(-50%) scaleY(0.92); }
-  92% { transform: translateX(-50%) scaleY(1); }
-  94% { transform: translateX(-50%) scaleY(0.92); }
-}
-
-.crawl-scene-search {
-  position: absolute;
-  top: 22px;
-  right: 18px;
-  width: 36px;
-  height: 36px;
-  animation: crawlSearchSweep 3.5s ease-in-out infinite;
-  z-index: 3;
-}
-
-@keyframes crawlSearchSweep {
-  0%, 100% { transform: translate(0, 0) rotate(-8deg); }
-  25% { transform: translate(-28px, 12px) rotate(12deg); }
-  50% { transform: translate(-48px, 28px) rotate(-5deg); }
-  75% { transform: translate(-20px, 8px) rotate(15deg); }
-}
-
-.crawl-search-ring {
-  width: 22px;
-  height: 22px;
-  border: 3px solid var(--teal-500);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.15);
-}
-
-.crawl-search-handle {
-  position: absolute;
-  width: 3px;
-  height: 14px;
-  background: var(--teal-600);
-  bottom: 2px;
-  right: 4px;
-  transform: rotate(-45deg);
-  border-radius: 2px;
-}
-
-.crawl-scene-badge {
-  position: absolute;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.15rem 0.4rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.95);
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-  z-index: 4;
-  animation: crawlBadgeFloat 4s ease-in-out infinite;
-}
-
-.crawl-badge-m2 {
-  top: 8px;
-  left: 12px;
-  color: var(--teal-700);
-  animation-delay: 0s;
-}
-
-.crawl-badge-euro {
-  top: 42px;
-  left: 4px;
-  color: #059669;
-  animation-delay: -1.3s;
-}
-
-.crawl-badge-pin {
-  top: 6px;
-  right: 52px;
-  font-size: 0.75rem;
-  animation-delay: -2.1s;
-  padding: 0.1rem 0.3rem;
-}
-
-@keyframes crawlBadgeFloat {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.85; }
-  50% { transform: translateY(-6px) scale(1.05); opacity: 1; }
-}
-
-.crawl-scene-key {
-  position: absolute;
-  bottom: 8px;
-  right: 10px;
+  background: var(--bg-muted);
+  border-radius: 50%;
   font-size: 1.1rem;
-  animation: crawlKeySwing 2.2s ease-in-out infinite;
-  transform-origin: center top;
-  z-index: 4;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.12));
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
 }
 
-@keyframes crawlKeySwing {
-  0%, 100% { transform: rotate(-12deg); }
-  50% { transform: rotate(18deg); }
+.crawl-close-x:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* ─── Stepper de phases ─── */
+.crawl-phase-track {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 0 1.15rem;
+}
+
+.crawl-phase-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.crawl-phase-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: background 0.35s var(--ease-out), border-color 0.35s var(--ease-out),
+    color 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out);
+}
+
+.crawl-phase-step span {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+
+.crawl-phase-line {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 13px 3px 0; /* centre verticalement avec les dots */
+  border-radius: 1px;
+  transition: background 0.4s ease;
+  align-self: flex-start;
+}
+
+/* Phase active */
+.crawl-phase-step.active .crawl-phase-dot {
+  background: var(--brand-blue, #2a4a5c);
+  border-color: var(--brand-blue, #2a4a5c);
+  color: #fff;
+  box-shadow: 0 0 0 5px rgba(42, 74, 92, 0.14);
+  animation: crawlPhasePop 0.4s var(--ease-out);
+}
+
+.crawl-phase-step.active span {
+  color: var(--brand-blue, #2a4a5c);
+  font-weight: 700;
+}
+
+@keyframes crawlPhasePop {
+  0% { transform: scale(0.75); opacity: 0.5; }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Phases terminées */
+.crawl-phase-step.done .crawl-phase-dot {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #fff;
+}
+
+.crawl-phase-step.done span {
+  color: #16a34a;
+}
+
+.crawl-phase-line.done {
+  background: #22c55e;
 }
 
 .crawl-loader-tip {
@@ -5671,9 +5565,13 @@ body:has(.crawl-dock.open) .script-dock.open {
 }
 
 .crawl-loader-title {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
-  margin-bottom: 0.35rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
 }
 
 .crawl-loader-step {
