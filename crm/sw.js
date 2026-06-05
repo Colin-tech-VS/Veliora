@@ -1,6 +1,6 @@
 /* Veliora CRM — PWA shell + données hors connexion + surveillance crawl */
-const CACHE = "veliora-crm-v7";
-const API_CACHE = "veliora-crm-api-v2";
+const CACHE = "veliora-crm-v8";
+const API_CACHE = "veliora-crm-api-v3";
 const KEEP_CACHES = [CACHE, API_CACHE];
 const SHELL = [
   "/crm",
@@ -129,7 +129,15 @@ function stopCrawlWatch() {
 }
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL).catch(() => {})));
+  e.waitUntil(
+    Promise.all(
+      SHELL.map((url) =>
+        fetch(url)
+          .then((res) => (res.ok ? putClean(CACHE, url, res) : null))
+          .catch(() => {}),
+      ),
+    ),
+  );
   self.skipWaiting();
 });
 
@@ -176,6 +184,29 @@ self.addEventListener("notificationclick", (e) => {
   );
 });
 
+/* Met en cache une copie « propre » de la réponse.
+   Le corps lu par fetch est DÉJÀ décompressé par le navigateur, mais l'en-tête
+   Content-Encoding: gzip subsiste. Le rejouer tel quel depuis le cache ferait
+   re-décoder un corps déjà clair → ERR_CONTENT_DECODING_FAILED. On retire donc
+   Content-Encoding/Content-Length avant de stocker. */
+async function putClean(cacheName, request, response) {
+  try {
+    const body = await response.blob();
+    const headers = new Headers(response.headers);
+    headers.delete("Content-Encoding");
+    headers.delete("Content-Length");
+    const clean = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+    const cache = await caches.open(cacheName);
+    await cache.put(request, clean);
+  } catch {
+    /* cache best-effort */
+  }
+}
+
 /* Endpoints API non rejouables hors connexion : polling crawl, flux live,
    images, exports et fichiers — on ne les met pas en cache (churn / binaire). */
 function isCacheableApi(pathname) {
@@ -199,8 +230,7 @@ async function apiNetworkFirst(request, pathname) {
     if (res.ok && isCacheableApi(pathname)) {
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
-        const clone = res.clone();
-        caches.open(API_CACHE).then((c) => c.put(request, clone)).catch(() => {});
+        putClean(API_CACHE, request, res.clone());
       }
     }
     return res;
@@ -230,8 +260,7 @@ async function shellNetworkFirst(request) {
   try {
     const res = await fetch(request);
     if (res.ok) {
-      const clone = res.clone();
-      caches.open(CACHE).then((c) => c.put(request, clone)).catch(() => {});
+      putClean(CACHE, request, res.clone());
     }
     return res;
   } catch {

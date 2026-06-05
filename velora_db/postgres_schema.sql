@@ -87,6 +87,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_agency_url ON leads(agency_id, sourc
 CREATE INDEX IF NOT EXISTS idx_leads_source_id ON leads(source_id);
 CREATE INDEX IF NOT EXISTS idx_leads_agency_id ON leads(agency_id);
 CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+-- La liste CRM trie systématiquement par date de création décroissante
+-- (get_leads : « ORDER BY created_at DESC »). Sans index, Postgres trie tout
+-- le pool partagé à chaque chargement -> lenteur croissante avec le volume.
+CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at DESC);
 
 -- Estimations de prix : table dédiée (pas de colonne sur leads -> pas de verrou
 -- ACCESS EXCLUSIVE en conflit avec les UPDATE leads du crawl/géocodage).

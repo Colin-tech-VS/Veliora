@@ -41,6 +41,22 @@ _LEADS_LIST_SQL = """
 _SOURCES_CACHE_TTL_SEC = 50.0
 _sources_cache: dict[str, tuple[float, list[dict]]] = {}
 
+# Instantané court de la liste de leads. Au chargement du CRM, /api/bootstrap
+# calcule get_leads(), puis /api/radar/summary le recalcule ~1 s plus tard pour
+# le briefing (consultatif, jamais renvoyé comme liste à l'écran). On réutilise
+# donc l'instantané frais au lieu de refaire toute la requête + l'enrichissement.
+# Seul le radar lit cet instantané (opt-in) ; les endpoints de liste restent
+# toujours frais. Invalidé à chaque mutation de lead.
+_LEADS_SNAPSHOT_TTL_SEC = float(os.getenv("LEADS_SNAPSHOT_TTL", "6"))
+_leads_snapshot: dict[str, tuple[float, list[dict]]] = {}
+
+
+def invalidate_leads_snapshot(agency_id: str | None = None) -> None:
+    if agency_id:
+        _leads_snapshot.pop(agency_id, None)
+    else:
+        _leads_snapshot.clear()
+
 _SETTINGS_CACHE_TTL_SEC = float(os.getenv("AGENCY_SETTINGS_CACHE_TTL", "90"))
 _settings_cache: dict[str, tuple[float, dict]] = {}
 
@@ -775,7 +791,25 @@ def _init_sqlite() -> None:
 
         ensure_mandate_tables(conn)
         ensure_portal_tables(conn)
+        ensure_leads_performance_indexes(conn)
         conn.commit()
+
+
+def ensure_leads_performance_indexes(conn) -> None:
+    """Index garantissant un chargement rapide de la liste CRM.
+
+    Idempotent (``IF NOT EXISTS``) et appliqué à chaque démarrage : ainsi les
+    bases prod existantes (où le schéma complet n'est pas rejoué) bénéficient
+    aussi du tri indexé sur ``created_at`` utilisé par ``get_leads``.
+    """
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_leads_created_at "
+            "ON leads(created_at DESC)"
+        )
+        conn.commit()
+    except Exception:
+        logger.debug("ensure_leads_performance_indexes ignoré", exc_info=True)
 
 
 def init_db() -> None:
@@ -790,6 +824,7 @@ def init_db() -> None:
         with get_connection() as conn:
             ensure_mandate_tables(conn)
             ensure_portal_tables(conn)
+            ensure_leads_performance_indexes(conn)
         try:
             from crm.maps.service import ensure_map_schema
             from crm.leads.images import ensure_lead_image_schema
@@ -1735,6 +1770,7 @@ def record_lead_outcome_event(
         )
         calibrate_agency_weights_from_outcome(conn, agency_id, outcome_type, snap)
         conn.commit()
+    invalidate_leads_snapshot(agency_id)
 
 
 def _coerce_source_id(conn, source_id: str | None, agency_id: str | None) -> str | None:
@@ -2063,6 +2099,8 @@ def save_lead(
             )
             if discovering_agency_id:
                 invalidate_sources_cache(discovering_agency_id)
+            # Pool partagé modifié : tout instantané de briefing devient périmé.
+            invalidate_leads_snapshot()
             return saved_out
 
         try:
@@ -2172,6 +2210,8 @@ def save_lead(
             )
             if discovering_agency_id:
                 invalidate_sources_cache(discovering_agency_id)
+            # Pool partagé modifié : tout instantané de briefing devient périmé.
+            invalidate_leads_snapshot()
             return saved_out
 
     # Hors connexion : course détectée à l'INSERT → rejeu en mise à jour (une fois).
@@ -2405,8 +2445,17 @@ def get_leads(
     *,
     enrich: bool = True,
     claim_orphans: bool = False,
+    prefer_snapshot: bool = False,
 ) -> list[dict]:
     from crm.leads.shared_pool import filter_leads_for_agency, shared_leads_sql_where
+
+    # Réutilise l'instantané récent (briefing radar) si demandé. On renvoie une
+    # copie de la liste (mêmes dicts) : les consommateurs radar sont en lecture
+    # seule, mais on évite qu'un appelant remplace la liste mise en cache.
+    if prefer_snapshot and enrich and not claim_orphans:
+        cached = _leads_snapshot.get(agency_id)
+        if cached and (time.monotonic() - cached[0]) < _LEADS_SNAPSHOT_TTL_SEC:
+            return list(cached[1])
 
     if claim_orphans:
         claim_orphan_leads(agency_id)
@@ -2431,7 +2480,12 @@ def get_leads(
         attach_transactions(leads, agency_id)
     except Exception:
         logger.debug("attach_transactions ignoré", exc_info=True)
-    return _annotate_dedup(leads)
+    result = _annotate_dedup(leads)
+    if enrich:
+        # Alimente l'instantané pour le briefing radar qui suit (réutilisation
+        # ~1 s plus tard, sans refaire toute la requête + l'enrichissement).
+        _leads_snapshot[agency_id] = (time.monotonic(), result)
+    return result
 
 
 def _safe_json_field(raw) -> object | None:
@@ -2539,6 +2593,7 @@ def delete_lead(lead_id: int, agency_id: str) -> bool:
     except Exception:
         logger.exception("delete lead images %s", lead_id)
     recalc_source_found_counts(agency_id)
+    invalidate_leads_snapshot(agency_id)
     add_activity("lead", f"Prospect supprimé — {owner}", agency_id)
     return True
 
@@ -2551,6 +2606,7 @@ def delete_all_leads(agency_id: str) -> int:
         conn.execute("DELETE FROM leads WHERE agency_id = ?", (agency_id,))
         conn.commit()
     recalc_source_found_counts(agency_id)
+    invalidate_leads_snapshot(agency_id)
     if count:
         add_activity("lead", f"Tous les prospects supprimés ({count})", agency_id)
     return count
@@ -3455,6 +3511,7 @@ def patch_lead(lead_id: int, agency_id: str, data: dict) -> dict | None:
             f"Fiche mise à jour — {lead.get('address', '') or lead.get('owner', '')}",
             agency_id,
         )
+    invalidate_leads_snapshot(agency_id)
     return lead
 
 
