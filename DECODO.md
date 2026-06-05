@@ -58,10 +58,16 @@ cd Veliora
 ### 3. Tester le proxy
 
 ```powershell
+# France rotating (dashboard) — espace avant --test obligatoire
+python scripts/configure_proxy_rotation.py --proxy "http://spXXXX:PASS@fr.decodo.com:40000" --test
+
+# Alternative gateway Decodo
 python scripts/configure_proxy_rotation.py --proxy "http://user-spXXXX-country-fr:PASS@gate.decodo.com:7000" --test
 ```
 
-Réponse attendue : IP française (JSON ipify).
+Réponse attendue : JSON avec une IP française (`ip.decodo.com` ou ipify).
+
+Si le message mentionne **FortiGate** : le réseau d'entreprise bloque les proxies — testez en **4G / partage mobile**, pas sur le Wi‑Fi ANRH.
 
 ### 4. Scalingo (désactiver veille locale)
 

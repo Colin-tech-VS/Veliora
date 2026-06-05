@@ -39,19 +39,30 @@ def load_proxy_lines(path: Path) -> list[str]:
 
 
 def test_proxy(url: str, timeout: int = 15) -> tuple[bool, str]:
-    try:
-        import requests
+    import requests
 
-        resp = requests.get(
-            "https://api.ipify.org?format=json",
-            proxies={"http": url, "https": url},
-            timeout=timeout,
-        )
-        if resp.ok:
-            return True, resp.text.strip()[:120]
-        return False, f"HTTP {resp.status_code}"
-    except Exception as exc:
-        return False, str(exc)[:120]
+    proxy = {"http": url, "https": url}
+    endpoints = (
+        "https://ip.decodo.com/json",
+        "http://ip.decodo.com/json",
+        "https://api.ipify.org?format=json",
+    )
+    last_err = ""
+    for endpoint in endpoints:
+        try:
+            resp = requests.get(endpoint, proxies=proxy, timeout=timeout)
+            body = resp.text.strip()
+            if "FortiGate Application Control" in body or "Application Control Violation" in body:
+                return False, (
+                    "bloqué par le pare-feu réseau (FortiGate) — testez en 4G/partage mobile "
+                    "ou demandez l'ouverture des ports Decodo"
+                )
+            if resp.ok and body:
+                return True, body[:120]
+            last_err = f"HTTP {resp.status_code}"
+        except Exception as exc:
+            last_err = str(exc)[:120]
+    return False, last_err
 
 
 def write_env_proxies(proxies: list[str], env_path: Path) -> None:
