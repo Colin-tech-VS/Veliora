@@ -71,6 +71,69 @@ class StreamEstateMappingTests(unittest.TestCase):
         self.assertEqual(lead.raw_extras.get("data_provider"), "streamestate")
         self.assertEqual(lead.raw_extras.get("listing_title"), "Appartement 2 pieces")
 
+    def test_aggregates_fields_across_adverts_same_seller(self):
+        # Même bien, même agence sur 2 portails : tél sur l'un, email + photos sur l'autre.
+        doc = {
+            "uuid": "u-agg",
+            "transactionType": 0,
+            "propertyType": 0,
+            "surface": None,
+            "price": None,
+            "city": {"originalName": "Nantes", "zipcode": "44000"},
+            "adverts": [
+                {
+                    "url": "https://portail-a.fr/1",
+                    "surface": 72,
+                    "priceExcludingFees": 285000,
+                    "contact": {"name": "Paul Durand", "phone": "0240112233", "agency": "Immo Ouest"},
+                    "publisher": {"name": "Immo Ouest", "type": 1},
+                },
+                {
+                    "url": "https://portail-b.fr/2",
+                    "contact": {"email": "contact@immo-ouest.fr", "agency": "Immo Ouest"},
+                    "publisher": {"name": "Immo Ouest", "type": 1},
+                    "pictures": ["https://img.fr/x.jpg"],
+                },
+            ],
+        }
+        lead = property_to_lead(doc)
+        assert lead is not None
+        # Téléphone (advert A) ET email (advert B) réunis sur la même fiche.
+        self.assertIn("40 11 22 33", lead.phone or "")
+        self.assertEqual(lead.email, "contact@immo-ouest.fr")
+        self.assertEqual(lead.first_name, "Paul")
+        # Surface + prix comblés depuis l'advert qui les porte (property vide).
+        self.assertEqual(lead.surface, 72.0)
+        self.assertEqual(lead.price, 285000)
+        # Photo récupérée sur l'autre advert.
+        self.assertEqual(lead.raw_extras.get("listing_image_url"), "https://img.fr/x.jpg")
+
+    def test_does_not_mix_contacts_across_competing_agencies(self):
+        # Deux agences DIFFÉRENTES : on ne mélange pas leurs contacts.
+        doc = {
+            "uuid": "u-mix",
+            "transactionType": 0,
+            "propertyType": 0,
+            "city": {"originalName": "Nantes", "zipcode": "44000"},
+            "adverts": [
+                {
+                    "url": "https://a.fr/1",
+                    "contact": {"phone": "0240112233", "agency": "Agence A"},
+                    "publisher": {"name": "Agence A", "type": 1},
+                },
+                {
+                    "url": "https://b.fr/2",
+                    "contact": {"email": "x@agence-b.fr", "agency": "Agence B"},
+                    "publisher": {"name": "Agence B", "type": 1},
+                },
+            ],
+        }
+        lead = property_to_lead(doc)
+        assert lead is not None
+        # L'advert retenu (Agence A, avec tél) ne doit pas hériter de l'email d'Agence B.
+        self.assertIn("40 11 22 33", lead.phone or "")
+        self.assertIsNone(lead.email)
+
     def test_build_query_params_insee_filter(self):
         with patch("crawler.fr_communes.resolve_commune") as mock_resolve:
             mock_resolve.return_value = {"code": "75118", "postcode": "75018", "name": "Paris 18e"}

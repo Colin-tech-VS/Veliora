@@ -124,12 +124,40 @@ def _pick_advert(property_doc: dict[str, Any]) -> dict[str, Any] | None:
             score += 10
         if contact.get("email"):
             score += 5
+        # Fiche la plus complète d'abord : maximise les champs remplis.
+        if ad.get("surface"):
+            score += 2
+        if ad.get("price") or ad.get("priceExcludingFees"):
+            score += 2
+        if ad.get("pictures"):
+            score += 1
         if ad.get("url"):
             score += 3
         updated = ad.get("updatedAt") or ad.get("createdAt") or ""
         return score, updated
 
     return max(candidates, key=_score)
+
+
+def _same_party(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Deux adverts émanent du même vendeur (même agence/publisher, ou tous deux particuliers).
+
+    On ne fusionne les contacts qu'entre adverts du même vendeur, jamais entre
+    agences concurrentes — sinon on attribuerait le mauvais téléphone à une fiche.
+    """
+    if a is b:
+        return True
+    pa = a.get("publisher") or {}
+    pb = b.get("publisher") or {}
+    ca = a.get("contact") or {}
+    cb = b.get("contact") or {}
+    agency_a = (ca.get("agency") or pa.get("name") or "").strip().lower()
+    agency_b = (cb.get("agency") or pb.get("name") or "").strip().lower()
+    if agency_a and agency_a == agency_b:
+        return True
+    if pa.get("type") == 0 and pb.get("type") == 0:
+        return True
+    return False
 
 
 def _publisher_type(property_doc: dict[str, Any], advert: dict[str, Any] | None) -> str:
@@ -209,12 +237,27 @@ def _price(property_doc: dict[str, Any], advert: dict[str, Any] | None, tx: str)
             )
         return advert_price
 
-    return _parse_positive_int(property_doc.get("price"))
+    prop_price = _parse_positive_int(property_doc.get("price"))
+    if prop_price:
+        return prop_price
+    # Dernier recours : un prix valide sur un autre advert du même bien.
+    for ad in property_doc.get("adverts") or []:
+        if not isinstance(ad, dict):
+            continue
+        for raw in (ad.get("priceExcludingFees") if tx == "vente" else None, ad.get("price")):
+            val = _parse_positive_int(raw)
+            if val:
+                return val
+    return None
 
 
 def _surface(property_doc: dict[str, Any], advert: dict[str, Any] | None) -> float | None:
-    """Surface de l'advert retenu en priorité (même source que le prix)."""
-    for raw in ((advert or {}).get("surface"), property_doc.get("surface")):
+    """Surface : advert retenu, puis property, puis n'importe quel advert du bien."""
+    candidates = [(advert or {}).get("surface"), property_doc.get("surface")]
+    for ad in property_doc.get("adverts") or []:
+        if isinstance(ad, dict):
+            candidates.append(ad.get("surface"))
+    for raw in candidates:
         val = _parse_positive_float(raw)
         if val:
             return val
@@ -261,19 +304,36 @@ def _street_address(property_doc: dict[str, Any]) -> str | None:
     return None
 
 
-def _contact_fields(advert: dict[str, Any] | None) -> tuple[str | None, str | None, str | None, str | None]:
+def _contact_fields(
+    advert: dict[str, Any] | None,
+    adverts: list[Any] | None = None,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    """Contact le plus complet : on part de l'advert retenu puis on comble les
+    champs manquants avec les autres adverts du MÊME vendeur (même agence ou
+    tous deux particuliers) — un bien sur 3 portails y gagne tél + email + nom."""
     if not advert:
         return None, None, None, None
-    contact = advert.get("contact") or {}
-    name = (contact.get("name") or "").strip()
+    pool = [advert]
+    for ad in adverts or []:
+        if isinstance(ad, dict) and ad is not advert and _same_party(advert, ad):
+            pool.append(ad)
+
+    name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    for ad in pool:
+        contact = ad.get("contact") or {}
+        if not name:
+            name = (contact.get("name") or "").strip() or None
+        if not phone:
+            phone = normalize_phone(contact.get("phone") or contact.get("fax") or "") or None
+        if not email:
+            email = (contact.get("email") or "").strip() or None
+        if name and phone and email:
+            break
+
     fn, ln = split_name(name) if name else (None, None)
-    phone = normalize_phone(contact.get("phone") or contact.get("fax") or "")
-    email = (contact.get("email") or "").strip() or None
-    agency = (contact.get("agency") or "").strip() or None
-    pub = advert.get("publisher") or {}
-    if not agency and pub.get("name"):
-        agency = str(pub.get("name")).strip()
-    return fn, ln, phone or None, email
+    return fn, ln, phone, email
 
 
 def property_to_lead(
@@ -288,11 +348,12 @@ def property_to_lead(
     if not source_url:
         return None
 
+    adverts = property_doc.get("adverts") or []
     tx, period = _transaction(property_doc)
     price = _price(property_doc, advert, tx)
     surface = _surface(property_doc, advert)
     city, postcode, sector = _city_fields(property_doc)
-    fn, ln, phone, email = _contact_fields(advert)
+    fn, ln, phone, email = _contact_fields(advert, adverts)
     lead_type = _publisher_type(property_doc, advert)
 
     title = (
@@ -323,6 +384,11 @@ def property_to_lead(
     )
 
     pictures = (advert or {}).get("pictures") or property_doc.get("pictures") or []
+    if not pictures:
+        for ad in adverts:
+            if isinstance(ad, dict) and ad.get("pictures"):
+                pictures = ad["pictures"]
+                break
     image_url = pictures[0] if pictures else None
 
     updated_raw = (
@@ -365,7 +431,6 @@ def property_to_lead(
     if property_doc.get("locations"):
         lead.raw_extras["streamestate_locations"] = property_doc.get("locations")
 
-    adverts = property_doc.get("adverts") or []
     if isinstance(adverts, list) and len(adverts) > 1:
         others = [
             str(a.get("url")).split("#")[0].strip()
