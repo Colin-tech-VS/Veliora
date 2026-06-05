@@ -1916,7 +1916,19 @@ def api_crawler_scan():
 @app.route("/api/crawler/streamestate/verify", methods=["POST"])
 def api_crawler_streamestate_verify():
     """Vérifie/complète les annonces déjà en base via StreamEstate, à coût crédit minimal."""
-    from crawler.streamestate import StreamEstateError, verify_existing_leads
+    from crawler.streamestate import StreamEstateError, streamestate_display_name, verify_existing_leads
+    from crawler.storage import is_streamestate_enabled_for_agency
+
+    if not is_streamestate_enabled_for_agency(_aid()):
+        return jsonify(
+            {
+                "ok": False,
+                "error": (
+                    f"{streamestate_display_name()} est désactivé — "
+                    "activez-le dans Portails pour vérifier les fiches."
+                ),
+            }
+        ), 403
 
     data = request.get_json(silent=True) or {}
     kwargs: dict = {}
@@ -1942,6 +1954,16 @@ def api_crawler_scan_source(source_id):
     source = get_source(source_id, _aid())
     if not source:
         return jsonify({"error": "Source introuvable pour votre agence"}), 404
+    if not source.get("enabled"):
+        return jsonify(
+            {
+                "error": (
+                    f"{source.get('name') or 'Cette source'} est désactivée — "
+                    "activez-la dans Portails pour lancer une mise à jour."
+                ),
+                "code": "source_disabled",
+            }
+        ), 403
     paid = _paid_portal_crawl_response(source=source)
     if paid:
         return paid

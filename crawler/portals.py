@@ -62,6 +62,8 @@ CITY_SEARCH_PORTAL_IDS = frozenset({
     "paruvendu",
     "ouestfranceimmo",
     "lesiteimmo",
+    "superimmo",
+    "etreproprio",
     "streamestate",
     # Portails anti-bot (URL ville native) — exclus du crawl gratuit mais city-capables.
     "leboncoin",

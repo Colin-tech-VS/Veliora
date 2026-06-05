@@ -10,6 +10,9 @@ LISTING_CDN_HOST_MARKERS = (
     "netty.fr",
     "hektor.fr",
     "hektor.io",
+    "apimo.net",
+    "whise.com",
+    "modelo.office",
 )
 
 # Thèmes WordPress immo courants (RealHomes, Houzez, WpResidence…)
@@ -19,7 +22,18 @@ WORDPRESS_IMMO_PATTERNS = [
     r"/listing/[^/\"'\s]+",
     r"/listings/[^/\"'\s]+",
     r"/annonce[s]?/[^/\"'\s]+",
-    r"\?post_type=(?:property|immobilier|annonce)",
+    r"/bien[s]?/[^/\"'\s]+",
+    r"/offre[s]?/[^/\"'\s]+",
+    r"\?post_type=(?:property|immobilier|annonce|real_estate)",
+]
+
+# Moteurs CRM / flux XML (Apimo, Hektor, Netty, Whise…) sur sites agence
+CRM_ENGINE_PATTERNS = [
+    r"[a-z0-9-]+\.netty\.fr/[^\"'\s]*\d{4,}",
+    r"apimo\.net/[^\"'\s]*\d{4,}",
+    r"whise\.com/[^\"'\s]*\d{4,}",
+    r"/ref[_-]?\d{5,}",
+    r"/fiche[_-]?\d{5,}",
 ]
 
 IMMObilIER_FRANCE_PATTERNS = [
@@ -77,12 +91,15 @@ def extra_patterns_for_host(base_url: str, search_url: str = "") -> list[str]:
             r"/ref[_-]?\d{5,}",
         ]
     )
+    if ".netty.fr" in host or "apimo" in host or "whise" in host or "hektor" in host:
+        patterns.extend(CRM_ENGINE_PATTERNS)
     if any(
         x in host
         for x in ("wordpress", "wp-content", "immobilier", "agence", "immo")
     ):
         patterns.extend(WORDPRESS_IMMO_PATTERNS)
-    patterns.extend(WORDPRESS_IMMO_PATTERNS[:4])
+    patterns.extend(WORDPRESS_IMMO_PATTERNS[:6])
+    patterns.extend(CRM_ENGINE_PATTERNS)
     return list(dict.fromkeys(patterns))
 
 

@@ -15,17 +15,22 @@ from crawler.fr_communes import path_slug_for_city, slugify
 
 SiteKind = Literal["network", "classified", "annonces"]
 
-# Motifs d'URL fiche fréquents (réseaux + WordPress + moteurs agence)
+# Motifs d'URL fiche fréquents (réseaux + WordPress + moteurs agence / CRM)
 _COMMON_LISTING_PATTERNS = [
     r"/annonce[s]?/[^/\"'\s]+-\d{4,}",
     r"/annonce[s]?/\d{5,}",
     r"/bien[s]?/[^/\"'\s]+-\d{4,}",
     r"/property/[^/\"'\s]+",
+    r"/properties/[^/\"'\s]+",
+    r"/listing[s]?/[^/\"'\s]+",
     r"/fiche[s]?/[^/\"'\s]*\d{4,}",
     r"/detail[s]?/[^/\"'\s]*\d{4,}",
+    r"/offre[s]?/[^/\"'\s]*\d{4,}",
     r"/ref[_-]?\d{5,}",
     r"/\d{5,}(?:[/?]|$|\.html?)",
     r"staticlbi\.com/[^\"'\s]+",
+    r"[a-z0-9-]+\.netty\.fr/[^\"'\s]*\d{4,}",
+    r"[a-z0-9-]+\.nestenn\.com/[^\"'\s]*\d{4,}",
 ]
 
 
@@ -217,14 +222,79 @@ CATALOG_SITES: tuple[CatalogSite, ...] = (
         ("/vente/{slug}", "/vente-maison/{slug}", "/vente-appartement/{slug}"),
     ),
     CatalogSite(
-        "hektor_demo",
-        "Sites Hektor / Netty (générique)",
+        "moteurs_agence",
+        "Moteurs agence (Netty, Hektor, Apimo)",
         "network",
-        "https://www.hektor.fr",
-        "https://www.hektor.fr",
-        (r"hektor\.fr/[^\"'\s]*\d{4,}", r"netty\.fr/[^\"'\s]*\d{4,}")
+        "https://www.immobilier-france.fr",
+        "https://www.immobilier-france.fr/vente",
+        (
+            r"[a-z0-9-]+\.netty\.fr/[^\"'\s]*\d{4,}",
+            r"hektor\.fr/[^\"'\s]*\d{4,}",
+            r"apimo\.net/[^\"'\s]*\d{4,}",
+            r"whise\.com/[^\"'\s]*\d{4,}",
+            r"modelo\.office/[^\"'\s]*\d{4,}",
+        )
         + tuple(_COMMON_LISTING_PATTERNS),
-        enabled=False,
+        ("/vente/{slug}", "/vente-appartement/{slug}", "/vente-maison/{slug}"),
+    ),
+    CatalogSite(
+        "nestenn",
+        "Nestenn",
+        "network",
+        "https://www.nestenn.com",
+        "https://www.nestenn.com/acheter",
+        (
+            r"nestenn\.com/[^\"'\s]*\d{5,}",
+            r"[a-z0-9-]+\.nestenn\.com/[^\"'\s]*\d{4,}",
+        )
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/acheter-appartement-{slug}", "/acheter-maison-{slug}"),
+    ),
+    CatalogSite(
+        "ladresse",
+        "l'Adresse",
+        "network",
+        "https://www.ladresse.com",
+        "https://www.ladresse.com/acheter",
+        (r"ladresse\.com/[^\"'\s]*(?:annonce|bien|detail)[^\"'\s]*\d+",)
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/acheter/appartement/{slug}", "/acheter/maison/{slug}"),
+    ),
+    CatalogSite(
+        "citya",
+        "Citya Immobilier",
+        "network",
+        "https://www.citya.com",
+        "https://www.citya.com/annonces/vente",
+        (r"citya\.com/annonces/[^\"'\s]*\d{4,}",)
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/annonces/vente/{slug}", "/annonces/vente/appartement/{slug}"),
+    ),
+    CatalogSite(
+        "megagence",
+        "megAgence",
+        "network",
+        "https://www.megagence.com",
+        "https://www.megagence.com/acheter",
+        (
+            r"megagence\.com/[^\"'\s]*(?:detail|bien|offre)[^\"'\s]*\d+",
+            r"megagence\.com/\d{6,}",
+        )
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/acheter/appartement/{slug}"),
+    ),
+    CatalogSite(
+        "drhouse_immo",
+        "Dr House Immo",
+        "network",
+        "https://www.drhouse-immo.com",
+        "https://www.drhouse-immo.com/acheter",
+        (
+            r"drhouse-immo\.com/[^\"'\s]*\d{5,}",
+            r"drhouse-immo\.com/bien/",
+        )
+        + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/acheter/appartement/{slug}", "/acheter/maison/{slug}"),
     ),
     # ─── Petites annonces / particuliers ───
     CatalogSite(
@@ -265,9 +335,72 @@ CATALOG_SITES: tuple[CatalogSite, ...] = (
         "bienveo",
         "Bien'Veo",
         "classified",
-        "https://www.bienveo.com",
-        "https://www.bienveo.com/vente",
-        (_host_pat("bienveo.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        "https://www.bienveo.fr",
+        "https://www.bienveo.fr/acheter",
+        (_host_pat("bienveo.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/acheter/{slug}", "/louer/{slug}"),
+    ),
+    CatalogSite(
+        "annoncesjaunes",
+        "Annonces Jaunes",
+        "classified",
+        "https://www.annoncesjaunes.fr",
+        "https://www.annoncesjaunes.fr/Immobilier/",
+        (_host_pat("annoncesjaunes.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/Immobilier/{slug}",),
+    ),
+    CatalogSite(
+        "acheter_louer",
+        "Acheter-Louer.fr",
+        "classified",
+        "https://www.acheter-louer.fr",
+        "https://www.acheter-louer.fr/",
+        (_host_pat("acheter-louer.fr"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/achat/{slug}", "/location/{slug}"),
+    ),
+    CatalogSite(
+        "pro_a_part",
+        "Pro à Part",
+        "classified",
+        "https://www.pro-a-part.com",
+        "https://www.pro-a-part.com/immobilier/vente",
+        (_host_pat("pro-a-part.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/immobilier/vente/{slug}",),
+    ),
+    CatalogSite(
+        "achat_terrain",
+        "Achat-Terrain.com",
+        "classified",
+        "https://www.achat-terrain.com",
+        "https://www.achat-terrain.com/",
+        (_host_pat("achat-terrain.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+    ),
+    CatalogSite(
+        "immoxia",
+        "Immoxia",
+        "classified",
+        "https://www.immoxia.com",
+        "https://www.immoxia.com/vente",
+        (_host_pat("immoxia.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/vente/{slug}",),
+    ),
+    CatalogSite(
+        "citadimmo",
+        "Citadimmo",
+        "classified",
+        "https://www.citadimmo.com",
+        "https://www.citadimmo.com/vente",
+        (_host_pat("citadimmo.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/vente/{slug}",),
+    ),
+    CatalogSite(
+        "refleximmo",
+        "Réfleximmo",
+        "classified",
+        "https://www.refleximmo.com",
+        "https://www.refleximmo.com/vente",
+        (_host_pat("refleximmo.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        ("/vente/{slug}", "/annonces/{slug}"),
     ),
     CatalogSite(
         "immovision",

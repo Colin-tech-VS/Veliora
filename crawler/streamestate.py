@@ -742,6 +742,12 @@ def verify_existing_leads(
         raise StreamEstateNotConfiguredError(
             f"{streamestate_display_name()} — service non configuré (contactez l'administrateur Veliora)"
         )
+    from crawler.storage import is_streamestate_enabled_for_agency
+
+    if not is_streamestate_enabled_for_agency(agency_id):
+        raise StreamEstateError(
+            f"{streamestate_display_name()} est désactivé — activez-le dans Portails."
+        )
 
     budget = max(1, int(max_pages if max_pages is not None else STREAMESTATE_VERIFY_MAX_PAGES))
     per_city = max(

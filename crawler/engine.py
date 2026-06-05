@@ -615,6 +615,16 @@ class CrawlerEngine:
 
     def _job_scan_source(self, job_id: str, source_id: str, city: str | None = None) -> None:
         src = next((s for s in get_sources(self._agency_id) if s["id"] == source_id), None)
+        if src and not src.get("enabled"):
+            from crawler.streamestate import streamestate_display_name
+
+            label = src.get("name") or streamestate_display_name()
+            err = CrawlError.issue(
+                CrawlError.SOURCE_UNKNOWN,
+                f"{label} est désactivé — activez-le dans Portails pour lancer une analyse.",
+            )
+            self._finish_job(job_id, CrawlResult(errors=[err]), label)
+            return
         label = src["name"] if src else source_id
         if city:
             label = f"{label} — {city}"
@@ -869,10 +879,18 @@ class CrawlerEngine:
     ) -> CrawlResult:
         """Synchronisation API agrégée (pas de crawl HTML)."""
         from crawler.streamestate import streamestate_configured, streamestate_display_name
-        from crawler.storage import mark_source_scanned
+        from crawler.storage import is_streamestate_enabled_for_agency, mark_source_scanned
 
         result = CrawlResult()
         label = adapter.source_name or streamestate_display_name()
+        if self._agency_id and not is_streamestate_enabled_for_agency(self._agency_id):
+            err = CrawlError.issue(
+                CrawlError.SOURCE_UNKNOWN,
+                f"{label} est désactivé — activez-le dans Portails pour lancer une analyse.",
+            )
+            result.errors.append(err)
+            mark_source_scanned(source_id, error=err["message"][:200])
+            return result
         if not streamestate_configured():
             err = CrawlError.issue(
                 CrawlError.SOURCE_UNKNOWN,

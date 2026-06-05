@@ -3425,6 +3425,14 @@ async function submitAddSource(e) {
 
 async function crawlSingleSource(sourceId, sourceName) {
   const src = SOURCES.find((s) => s.id === sourceId);
+  if (isDeepAnalysisSource(src) && !isDeepAnalysisEnabled()) {
+    showToast(
+      "Analyse approfondie désactivée — activez-la dans Portails (interrupteur).",
+      "warning",
+      5000,
+    );
+    return;
+  }
   if (src?.is_antibot) {
     showToast(
       `${sourceName} est protégé (anti-bot) — crawl bientôt disponible (pas encore activé).`,
@@ -6604,6 +6612,19 @@ function findDeepAnalysisSource(list = SOURCES) {
   return (list || []).find((s) => isDeepAnalysisSource(s)) || null;
 }
 
+/** Analyse approfondie active = source StreamEstate présente ET interrupteur activé. */
+function isDeepAnalysisEnabled(list = SOURCES) {
+  const src = findDeepAnalysisSource(list);
+  return Boolean(src && src.enabled !== false);
+}
+
+function updateDeepAnalysisUi() {
+  const enabled = isDeepAnalysisEnabled();
+  document.querySelector(".nav-item-deep")?.toggleAttribute("hidden", !enabled);
+  const verifyBtn = document.getElementById("leads-streamestate-verify-btn");
+  if (verifyBtn) verifyBtn.hidden = !enabled;
+}
+
 function focusCrawlerPortal(portalId = "streamestate") {
   const src =
     portalId === "streamestate"
@@ -6622,7 +6643,7 @@ function focusCrawlerPortal(portalId = "streamestate") {
 
 function renderCrawler() {
   const reliable = SOURCES.filter((s) => !s.is_custom && !s.is_antibot);
-  const deep = reliable.filter((s) => isDeepAnalysisSource(s));
+  const deep = reliable.filter((s) => isDeepAnalysisSource(s) && s.enabled !== false);
   const otherReliable = reliable.filter((s) => !isDeepAnalysisSource(s));
   const antibot = SOURCES.filter((s) => !s.is_custom && s.is_antibot);
   const custom = SOURCES.filter((s) => s.is_custom);
@@ -6635,10 +6656,10 @@ function renderCrawler() {
   const customWrap = document.getElementById("sources-custom-wrap");
 
   if (deepWrap && deepEl) {
-    deepWrap.hidden = deep.length === 0;
+    deepWrap.hidden = !isDeepAnalysisEnabled();
     deepEl.innerHTML = deep.length
       ? deep.map((s) => buildSourceCardHtml(s)).join("")
-      : '<p class="form-hint">Analyse approfondie — activez la clé API sur le serveur Veliora.</p>';
+      : '<p class="form-hint">Analyse approfondie — activez la source dans Portails (interrupteur).</p>';
   }
   if (reliableEl) {
     reliableEl.innerHTML = otherReliable.length
@@ -6657,6 +6678,7 @@ function renderCrawler() {
 
   updateCrawlerSummary();
   scheduleSourceUrlsForCity();
+  updateDeepAnalysisUi();
 }
 
 function updateBadges() {

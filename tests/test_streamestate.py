@@ -156,6 +156,15 @@ class StreamEstateMappingTests(unittest.TestCase):
 
 
 class StreamEstateVerifyTests(unittest.TestCase):
+    @patch("crawler.storage.is_streamestate_enabled_for_agency", return_value=False)
+    @patch.dict(os.environ, {"STREAMESTATE_API_KEY": "test-key"})
+    def test_verify_rejects_when_source_disabled(self, _enabled):
+        from crawler.streamestate import StreamEstateError, verify_existing_leads
+
+        with self.assertRaises(StreamEstateError) as ctx:
+            verify_existing_leads("agency-test")
+        self.assertIn("désactivé", str(ctx.exception).lower())
+
     def test_lead_needs_verification(self):
         from crawler.streamestate import lead_needs_verification
 
@@ -224,7 +233,9 @@ class StreamEstateVerifyTests(unittest.TestCase):
 
         with patch("crawler.storage.get_leads", return_value=leads_db), patch(
             "crawler.storage.save_lead", side_effect=fake_save_lead
-        ), patch.dict(os.environ, {"STREAMESTATE_API_KEY": "k"}):
+        ), patch("crawler.storage.is_streamestate_enabled_for_agency", return_value=True), patch.dict(
+            os.environ, {"STREAMESTATE_API_KEY": "k"}
+        ):
             summary = se.verify_existing_leads("agency-1")
 
         # Seule Paris 18e (2 candidates) est scannée : 1 crédit, 1 match, 1 not_found.
@@ -250,7 +261,9 @@ class StreamEstateVerifyTests(unittest.TestCase):
 
         with patch("crawler.storage.get_leads", return_value=leads_db), patch(
             "crawler.storage.save_lead", return_value={"id": 1}
-        ), patch.dict(os.environ, {"STREAMESTATE_API_KEY": "k"}):
+        ), patch("crawler.storage.is_streamestate_enabled_for_agency", return_value=True), patch.dict(
+            os.environ, {"STREAMESTATE_API_KEY": "k"}
+        ):
             summary = se.verify_existing_leads("agency-1", max_pages=2, max_pages_per_city=1)
 
         # Budget de 2 crédits → au plus 2 villes scannées, le reste reporté.

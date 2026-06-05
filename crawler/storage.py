@@ -1038,6 +1038,22 @@ def _crawl_priority(src: dict) -> int:
     return 1 if any(h in blob for h in HARD_ANTIBOT_HOSTS) else 0
 
 
+def find_streamestate_source(agency_id: str) -> dict | None:
+    """Source « Analyse approfondie » (StreamEstate) de l'agence."""
+    from crawler.portals import resolve_base_portal_id
+
+    for s in get_sources(agency_id, sync=False, live_counts=False):
+        if resolve_base_portal_id(s.get("id") or "") == "streamestate":
+            return s
+    return None
+
+
+def is_streamestate_enabled_for_agency(agency_id: str) -> bool:
+    """True si l'analyse approfondie est activée dans les portails de l'agence."""
+    src = find_streamestate_source(agency_id)
+    return bool(src and src.get("enabled"))
+
+
 def is_recommended_crawl_source(src: dict) -> bool:
     """Portail ou site catalogue — inclus dans « Crawler tout » (hors anti-bot et perso)."""
     if not src.get("enabled"):
