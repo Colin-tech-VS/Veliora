@@ -908,11 +908,13 @@ function normalizeSettingsPayload(data) {
 
 function agencyPrimaryCity() {
   const s = state.settings || {};
+  // Territoire vide ⇒ crawl national (toutes les annonces du site), jamais de
+  // repli sur un `primary_city` resté en mémoire (ex. « Paris ») : on vérifie
+  // d'abord les villes cibles, sinon on retourne « » (= national).
+  const cities = (s.target_cities || []).map((c) => String(c || "").trim()).filter(Boolean);
+  if (!cities.length) return "";
   const fromApi = (s.primary_city || "").trim();
-  if (fromApi) return fromApi;
-  const cities = s.target_cities || [];
-  const first = cities.find((c) => c && String(c).trim());
-  return first ? String(first).trim() : "";
+  return fromApi || cities[0];
 }
 
 /** Affiche la ville de crawl (lecture seule — réglée via Territoire ou Fiche agence). */

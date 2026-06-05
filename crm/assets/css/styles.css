@@ -5428,6 +5428,15 @@ body:has(.crawl-dock.open) .script-dock.open {
   flex-shrink: 0;
 }
 
+/* `.btn-sm` n'a pas de taille globale → ici on rend les boutons d'en-tête
+   (Réduire / Arrêter) compacts et intentionnels, sinon ils s'affichent en
+   taille pleine et saturent l'en-tête à côté du titre et de la croix. */
+.crawl-loader-actions .btn-sm {
+  padding: 0.34rem 0.6rem;
+  font-size: 0.78rem;
+  gap: 0.3rem;
+}
+
 /* Bouton × discret */
 .crawl-close-x {
   width: 28px;
@@ -5525,8 +5534,24 @@ body:has(.crawl-dock.open) .script-dock.open {
   background: var(--brand-blue, #2a4a5c);
   border-color: var(--brand-blue, #2a4a5c);
   color: #fff;
-  box-shadow: 0 0 0 5px rgba(42, 74, 92, 0.14);
   animation: crawlPhasePop 0.4s var(--ease-out);
+}
+
+/* Anneau pulsant continu : la phase en cours reste « vivante » — perceptible
+   aussi bien sur mobile que sur PC (le pop d'entrée ne joue qu'une fois). */
+.crawl-phase-step.active .crawl-phase-dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(42, 74, 92, 0.4);
+  animation: crawlPhaseRing 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes crawlPhaseRing {
+  0% { box-shadow: 0 0 0 0 rgba(42, 74, 92, 0.4); }
+  70%, 100% { box-shadow: 0 0 0 7px rgba(42, 74, 92, 0); }
 }
 
 .crawl-phase-step.active span {

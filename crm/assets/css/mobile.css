@@ -1186,13 +1186,55 @@
     padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
   }
 
+  /* En-tête : titre tronquable + actions compactes sur une seule ligne, sans
+     débordement ni retour à la ligne disgracieux. */
+  .crawl-loader-head {
+    gap: 0.5rem;
+  }
+
   .crawl-loader-actions {
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    gap: 0.3rem;
   }
 
   .crawl-loader-actions .btn {
-    min-height: 40px;
+    min-height: 36px;
+  }
+
+  /* Icône « Réduire » seule : on libère la place pour le titre « Veille en
+     cours » (le bouton garde son title=… pour l'accessibilité). */
+  .crawl-loader-actions #crawl-minimize-btn .crawl-btn-label {
+    display: none;
+  }
+
+  .crawl-loader-actions #crawl-minimize-btn {
+    padding: 0.34rem 0.45rem;
+  }
+
+  /* Messages d'étape parfois longs (« 2e passage — révéler téléphone / email /
+     nom sur la fiche… ») : on les laisse s'enrouler proprement, sans casser la
+     mise en page ni déborder. La pastille reste alignée en haut. */
+  .crawl-loader-step {
+    align-items: flex-start;
+    font-size: 0.85rem;
+  }
+
+  .crawl-loader-step #crawl-loader-step-text {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .crawl-step-dot {
+    margin-top: 0.42em;
+  }
+
+  /* Badge portail (« ouestfranceimmo ») + détail : reste lisible et tronqué. */
+  .crawl-target {
+    gap: 0.35rem;
+  }
+
+  .crawl-target-detail {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   /* Modales mandats / clients */
