@@ -211,6 +211,8 @@ Sur Scalingo, **Playwright** est désactivé : le crawl passe par **curl_cffi** 
 
 Pour LBC/PAP/SeLoger : worker VPS avec `CRAWL_PLAYWRIGHT_ENABLED=true` + proxies résidentiels, ou clé `STREAMESTATE_API_KEY` en crawl manuel uniquement.
 
+**Hébergement tout-en-un (OVH VPS)** : voir **[OVH_VPS.md](OVH_VPS.md)** — site + veille Playwright + Decodo sur un seul serveur (`scripts/deploy-ovh-vps.sh`).
+
 ## Déployer
 
 ```bash

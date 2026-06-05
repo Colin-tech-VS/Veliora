@@ -1,0 +1,17 @@
+[Unit]
+Description=Veliora CRM + crawl (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=veliora
+Group=veliora
+WorkingDirectory=/opt/veliora
+EnvironmentFile=/opt/veliora/.env
+Environment=PORT=8000
+ExecStart=/opt/veliora/.venv/bin/gunicorn wsgi:application -c gunicorn.conf.py --bind 127.0.0.1:8000 --workers 1 --threads 8 --timeout 120 --preload --access-logfile -
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
