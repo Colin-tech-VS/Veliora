@@ -128,5 +128,17 @@ class AddressGuaranteeTests(unittest.TestCase):
         )
 
 
+    def test_sort_listing_urls_by_score(self):
+        from crawler.site_discovery import sort_listing_urls_by_score
+
+        urls = [
+            "https://exemple.fr/immobilier/vente-appartement",
+            "https://exemple.fr/annonce/vente-appartement-paris-1234567.html",
+            "https://exemple.fr/contact",
+        ]
+        ordered = sort_listing_urls_by_score(urls)
+        self.assertIn("1234567", ordered[0])
+
+
 if __name__ == "__main__":
     unittest.main()

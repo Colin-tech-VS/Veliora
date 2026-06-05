@@ -10,11 +10,15 @@ from bs4 import BeautifulSoup
 from crawler.extractors import LeadData, is_excluded_listing_url
 
 from crawler.hub_detection import (
+    DCF_LISTING_DETAIL_RE,
     FIGARO_HUB_RE,
     FIGARO_LISTING_RE,
     HUB_ADDRESS_RE,
     is_hub_listing_address,
+    is_hub_page_title,
+    is_multi_listing_html_page,
     is_site_navigation_name,
+    is_taxonomy_or_list_hub_url,
 )
 from crawler.listing_facts import validate_listing_facts_strict
 
@@ -83,6 +87,15 @@ def validate_listing_url(url: str) -> tuple[bool, str]:
         if re.search(r"/(?:immobilier|annonces)/[^/]+-\d{4,}", path, re.I):
             return True, ""
         return False, "URL ParuVendu invalide"
+
+    if "bellesdemeures.com" in host:
+        if is_taxonomy_or_list_hub_url(url):
+            return False, "page liste Belles Demeures (pas une fiche)"
+        if DCF_LISTING_DETAIL_RE.search(url):
+            return True, ""
+        if re.search(r"\d{7,}", path):
+            return True, ""
+        return False, "URL Belles Demeures sans identifiant de fiche"
 
     if "lefigaro.fr" in host or "figaro" in host:
         if re.search(r"france\.html", path, re.I):
@@ -173,15 +186,35 @@ def validate_listing_url_import(url: str) -> tuple[bool, str]:
     return False, "Collez le lien direct de la fiche annonce (pas une page de résultats)"
 
 
+def _reject_list_or_mixed_listing_page(
+    url: str,
+    html: str | None,
+    lead: LeadData,
+) -> tuple[bool, str] | None:
+    """Rejette pages liste / mix annonces — None si la page peut être une fiche."""
+    if is_taxonomy_or_list_hub_url(url):
+        return False, "page liste (URL catégorie)"
+    if html and is_multi_listing_html_page(html, url):
+        return False, "page liste — plusieurs annonces"
+    addr = (lead.address or "").strip()
+    if addr and is_hub_listing_address(addr):
+        return False, "page liste, pas une fiche détail"
+    if html:
+        title_m = re.search(r"<title[^>]*>([^<]{5,300})</title>", html, re.I)
+        if title_m and is_hub_page_title(title_m.group(1)):
+            return False, "titre page = liste d'annonces"
+    return None
+
+
 def validate_listing_coherence_import(
     url: str,
     html: str | None,
     lead: LeadData,
 ) -> tuple[bool, str]:
     """Cohérence assouplie : enregistrer dès qu'une fiche est identifiable."""
-    addr = (lead.address or "").strip()
-    if addr and is_hub_listing_address(addr):
-        return False, "page liste, pas une fiche détail"
+    rejected = _reject_list_or_mixed_listing_page(url, html, lead)
+    if rejected:
+        return rejected
 
     ok_url, url_reason = validate_listing_url_import(url)
     if not ok_url:
@@ -350,7 +383,20 @@ def validate_listing_coherence_crawl(
     html: str | None,
     lead: LeadData,
 ) -> tuple[bool, str]:
-    """Cohérence crawl : enregistrer dès qu'une fiche est utilisable (filtre léger)."""
+    """Cohérence crawl : rejette listes/mix, puis valide champs et ratios."""
+    rejected = _reject_list_or_mixed_listing_page(url, html, lead)
+    if rejected:
+        return rejected
+
+    ok_field, field_reason = validate_field_coherence(lead)
+    if not ok_field:
+        return False, field_reason
+
+    soup = BeautifulSoup(html, "lxml") if html else None
+    ok_facts, facts_reason = validate_listing_facts_strict(lead, soup, url)
+    if not ok_facts and should_withdraw_incoherent(facts_reason):
+        return False, facts_reason
+
     return validate_listing_coherence_import(url, html, lead)
 
 

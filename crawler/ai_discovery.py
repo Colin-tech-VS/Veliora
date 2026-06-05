@@ -39,7 +39,7 @@ def _compact_html(html: str, page_url: str) -> str:
         tag.decompose()
     text = soup.get_text("\n", strip=True)
     links: list[str] = []
-    for a in soup.find_all("a", href=True)[:120]:
+    for a in soup.find_all("a", href=True)[:200]:
         href = (a.get("href") or "").strip()
         if not href or href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
@@ -47,7 +47,7 @@ def _compact_html(html: str, page_url: str) -> str:
         if full.startswith("http"):
             label = (a.get_text(" ", strip=True) or "")[:80]
             links.append(f"{full} | {label}")
-    blob = "LIENS:\n" + "\n".join(links[:80]) + "\n\nTEXTE:\n" + text
+    blob = "LIENS:\n" + "\n".join(links[:120]) + "\n\nTEXTE:\n" + text
     return blob[:_HTML_MAX_CHARS]
 
 
@@ -150,7 +150,9 @@ def ai_extract_listing_urls(
         out.append(u)
         if len(out) >= limit:
             break
-    return out
+    from crawler.site_discovery import sort_listing_urls_by_score
+
+    return sort_listing_urls_by_score(out)[:limit]
 
 
 def validate_listing_url_import_relaxed(url: str) -> tuple[bool, str]:

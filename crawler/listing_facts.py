@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from crawler.extractors import (
     LeadData,
+    FALSE_PRICE_LABEL_RE,
     _domain_key_from_url,
     _element_order,
     _element_zone_attrs,
@@ -726,12 +727,16 @@ def validate_listing_facts_strict(
         if not audit.ok and any("contradictoire" in x for x in audit.checks_failed):
             return False, audit.checks_failed[0]
 
+    if page_url:
+        from crawler.hub_detection import is_taxonomy_or_list_hub_url
+
+        if is_taxonomy_or_list_hub_url(page_url):
+            return False, "page liste — plusieurs annonces"
+
     if lead.price and lead.surface and soup:
         hero_conflict = _hero_has_conflicting_metrics(soup, page_url)
         if hero_conflict:
-            fa = lead.raw_extras.get("facts_audit") or {}
-            if len(fa.get("checks_failed") or []) >= 2:
-                return False, "plusieurs prix/surfaces dans la fiche (mix annonces)"
+            return False, "plusieurs prix/surfaces dans la fiche (mix annonces)"
 
     return True, ""
 
@@ -774,6 +779,9 @@ def _hero_has_conflicting_metrics(soup: BeautifulSoup, page_url: str) -> bool:
     for pattern in (HERO_PRICE_RE, PRICE_RE):
         for m in pattern.finditer(hero):
             if _price_match_is_per_m2(hero, m):
+                continue
+            snippet = hero[max(0, m.start() - 120) : m.end() + 80]
+            if FALSE_PRICE_LABEL_RE.search(snippet):
                 continue
             raw_amt = _parse_raw_euro_digits(m.group(0))
             if raw_amt:

@@ -66,6 +66,11 @@ MAX_LISTINGS_PER_SCAN = 0
 # Liens extraits des pages résultats — réduit pour des crawls plus rapides
 MAX_LISTING_LINKS = int(os.getenv("MAX_LISTING_LINKS", "180"))
 
+# Découverte : seuils adaptatif / IA (diviseurs de MAX_LISTING_LINKS)
+DISCOVERY_ADAPTIVE_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_ADAPTIVE_MIN_LINKS_DIV", "40"))
+DISCOVERY_AI_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_AI_MIN_LINKS_DIV", "20"))
+AI_DISCOVERY_MAX_ATTEMPTS = int(os.getenv("AI_DISCOVERY_MAX_ATTEMPTS", "8"))
+
 # Ne pas enchaîner le crawl des blocs « annonces similaires » (évite confusion + surcharge)
 CRAWL_SIMILAR_LISTINGS = False
 
@@ -129,17 +134,17 @@ CRAWL_SPEED_PRESETS: dict[str, dict[str, float]] = {
         "content_wait_ms": 10_000,
     },
     "fast": {
-        "listing_min": 0.45,
-        "listing_max": 1.5,
-        "search_min": 0.35,
-        "search_max": 1.2,
-        "networkidle_ms": 4_000,
-        "content_wait_ms": 7_000,
-        "extra_pause_chance": 0.02,
-        "extra_pause_min": 1.5,
-        "extra_pause_max": 4.0,
-        "recrawl_delay_factor": 0.15,
-        "warmup_sec": 1.0,
+        "listing_min": 0.35,
+        "listing_max": 1.2,
+        "search_min": 0.28,
+        "search_max": 1.0,
+        "networkidle_ms": 3_500,
+        "content_wait_ms": 6_000,
+        "extra_pause_chance": 0.01,
+        "extra_pause_min": 1.0,
+        "extra_pause_max": 3.0,
+        "recrawl_delay_factor": 0.1,
+        "warmup_sec": 0.6,
         "source_gap_min": 0.1,
         "source_gap_max": 0.35,
         "scroll_min": 2,
@@ -219,7 +224,7 @@ CURL_CFFI_IMPERSONATE = "chrome"
 # Timeout HTTP par requête (curl_cffi / requests). 35s était trop généreux :
 # une page légitime répond en <10s ; un proxy lent/mort ne doit pas geler le crawl.
 # Réduit fortement le temps total, surtout avec des proxys gratuits (lents).
-CRAWL_HTTP_TIMEOUT_SEC = int(os.getenv("CRAWL_HTTP_TIMEOUT_SEC", "18"))
+CRAWL_HTTP_TIMEOUT_SEC = int(os.getenv("CRAWL_HTTP_TIMEOUT_SEC", "14"))
 
 # ─── Proxies (rotation d'IP — pour passer DataDome/Cloudflare comme un service pro) ───
 # Un crawl depuis une seule IP maison se fait bannir par les portails protégés.

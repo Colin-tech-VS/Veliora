@@ -39,7 +39,10 @@ EXCLUDE_ZONE_RE = re.compile(
 FALSE_PRICE_LABEL_RE = re.compile(
     r"honoraire|frais\s+de|notaire|taxe|dpe|ges|charges?\s+annuel|"
     r"copro|provision|estimation|à\s+partir|budget|crédit|mensualité|"
-    r"taxe\s+foncière|fai|fonds\s+de\s+roulement",
+    r"taxe\s+foncière|fai|fonds\s+de\s+roulement|"
+    r"parking|stationnement|emplacement|garage|box|annexe|indissociable|"
+    r"en\s+sus|vendu\s+en\s+sus|proposé\s+en\s+sus|au\s+prix\s+de|"
+    r"chambre\s+de\s+service|studio\s+(?:en\s+)?annexe|option|supplément",
     re.IGNORECASE,
 )
 
@@ -1444,7 +1447,7 @@ def extract_listing_price(soup: BeautifulSoup, page_url: str = "") -> ListingPri
             candidates.append((order, _dom_price_score(el, main), amount, tx, period))
 
     for el in main.select(
-        "[class*='price-main'], [class*='main-price'], [class*='detail-price'], "
+        "[class~='price'], [class*='price-main'], [class*='main-price'], [class*='detail-price'], "
         "[class*='summary-price'], [class*='property-price'], [class*='item-price'], "
         "[class*='adSummaryPrice'], [class*='Price__']"
     ):
@@ -1460,7 +1463,7 @@ def extract_listing_price(soup: BeautifulSoup, page_url: str = "") -> ListingPri
 
     if not candidates:
         for m in PRICE_RE.finditer(hero_text):
-            snippet = hero_text[max(0, m.start() - 40) : m.end() + 40]
+            snippet = hero_text[max(0, m.start() - 120) : m.end() + 80]
             if FALSE_PRICE_LABEL_RE.search(snippet) or _price_match_is_per_m2(hero_text, m):
                 continue
             tx = _transaction_from_text(snippet) if RENT_HINT_RE.search(snippet) else transaction
@@ -2208,7 +2211,8 @@ EXCLUDE_LISTING_URL_RE = re.compile(
     r"\.pdf$|/blog/|/aide/|/presse/|diagandgo|devis-energie|"
     r"immobilier-(vente|location)-(?:appartement|maison|bien)-france|"
     r"/annonces/immobilier-(vente|location)-(?:appartement|maison)-[a-z0-9+.+-]+:\d|"
-    r"/annonces/immobilier-(vente|location)-(?:appartement|maison|bien|studio)-[a-z0-9+.+-]+\.html",
+    r"/annonces/immobilier-(vente|location)-(?:appartement|maison|bien|studio)-[a-z0-9+.+-]+\.html|"
+    r"/tt-\d+-tb-\d+-pl-\d+/?(?:\?|#|$)",
     re.IGNORECASE,
 )
 
@@ -2239,7 +2243,9 @@ def find_listing_links(
             if re.search(pattern, full, re.IGNORECASE):
                 links.add(full.split("#")[0])
                 break
-    return list(links)[:limit]
+    from crawler.site_discovery import sort_listing_urls_by_score
+
+    return sort_listing_urls_by_score(list(links))[:limit]
 
 
 def find_pagination_links(html: str, base_url: str, current_url: str) -> list[str]:

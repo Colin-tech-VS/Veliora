@@ -283,7 +283,12 @@ CATALOG_SITES: tuple[CatalogSite, ...] = (
         "network",
         "https://www.bellesdemeures.com",
         "https://www.bellesdemeures.com/achat",
-        (_host_pat("bellesdemeures.com"),) + tuple(_COMMON_LISTING_PATTERNS),
+        (
+            r"bellesdemeures\.com/[^\"'\s]*visitonline[^\"'\s]*",
+            r"visitonline_a_\d{8,}",
+            r"/search/visitonline",
+        )
+        + tuple(_COMMON_LISTING_PATTERNS),
     ),
     CatalogSite(
         "lux_residence",

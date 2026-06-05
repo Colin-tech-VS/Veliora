@@ -2455,7 +2455,8 @@ def get_source_lead_urls(
                    source_id = ?
                    OR ((source_id IS NULL OR source_id = '') AND LOWER(source) = LOWER(?))
                    OR source_url LIKE ?
-               ){status_clause}""",
+               ){status_clause}
+               ORDER BY COALESCE(mandate_score, 0) DESC, updated_at ASC""",
             (source_id, name, url_like),
         ).fetchall()
     return [str(r["source_url"]) for r in rows if r["source_url"]]

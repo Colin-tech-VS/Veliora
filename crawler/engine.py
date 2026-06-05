@@ -855,7 +855,7 @@ class CrawlerEngine:
 
         is_listing = self._looks_like_listing(url)
 
-        if is_listing:
+        if is_listing and not self._veille_mode:
             if job_id:
                 update_crawl_job(
                     job_id,
@@ -865,9 +865,41 @@ class CrawlerEngine:
             self._process_listing(url, adapter, result, source_id, job_id)
             return result
 
-        listing_urls, fetch_err = self._collect_listing_urls(
-            url, adapter, job_id, source_id, discover_seeds=discover_seeds, city=city
-        )
+        if is_listing and self._veille_mode:
+            discover_start = (
+                adapter.config.search_url
+                or adapter.config.base_url
+                or url
+            )
+            listing_urls, fetch_err = self._collect_listing_urls(
+                discover_start,
+                adapter,
+                job_id,
+                source_id,
+                discover_seeds=discover_seeds,
+                city=city,
+            )
+            listing_urls = list(dict.fromkeys([url] + (listing_urls or [])))
+        else:
+            listing_urls, fetch_err = self._collect_listing_urls(
+                url, adapter, job_id, source_id, discover_seeds=discover_seeds, city=city
+            )
+
+        if self._veille_mode and len(listing_urls or []) < 5:
+            seen_disc = set(listing_urls or [])
+            rescue_extra = self._last_resort_listing_discovery(
+                url,
+                adapter,
+                source_id,
+                job_id,
+                city=city,
+                portal_seeds=discover_seeds or [],
+                seen=seen_disc,
+            )
+            if rescue_extra:
+                listing_urls = list(
+                    dict.fromkeys((listing_urls or []) + rescue_extra)
+                )
 
         targets, self._veille_recrawl_urls = self._prepare_listing_targets(
             listing_urls or [], source_id
@@ -891,8 +923,13 @@ class CrawlerEngine:
                 if self._veille_mode and n_recrawl:
                     n_new = max(0, len(targets) - n_recrawl)
                     limit_msg = (
-                        f"Veille — {n_recrawl} fiche(s) en base (mise à jour) "
-                        f"+ {n_new} nouvelle(s) — {format_eta(eta)}"
+                        f"Veille — {len(targets)} annonce(s) au total "
+                        f"({n_recrawl} en base + {n_new} nouvelle(s)) — {format_eta(eta)}"
+                    )
+                elif self._veille_mode:
+                    limit_msg = (
+                        f"Veille — {len(targets)} nouvelle(s) annonce(s) — "
+                        f"{format_eta(eta)}"
                     )
                 else:
                     limit_msg = f"{len(targets)} annonce(s) — durée estimée {format_eta(eta)}"
@@ -1078,7 +1115,7 @@ class CrawlerEngine:
                     index=i,
                     total=min(20, len(rescue)),
                 )
-            if total.leads_saved or total.leads_updated:
+            if (total.leads_saved or total.leads_updated) and not self._veille_mode:
                 return
 
     def _collect_listing_urls(
@@ -1154,6 +1191,8 @@ class CrawlerEngine:
         discovery_scroll = discovery_scroll_lazy()
         zero_yield_pages = 0
         fallback_seeds_done = False
+        from crawler.config import AI_DISCOVERY_MAX_ATTEMPTS
+
         ai_discovery_attempts = 0
         from crawler.discovery_pipeline import extract_listing_urls_from_page
 
@@ -1229,10 +1268,10 @@ class CrawlerEngine:
                 fetched.html,
                 page_url,
                 limit=MAX_LISTING_LINKS,
-                use_ai=ai_discovery_attempts < 4,
-                ai_attempt=ai_discovery_attempts < 4,
+                use_ai=ai_discovery_attempts < AI_DISCOVERY_MAX_ATTEMPTS,
+                ai_attempt=ai_discovery_attempts < AI_DISCOVERY_MAX_ATTEMPTS,
             )
-            if batch and ai_discovery_attempts < 4:
+            if batch and ai_discovery_attempts < AI_DISCOVERY_MAX_ATTEMPTS:
                 ai_discovery_attempts += 1
             for link in batch:
                 if city and not listing_url_likely_in_city(link, city):
@@ -1277,7 +1316,7 @@ class CrawlerEngine:
                         ),
                     )
 
-            if len(all_links) >= 10:
+            if page_yielded > 0 and all_links:
                 extend_adapter_patterns(adapter, all_links)
 
             if MAX_LISTINGS_PER_SCAN > 0 and len(all_links) >= MAX_LISTINGS_PER_SCAN:
@@ -1360,7 +1399,9 @@ class CrawlerEngine:
                     seen.add(link)
                     all_links.append(link)
 
-        return all_links, None
+        from crawler.site_discovery import sort_listing_urls_by_score
+
+        return sort_listing_urls_by_score(all_links), None
 
     def _last_resort_listing_discovery(
         self,
@@ -1466,7 +1507,9 @@ class CrawlerEngine:
                 seen.add(u)
                 new_urls.append(u)
             from crawler.config import CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS
+            from crawler.site_discovery import sort_listing_urls_by_score
 
+            new_urls = sort_listing_urls_by_score(new_urls)
             if CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS > 0:
                 new_urls = new_urls[:CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS]
             return list(existing_valid) + new_urls, existing_set
@@ -1489,15 +1532,17 @@ class CrawlerEngine:
         if not source_id or not self._agency_id:
             return discovered
 
+        from crawler.site_discovery import sort_listing_urls_by_score
+
         existing_valid = self._existing_lead_urls_for_source(source_id)
         seen: set[str] = set(existing_valid)
-        ordered: list[str] = list(existing_valid)
+        new_urls: list[str] = []
         for u in discovered:
             u = normalize_listing_url(u)
             if u not in seen:
                 seen.add(u)
-                ordered.append(u)
-        return ordered
+                new_urls.append(u)
+        return list(existing_valid) + sort_listing_urls_by_score(new_urls)
 
     def _looks_like_listing(self, url: str) -> bool:
         """True pour une fiche annonce (validation souple en priorité)."""
@@ -2012,7 +2057,8 @@ class CrawlerEngine:
             return not ld.phone and not ld.email
 
         core_miss = missing_core_fields(lead)
-        if _needs_contact_pass(lead):
+        # Recrawl rapide : deep_enhance seulement si contacts/nom/type incomplets (pas à chaque fiche).
+        if _needs_contact_pass(lead) or deep_refresh:
             lead = deep_enhance_listing_contacts(fetched.html, url, lead)
             core_miss = missing_core_fields(lead)
         if _needs_contact_refetch(lead) and not deep_refresh:
@@ -2032,7 +2078,6 @@ class CrawlerEngine:
                 lead = adapter.parse_listing(fetched_contacts.html, url)
                 lead = deep_enhance_listing_contacts(fetched_contacts.html, url, lead)
         if deep_refresh:
-            lead = deep_enhance_listing_contacts(fetched.html, url, lead)
             if job_id:
                 type_lbl = "agence" if lead.type == "agence" else "particulier"
                 contact_bits = []
@@ -2571,7 +2616,7 @@ class CrawlerEngine:
 
         while self.running:
             try:
-                self._run_lead_refresh_pass()
+                # Refresh fiches : thread dédié (_lead_refresh_loop) — ne pas bloquer la veille ici.
                 for agency_id in list_agency_ids():
                     if not self.running:
                         break

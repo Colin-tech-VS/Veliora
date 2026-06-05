@@ -230,6 +230,15 @@ def get_portal_discover_urls(
     return out[:24]
 
 
+def sort_listing_urls_by_score(urls: list[str]) -> list[str]:
+    """Trie les URLs d'annonces par score heuristique (meilleures fiches en premier)."""
+    if not urls:
+        return []
+    scored = [(score_listing_link(u), u) for u in urls]
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [u for _, u in scored]
+
+
 def score_listing_link(url: str, anchor_text: str = "") -> int:
     """Score heuristique : URL ressemble à une fiche annonce."""
     if not url or is_excluded_listing_url(url):

@@ -236,6 +236,8 @@ def is_hub_listing_address(address: str | None) -> bool:
         return True
     if re.search(r"\d[\d\s\u00a0.]*\s*annonces?\b", a, re.I):
         return True
+    if re.search(r"\d[\d\s\u00a0.]*\s+biens?\s+d['\u2019]?exception\b", a, re.I):
+        return True
     if re.match(
         r"^(Achat|Location)\s+(Appartement|Maison|Studio|bien|Bien|Terrain|Parking)\b",
         a,
@@ -243,5 +245,87 @@ def is_hub_listing_address(address: str | None) -> bool:
     ):
         return True
     if re.search(r":\s*\d[\d\s\u00a0.]*\s*annonces?\b", a, re.I):
+        return True
+    return False
+
+
+# Slug taxonomie Digital Classifieds (Belles Demeures, SeLoger Luxe…) — page résultats, pas une fiche.
+DCF_TAXONOMY_SLUG_RE = re.compile(r"/tt-\d+-tb-\d+-pl-\d+/?(?:\?|#|$)", re.I)
+DCF_LISTING_DETAIL_RE = re.compile(
+    r"visitonline|/detail/|/annonce/\d|/annonces/[^/]+-\d{6,}|ref[_-]?\d{6,}",
+    re.I,
+)
+
+
+def is_taxonomy_or_list_hub_url(url: str | None) -> bool:
+    """URL de page liste / catégorie (ex. Belles Demeures tt-2-tb-1-pl-32596)."""
+    u = (url or "").strip()
+    if not u.startswith("http"):
+        return False
+    if DCF_TAXONOMY_SLUG_RE.search(u):
+        return True
+    from urllib.parse import urlparse
+
+    parsed = urlparse(u.split("#")[0])
+    path = parsed.path.lower()
+    host = parsed.netloc.lower().replace("www.", "")
+    if "bellesdemeures.com" in host:
+        if DCF_LISTING_DETAIL_RE.search(u):
+            return False
+        # Géo + type sans identifiant fiche = liste (ex. …/paris-16eme/appartement-luxe/tt-…)
+        if DCF_TAXONOMY_SLUG_RE.search(path) or "/tt-" in path:
+            return True
+        segments = [s for s in path.split("/") if s]
+        if len(segments) >= 5 and not re.search(r"\d{7,}", path):
+            if segments[-1].startswith("tt-"):
+                return True
+    return False
+
+
+def is_hub_page_title(title: str | None) -> bool:
+    t = (title or "").strip()
+    if not t:
+        return False
+    if is_hub_listing_address(t):
+        return True
+    if re.search(
+        r"\d+\s+(?:appartements?|maisons?|biens?)\s+(?:de\s+)?(?:luxe|exception|prestige)",
+        t,
+        re.I,
+    ):
+        return True
+    if re.search(r"à vendre à\s+[A-Za-zÀ-ÿ\s'\-]+\s*-\s*Belles\s+Demeures", t, re.I):
+        return True
+    return False
+
+
+def is_multi_listing_html_page(html: str | None, page_url: str = "") -> bool:
+    """Détecte une page résultats avec plusieurs annonces mélangées."""
+    if not html or len(html) < 400:
+        return False
+    if is_taxonomy_or_list_hub_url(page_url):
+        return True
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "lxml")
+    title_el = soup.find("title")
+    if title_el and is_hub_page_title(title_el.get_text(" ", strip=True)):
+        return True
+    text = soup.get_text(" ", strip=True)
+    if re.search(r"\d{2,5}\s+biens?\s+d['\u2019]?exception\b", text[:8000], re.I):
+        return True
+    if text.count("Signaler cette annonce") >= 2:
+        return True
+    if text.count("Message envoyé") >= 2:
+        return True
+    # Plusieurs blocs « Appartement X Pièces•YYY m² … ZZZ € » = page liste DCF
+    listing_cards = re.findall(
+        r"(?:Appartement|Maison|Duplex|Loft|Villa)\s+"
+        r"(?:\d+\s+Pièces\s*•\s*)?\d+(?:[.,]\d+)?\s*m[²2].{0,120}?"
+        r"\d{1,3}(?:[\s\u00a0.]\d{3})+\s*€",
+        text[:40000],
+        re.I,
+    )
+    if len(listing_cards) >= 2:
         return True
     return False

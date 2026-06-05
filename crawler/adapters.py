@@ -63,24 +63,31 @@ class BaseAdapter(ABC):
         return self.config.name
 
     def find_listings(self, html: str, page_url: str, limit: int = 150) -> list[str]:
-        links = find_listing_links(html, page_url, self.config.listing_patterns, limit=limit)
-        if len(links) < max(1, limit // 40):
-            from crawler.site_discovery import find_listing_links_adaptive
+        from crawler.config import DISCOVERY_ADAPTIVE_MIN_LINKS_DIV
+        from crawler.site_discovery import find_listing_links_adaptive, sort_listing_urls_by_score
 
-            base = self.config.base_url or page_url
-            adaptive = find_listing_links_adaptive(
-                html,
-                page_url,
-                base,
-                self.config.listing_patterns,
-                limit=limit,
+        base = self.config.base_url or page_url
+        links = find_listing_links_adaptive(
+            html,
+            page_url,
+            base,
+            self.config.listing_patterns,
+            limit=limit,
+        )
+        min_links = max(2, limit // max(1, DISCOVERY_ADAPTIVE_MIN_LINKS_DIV))
+        if len(links) < min_links:
+            pattern_links = find_listing_links(
+                html, page_url, self.config.listing_patterns, limit=limit
             )
-            links = list(dict.fromkeys(links + adaptive))[:limit]
+            links = sort_listing_urls_by_score(
+                list(dict.fromkeys(links + pattern_links))
+            )[:limit]
         if not links:
-            return find_listing_links(
+            links = find_listing_links(
                 html, page_url, GenericAdapter().config.listing_patterns, limit=limit
             )
-        return links
+            links = sort_listing_urls_by_score(links)[:limit]
+        return links[:limit]
 
     def parse_listing(self, html: str, url: str) -> LeadData:
         from bs4 import BeautifulSoup
@@ -352,18 +359,16 @@ class GenericAdapter(BaseAdapter):
 
     def parse_listing(self, html: str, url: str) -> LeadData:
         from crawler.url_utils import display_name_from_domain
-        from bs4 import BeautifulSoup
-        from crawler.listing_facts import verify_and_apply_listing_facts
 
         host = urlparse(url).netloc.replace("www.", "")
-        source = self.config.name or display_name_from_domain(host) or "Custom"
-        lead = generic_extract(html, url, source=source)
-        soup = BeautifulSoup(html, "lxml")
-        verify_and_apply_listing_facts(lead, soup, url)
-        from crawler.address_match.features import apply_features_to_lead
-
-        apply_features_to_lead(lead, soup, url, html=html)
-        return lead
+        if not (self.config.name or "").strip() or self.config.name == "Site personnalisé":
+            old_name = self.config.name
+            self.config.name = display_name_from_domain(host) or "Custom"
+            try:
+                return super().parse_listing(html, url)
+            finally:
+                self.config.name = old_name
+        return super().parse_listing(html, url)
 
 
 DEFAULT_SOURCES: list[AdapterConfig] = [
