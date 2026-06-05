@@ -181,7 +181,7 @@ def begin_crawl_session(
     - Gros portail anti-bot (et CRAWL_PROXIES défini) → IP Decodo premium.
     - Petit site → IP gratuite si pool dispo, sinon IP serveur directe.
     """
-    global _block_rotation_count, _session_tier
+    global _block_rotation_count, _session_tier, _session_proxy
 
     ensure_proxy_pool()
 
