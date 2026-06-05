@@ -33,6 +33,26 @@ from crawler.errors import CrawlError
 
 logger = logging.getLogger(__name__)
 
+import os as _os
+
+# Canal navigateur. Sur poste de dev (Windows/Mac) on préfère Google Chrome installé
+# (« channel=chrome » → meilleure évasion anti-bot). Sur serveur Linux, Chrome n'est
+# pas installé : on bascule sur le Chromium intégré de Playwright (channel vide).
+#   CRAWL_BROWSER_CHANNEL="chrome"  → force Chrome
+#   CRAWL_BROWSER_CHANNEL=""        → force le Chromium intégré
+#   (non défini)                    → auto : Chrome puis repli Chromium intégré
+_BROWSER_CHANNEL_ENV = _os.getenv("CRAWL_BROWSER_CHANNEL")
+_resolved_channel: str | None = None  # cache du canal qui fonctionne ("" = Chromium intégré)
+
+
+def _channel_candidates() -> list[str]:
+    if _resolved_channel is not None:
+        return [_resolved_channel]
+    if _BROWSER_CHANNEL_ENV is not None:
+        return [_BROWSER_CHANNEL_ENV.strip()]
+    return ["chrome", ""]  # Chrome d'abord, sinon Chromium intégré (serveur Linux)
+
+
 USER_AGENTS = [
     (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -182,36 +202,53 @@ class _PlaywrightSession:
         proxy = _playwright_proxy()
         proxy_kw = {"proxy": proxy} if proxy else {}
 
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                profile,
-                channel="chrome",
-                headless=headless,
-                user_agent=self._user_agent,
-                locale="fr-FR",
-                timezone_id="Europe/Paris",
-                viewport={"width": 1366, "height": 900},
-                extra_http_headers=BROWSER_HEADERS,
-                args=args,
-                ignore_default_args=["--enable-automation"],
-                **proxy_kw,
-            )
-            return ctx, None
-        except Exception:
-            browser = p.chromium.launch(
-                channel="chrome",
-                headless=headless,
-                args=args + ([] if headless else []),
-                **proxy_kw,
-            )
-            ctx = browser.new_context(
-                user_agent=self._user_agent,
-                locale="fr-FR",
-                timezone_id="Europe/Paris",
-                viewport={"width": 1366, "height": 900},
-                extra_http_headers=BROWSER_HEADERS,
-            )
-            return ctx, browser
+        global _resolved_channel
+        last_exc: Exception | None = None
+        for channel in _channel_candidates():
+            ch_kw = {"channel": channel} if channel else {}
+            try:
+                ctx = p.chromium.launch_persistent_context(
+                    profile,
+                    headless=headless,
+                    user_agent=self._user_agent,
+                    locale="fr-FR",
+                    timezone_id="Europe/Paris",
+                    viewport={"width": 1366, "height": 900},
+                    extra_http_headers=BROWSER_HEADERS,
+                    args=args,
+                    ignore_default_args=["--enable-automation"],
+                    **ch_kw,
+                    **proxy_kw,
+                )
+                if _resolved_channel != channel:
+                    logger.info(
+                        "Navigateur crawl : %s",
+                        "Google Chrome" if channel == "chrome" else "Chromium intégré",
+                    )
+                _resolved_channel = channel
+                return ctx, None
+            except Exception as exc:
+                last_exc = exc
+                try:
+                    browser = p.chromium.launch(
+                        headless=headless,
+                        args=args + ([] if headless else []),
+                        **ch_kw,
+                        **proxy_kw,
+                    )
+                    ctx = browser.new_context(
+                        user_agent=self._user_agent,
+                        locale="fr-FR",
+                        timezone_id="Europe/Paris",
+                        viewport={"width": 1366, "height": 900},
+                        extra_http_headers=BROWSER_HEADERS,
+                    )
+                    _resolved_channel = channel
+                    return ctx, browser
+                except Exception as exc2:
+                    last_exc = exc2
+                    continue
+        raise last_exc if last_exc else RuntimeError("Lancement navigateur impossible")
 
     def _session_alive(self) -> bool:
         """Le contexte/page Playwright est-il encore utilisable ?"""
