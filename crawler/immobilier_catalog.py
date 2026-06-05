@@ -559,52 +559,78 @@ def catalog_city_search_candidates(
     return out or [site.search_url]
 
 
+def _valid_catalog_agency_id(agency_id: str | None) -> str | None:
+    """Refuse pool partagé / None (sinon id « None_net_laforet » en base)."""
+    from crm.leads.shared_pool import is_shared_pool_agency_id
+
+    if is_shared_pool_agency_id(agency_id):
+        return None
+    aid = str(agency_id or "").strip()
+    if not aid or aid.lower() == "none":
+        return None
+    return aid
+
+
+def purge_broken_catalog_sources(conn) -> int:
+    """Supprime les sources catalogue créées par erreur (agency_id manquant)."""
+    rows = conn.execute(
+        """SELECT id FROM sources
+           WHERE id LIKE 'None_net_%'
+              OR (TRIM(COALESCE(agency_id, '')) = '' AND id LIKE '%_net_%')"""
+    ).fetchall()
+    removed = 0
+    for row in rows:
+        sid = row["id"]
+        linked = conn.execute(
+            "SELECT 1 FROM leads WHERE source_id = ? LIMIT 1",
+            (sid,),
+        ).fetchone()
+        if linked:
+            continue
+        conn.execute("DELETE FROM sources WHERE id = ?", (sid,))
+        removed += 1
+    return removed
+
+
 def sync_immobilier_catalog_for_agency(agency_id: str) -> int:
     """Ajoute / met à jour les sites catalogue pour l'agence (veille + crawl tout)."""
     from crawler.storage import get_connection, _now
 
+    aid = _valid_catalog_agency_id(agency_id)
+    if not aid:
+        return 0
+
     now = _now()
     touched = 0
     with get_connection() as conn:
+        purge_broken_catalog_sources(conn)
         for site in CATALOG_SITES:
-            sid = catalog_scoped_id(agency_id, site.id)
+            sid = catalog_scoped_id(aid, site.id)
             enabled = 1 if site.enabled else 0
-            row = conn.execute(
-                "SELECT id FROM sources WHERE id = ? AND agency_id = ?",
-                (sid, agency_id),
-            ).fetchone()
-            if row:
-                conn.execute(
-                    """UPDATE sources SET name = ?, base_url = ?, search_url = ?,
-                       enabled = ?, is_custom = 0, updated_at = ?
-                       WHERE id = ? AND agency_id = ?""",
-                    (
-                        site.name,
-                        site.base_url,
-                        site.search_url,
-                        enabled,
-                        now,
-                        sid,
-                        agency_id,
-                    ),
-                )
-            else:
-                conn.execute(
-                    """INSERT INTO sources
-                       (id, name, base_url, search_url, enabled, is_custom,
-                        agency_id, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
-                    (
-                        sid,
-                        site.name,
-                        site.base_url,
-                        site.search_url,
-                        enabled,
-                        agency_id,
-                        now,
-                        now,
-                    ),
-                )
+            conn.execute(
+                """INSERT INTO sources
+                   (id, name, base_url, search_url, enabled, is_custom,
+                    agency_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     name = excluded.name,
+                     base_url = excluded.base_url,
+                     search_url = excluded.search_url,
+                     enabled = excluded.enabled,
+                     is_custom = 0,
+                     agency_id = excluded.agency_id,
+                     updated_at = excluded.updated_at""",
+                (
+                    sid,
+                    site.name,
+                    site.base_url,
+                    site.search_url,
+                    enabled,
+                    aid,
+                    now,
+                    now,
+                ),
+            )
             touched += 1
         conn.commit()
     return touched

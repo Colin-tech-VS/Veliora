@@ -1083,6 +1083,7 @@ def is_recommended_crawl_source(src: dict) -> bool:
 
 def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
     """Portails + réseaux agences + petites annonces pour la veille auto."""
+    from crm.leads.shared_pool import is_shared_pool_agency_id
     from crawler.config import (
         CRAWL_INCLUDE_CATALOG_IN_AUTO,
         CRAWL_INCLUDE_CUSTOM_IN_AUTO,
@@ -1091,6 +1092,8 @@ def get_sources_for_full_crawl(agency_id: str) -> list[dict]:
     from crawler.immobilier_catalog import sync_immobilier_catalog_for_agency
     from crawler.portals import resolve_base_portal_id
 
+    if is_shared_pool_agency_id(agency_id) or str(agency_id or "").strip().lower() == "none":
+        return []
     seed_default_sources_for_agency(agency_id)
     if CRAWL_INCLUDE_CATALOG_IN_AUTO:
         sync_immobilier_catalog_for_agency(agency_id)
@@ -3065,6 +3068,10 @@ def get_sources(
     sync: bool = False,
     live_counts: bool | None = None,
 ) -> list[dict]:
+    from crm.leads.shared_pool import is_shared_pool_agency_id
+
+    if is_shared_pool_agency_id(agency_id) or str(agency_id or "").strip().lower() == "none":
+        return []
     if live_counts is None:
         live_counts = sync
     if not sync:

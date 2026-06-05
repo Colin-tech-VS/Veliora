@@ -63,31 +63,93 @@ scalingo --app veliora env-set FLASK_SECRET_KEY="$(openssl rand -hex 32)"
 | `SMTP_FROM` | Ex. `Veliora <noreply@votredomaine.fr>` |
 | `SMTP_USE_TLS` | `true` |
 
-### Crawler (défauts Scalingo dans `scalingo.json`)
+### Crawler — profil « gratuit + rapide + données sûres » (`scalingo.json`)
+
+Ce profil est calibré pour **Scalingo sans coût supplémentaire** (pas de proxies payants, pas de Chrome, pas de crédits StreamEstate en veille). La qualité des fiches repose sur les filtres Veliora (cohérence prix/surface, commune INSEE, DVF, rapprochement adresse) — **indépendants** du profil de vitesse.
+
+**Appliquer en une fois** (hors secrets) :
+
+```bash
+grep -v '^\s*#' scripts/scalingo-env-apply.env | xargs -I{} scalingo --app veliora env-set {}
+```
+
+#### Ce qui crawl bien en gratuit
+
+| Source | Statut |
+|--------|--------|
+| ParuVendu, Ouest-France, LeSiteImmo, Superimmo… | OK (HTTP) |
+| Réseaux agences + catalogue (`CRAWL_INCLUDE_CATALOG_IN_AUTO`) | OK |
+| Sites perso / Netty / WordPress (`CRAWL_INCLUDE_CUSTOM_IN_AUTO`) | OK |
+| LeBonCoin, PAP, SeLoger, Bien’ici | **Désactivés** (`CRAWL_ANTIBOT_PORTALS_ENABLED=false`) — DataDome exige navigateur + proxies résidentiels |
+
+Activez dans le CRM les portails **sans badge « Navigateur requis »** pour votre ville.
+
+#### Qualité des données (strict)
+
+| Variable | Défaut Scalingo | Rôle |
+|----------|-----------------|------|
+| `SAVE_ACTIONABLE_LEADS` | `true` | Tél. ou email + adresse + prix/surface cohérents |
+| `SAVE_MINIMAL_LEADS` | `false` | Pas de fiches partielles / bruit |
+| `SAVE_CRAWL_SNAPSHOT` | `false` | Pas de sauvegarde « URL seule » |
+| `ADDRESS_MATCH_DURING_CRAWL` | `true` | BAN / DPE / cadastre en parallèle |
+| `DVF_PARALLEL_WORKERS` | `1` | Comparatif marché (adapté dyno M) |
+| `SURFACE_MIN_SALE_M2` / `SURFACE_MAX_SALE_M2` | `5` / `500` | Rejette parkings / terrains confondus |
+
+#### Vitesse
+
+| Variable | Défaut Scalingo | Rôle |
+|----------|-----------------|------|
+| `CRAWL_SPEED_PROFILE` | `fast` | Délais courts ; validation inchangée |
+| `MAX_LISTING_LINKS` | `150` | Liens découverte par page |
+| `MAX_SEARCH_PAGES` | `14` | Pagination résultats |
+| `CRAWL_HTTP_TIMEOUT_SEC` | `12` | Timeout HTTP |
+| `ANTIBOT_CHALLENGE_WAIT_MS` | `10000` | Abandon rapide si page bloquée |
+| `CRAWL_VEILLE_SOURCE_MAX_SEC` | `480` | Max 8 min / portail en veille |
+
+#### Infra crawl (PaaS)
 
 | Variable | Défaut Scalingo | Rôle |
 |----------|-----------------|------|
 | `CRAWL_PLAYWRIGHT_ENABLED` | `false` | Pas de Chrome sur le conteneur web |
+| `CRAWL_ANTIBOT_PORTALS_ENABLED` | `false` | LBC/PAP/SeLoger exclus sans navigateur |
 | `AUTO_WARMUP_ANTIBOT` | `false` | Pas de warmup automatique lourd |
 | `DOMAIN_WARMUP` | `false` | Pas de navigation préalable par domaine |
 | `CRAWL_SKIP_CITY_PROBE` | `true` | Pas de test HTTP des URLs ville |
 | `CRAWL_HEADED_FALLBACK` | `false` | Pas de fenêtre Chrome visible |
 | `CRAWL_HEADFUL` | `false` | Idem |
-| `CRAWL_SPEED_PROFILE` | `balanced` | `quality` \| `balanced` \| `fast` \| `turbo` |
 | `CITY_CRAWL_MAX_LISTINGS` | `90` | Plafond annonces par ville |
 | `CITY_DISCOVERY_STOP_LINKS` | `28` | Arrêt découverte liens |
-| `SAVE_ACTIONABLE_LEADS` | `true` | Enregistrer leads exploitables |
 | `CRAWL_PROXY_ROTATE_EACH_CRAWL` | `true` | Nouvelle IP en début de job / portail |
-| `CRAWL_PROXY_ROTATE_ON_BLOCK` | `true` | Nouvelle IP si anti-bot / Cloudflare |
-| `CRAWL_AUTO_FREE_PROXIES` | `true` | Sans `CRAWL_PROXIES`, charge au 1ᵉʳ blocage un pool de proxies publics testés pour tourner l'IP (best-effort, gratuit) |
-| `CRAWL_AUTO_START` | `true` | Veille portails + recrawl prospects au redémarrage du worker Gunicorn (`gunicorn.conf.py` post_fork) |
-| `CRAWL_BACKGROUND_INTERVAL_SEC` | `300` | Délai entre deux passages « tous portails » (secondes, min. 60) |
-| `CRAWL_LEAD_REFRESH_ENABLED` | `true` | Mise à jour auto des fiches prospects (prix, contacts) |
-| `CRAWL_LEAD_REFRESH_INTERVAL_SEC` | `3600` | Délai entre deux cycles de recrawl prospects |
-| `CRAWL_LEAD_REFRESH_STALE_HOURS` | `24` | Fiches non touchées depuis N h → candidates au recrawl |
-| `CRAWL_LEAD_REFRESH_MAX_PER_RUN` | `15` | Max fiches recrawlées par agence et par cycle |
-| `CRAWL_INCLUDE_CUSTOM_IN_AUTO` | `true` | URLs personnalisées incluses dans la veille auto |
-| `CRAWL_ANTIBOT_PORTALS_ENABLED` | `false` | Forcer LBC/PAP/SeLoger… (nécessite Playwright + proxies en prod) |
+| `CRAWL_PROXY_ROTATE_ON_BLOCK` | `true` | Nouvelle IP si rate-limit |
+| `CRAWL_AUTO_FREE_PROXIES` | `true` | Pool public gratuit (rate-limit uniquement) |
+| `CRAWL_INCLUDE_CATALOG_IN_AUTO` | `true` | ORPI, Nestenn, Acheter-Louer… en veille |
+| `CRAWL_INCLUDE_CUSTOM_IN_AUTO` | `true` | URLs perso en veille |
+| `SITE_WIDE_CRAWL_ENABLED` | `true` | Exploration BFS sites agences |
+| `CRAWL_AI_DISCOVERY` | `auto` | IA liens si `AI_API_KEY` (Groq gratuit) configurée |
+| `MAX_SOURCES_PER_AGENCY` | `30` | Limite portails par agence |
+
+#### Veille automatique
+
+| Variable | Défaut Scalingo | Rôle |
+|----------|-----------------|------|
+| `CRAWL_AUTO_START` | `true` | Veille au boot Gunicorn |
+| `CRAWL_BACKGROUND_INTERVAL_SEC` | `300` | Tous portails toutes les 5 min |
+| `CRAWL_LEAD_REFRESH_ENABLED` | `true` | Recrawl fiches prospects |
+| `CRAWL_LEAD_REFRESH_INTERVAL_SEC` | `3600` | Cycle recrawl toutes les heures |
+| `CRAWL_LEAD_REFRESH_STALE_HOURS` | `24` | Fiches > 24 h candidates |
+| `CRAWL_LEAD_REFRESH_MAX_PER_RUN` | `20` | Max recrawls / cycle |
+| `CRAWL_VEILLE_DISCOVERY_MAX_LISTINGS` | `90` | Nouvelles URLs / portail / veille |
+
+#### StreamEstate (option payante — désactivé en veille)
+
+| Variable | Défaut Scalingo | Rôle |
+|----------|-----------------|------|
+| `STREAMESTATE_INCLUDE_IN_VEILLE` | `false` | Pas de crédits consommés en boucle |
+| `STREAMESTATE_PARTICULIER_ONLY` | `true` | Particuliers seulement |
+| `STREAMESTATE_WITH_COHERENT_PRICE` | `true` | Prix cohérents |
+| `STREAMESTATE_MAX_LISTINGS` | `60` | Plafond crawl manuel |
+
+Clé API (secret, hors repo) : `scalingo --app veliora env-set STREAMESTATE_API_KEY=...`
 
 ### Proxies (rotation IP — fortement recommandé en prod)
 
@@ -122,9 +184,15 @@ Alias accepté : `CRAWL_PROXY` (un seul).
 
 ## Crawler en production
 
-Sur Scalingo, **Playwright** est désactivé : le crawl passe par **curl_cffi** et **requests**. Avec `CRAWL_PROXIES` + `CRAWL_PROXY_ROTATE_ON_BLOCK`, Veliora change d’IP automatiquement au blocage.
+Sur Scalingo, **Playwright** est désactivé : le crawl passe par **curl_cffi** et **requests**, avec rotation IP gratuite (`CRAWL_AUTO_FREE_PROXIES`). Les portails DataDome (LBC, PAP, SeLoger) sont **volontairement exclus** — les activer sans navigateur + proxies résidentiels produit « 0 annonce ».
 
-Pour un crawl navigateur complet, prévoyez un worker VPS ou n’activez Playwright que sur une machine dédiée (image lourde).
+**Checklist agence** (CRM) :
+
+1. Ville / territoire renseigné → filtre INSEE actif
+2. Portails ON : ParuVendu, Ouest-France, réseaux, catalogue (pas « Navigateur requis »)
+3. Sites concurrents locaux ajoutés en URL perso
+
+Pour LBC/PAP/SeLoger : worker VPS avec `CRAWL_PLAYWRIGHT_ENABLED=true` + proxies résidentiels, ou clé `STREAMESTATE_API_KEY` en crawl manuel uniquement.
 
 ## Déployer
 
