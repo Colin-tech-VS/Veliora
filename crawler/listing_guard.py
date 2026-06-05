@@ -232,6 +232,7 @@ def validate_listing_coherence_import(
     if not core_miss:
         return True, ""
 
+    addr = (lead.address or "").strip()
     has_partial = bool(
         (lead.phone and lead.phone != "—")
         or (lead.email and lead.email != "—")
