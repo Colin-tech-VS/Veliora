@@ -560,8 +560,8 @@ def iter_leads(
     veille: bool = False,
 ) -> Iterator[LeadData]:
     """PropertyDocument → LeadData triés, prêts pour save_lead()."""
+    from crawler.extractors import normalize_listing_url
     from crawler.storage import get_lead_by_source_url
-    from crawler.url_utils import normalize_listing_url
 
     batch: list[LeadData] = []
     for doc in iter_properties(
