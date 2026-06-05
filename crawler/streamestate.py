@@ -38,6 +38,12 @@ class StreamEstateNotConfiguredError(StreamEstateError):
     """Clé API absente."""
 
 
+def streamestate_display_name() -> str:
+    from crawler.config import STREAMESTATE_DISPLAY_NAME
+
+    return STREAMESTATE_DISPLAY_NAME
+
+
 def streamestate_api_key() -> str:
     return (os.getenv("STREAMESTATE_API_KEY") or "").strip()
 
@@ -82,7 +88,7 @@ def _api_headers() -> dict[str, str]:
     key = streamestate_api_key()
     if not key:
         raise StreamEstateNotConfiguredError(
-            "Variable STREAMESTATE_API_KEY manquante — ajoutez-la dans .env"
+            f"{streamestate_display_name()} — service non configuré (contactez l'administrateur Veliora)"
         )
     return {
         "X-API-KEY": key,
@@ -127,12 +133,7 @@ def _pick_advert(property_doc: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _publisher_type(property_doc: dict[str, Any], advert: dict[str, Any] | None) -> str:
-    pub_types = property_doc.get("publisherTypes") or []
-    if isinstance(pub_types, list):
-        if 0 in pub_types and 1 not in pub_types:
-            return "particulier"
-        if 1 in pub_types:
-            return "agence"
+    """Type annonceur : l'advert choisi prime sur publisherTypes agrégés au niveau property."""
     pub = (advert or {}).get("publisher") or {}
     if pub.get("type") == 0:
         return "particulier"
@@ -141,6 +142,12 @@ def _publisher_type(property_doc: dict[str, Any], advert: dict[str, Any] | None)
     agency = ((advert or {}).get("contact") or {}).get("agency") or ""
     if agency:
         return "agence"
+    pub_types = property_doc.get("publisherTypes") or []
+    if isinstance(pub_types, list):
+        if 0 in pub_types and 1 not in pub_types:
+            return "particulier"
+        if 1 in pub_types:
+            return "agence"
     return "particulier"
 
 
@@ -151,35 +158,65 @@ def _transaction(property_doc: dict[str, Any]) -> tuple[str, str | None]:
     return "vente", None
 
 
+def _parse_positive_int(raw: Any) -> int | None:
+    if raw is None:
+        return None
+    try:
+        val = int(round(float(raw)))
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def _parse_positive_float(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def _prices_close(a: int, b: int, tolerance: float = 0.15) -> bool:
+    if a <= 0 or b <= 0:
+        return False
+    return abs(a - b) / max(a, b) <= tolerance
+
+
 def _price(property_doc: dict[str, Any], advert: dict[str, Any] | None, tx: str) -> int | None:
-    raw_candidates: list[Any] = []
+    """Prix de l'advert retenu ; repli property uniquement si cohérent ou advert absent."""
+    advert_prices: list[int] = []
     if advert:
         if tx == "vente":
-            raw_candidates.extend([advert.get("priceExcludingFees"), advert.get("price")])
+            for raw in (advert.get("priceExcludingFees"), advert.get("price")):
+                val = _parse_positive_int(raw)
+                if val:
+                    advert_prices.append(val)
         else:
-            raw_candidates.append(advert.get("price"))
-    raw_candidates.extend([property_doc.get("price")])
-    for raw in raw_candidates:
-        if raw is None:
-            continue
-        try:
-            val = int(round(float(raw)))
-        except (TypeError, ValueError):
-            continue
-        if val > 0:
-            return val
-    return None
+            val = _parse_positive_int(advert.get("price"))
+            if val:
+                advert_prices.append(val)
+
+    if advert_prices:
+        advert_price = advert_prices[0]
+        prop_price = _parse_positive_int(property_doc.get("price"))
+        if prop_price and not _prices_close(advert_price, prop_price):
+            logger.debug(
+                "StreamEstate prix property %s ≠ advert %s — conserve advert",
+                prop_price,
+                advert_price,
+            )
+        return advert_price
+
+    return _parse_positive_int(property_doc.get("price"))
 
 
 def _surface(property_doc: dict[str, Any], advert: dict[str, Any] | None) -> float | None:
-    for raw in (property_doc.get("surface"), (advert or {}).get("surface")):
-        if raw is None:
-            continue
-        try:
-            val = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if val > 0:
+    """Surface de l'advert retenu en priorité (même source que le prix)."""
+    for raw in ((advert or {}).get("surface"), property_doc.get("surface")):
+        val = _parse_positive_float(raw)
+        if val:
             return val
     return None
 
@@ -209,6 +246,21 @@ def _source_url(property_doc: dict[str, Any], advert: dict[str, Any] | None) -> 
     return ""
 
 
+def _street_address(property_doc: dict[str, Any]) -> str | None:
+    """Adresse réelle si disponible — jamais le titre de l'annonce."""
+    locations = property_doc.get("locations") or []
+    if not isinstance(locations, list):
+        return None
+    for loc in locations:
+        if not isinstance(loc, dict):
+            continue
+        for key in ("street", "address", "name", "label"):
+            street = (loc.get(key) or "").strip()
+            if street and len(street) >= 5 and not street.lower().startswith("appartement"):
+                return street
+    return None
+
+
 def _contact_fields(advert: dict[str, Any] | None) -> tuple[str | None, str | None, str | None, str | None]:
     if not advert:
         return None, None, None, None
@@ -224,8 +276,13 @@ def _contact_fields(advert: dict[str, Any] | None) -> tuple[str | None, str | No
     return fn, ln, phone or None, email
 
 
-def property_to_lead(property_doc: dict[str, Any], *, portal_label: str = "StreamEstate") -> LeadData | None:
-    """Convertit un PropertyDocument StreamEstate en fiche Veliora."""
+def property_to_lead(
+    property_doc: dict[str, Any],
+    *,
+    portal_label: str | None = None,
+) -> LeadData | None:
+    """Convertit un PropertyDocument agrégé en fiche Veliora."""
+    portal_label = portal_label or streamestate_display_name()
     advert = _pick_advert(property_doc)
     source_url = _source_url(property_doc, advert)
     if not source_url:
@@ -238,7 +295,11 @@ def property_to_lead(property_doc: dict[str, Any], *, portal_label: str = "Strea
     fn, ln, phone, email = _contact_fields(advert)
     lead_type = _publisher_type(property_doc, advert)
 
-    title = (property_doc.get("title") or (advert or {}).get("title") or "").strip()
+    title = (
+        (advert or {}).get("title")
+        or property_doc.get("title")
+        or ""
+    ).strip()
     ptype = property_doc.get("propertyType")
     property_label = PROPERTY_TYPE_LABELS.get(ptype, "Bien")
     if not title:
@@ -250,14 +311,10 @@ def property_to_lead(property_doc: dict[str, Any], *, portal_label: str = "Strea
             parts.append(f"{int(surface)} m²")
         title = " ".join(parts)
 
-    address = title
-    if city and postcode:
-        address = f"{title}, {postcode} {city}"
-    elif city:
-        address = f"{title}, {city}"
+    address = _street_address(property_doc)
 
     publisher_name = ((advert or {}).get("publisher") or {}).get("name")
-    original_source = (publisher_name or portal_label or "StreamEstate").strip()
+    original_source = (publisher_name or portal_label).strip()
 
     published = _parse_iso_date(
         property_doc.get("createdAt")
@@ -265,7 +322,7 @@ def property_to_lead(property_doc: dict[str, Any], *, portal_label: str = "Strea
         or property_doc.get("updatedAt")
     )
 
-    pictures = property_doc.get("pictures") or (advert or {}).get("pictures") or []
+    pictures = (advert or {}).get("pictures") or property_doc.get("pictures") or []
     image_url = pictures[0] if pictures else None
 
     updated_raw = (
@@ -307,30 +364,48 @@ def property_to_lead(property_doc: dict[str, Any], *, portal_label: str = "Strea
     )
     if property_doc.get("locations"):
         lead.raw_extras["streamestate_locations"] = property_doc.get("locations")
+
+    adverts = property_doc.get("adverts") or []
+    if isinstance(adverts, list) and len(adverts) > 1:
+        others = [
+            str(a.get("url")).split("#")[0].strip()
+            for a in adverts
+            if isinstance(a, dict)
+            and a.get("url")
+            and str(a.get("url")).split("#")[0].strip() != source_url
+        ]
+        if others:
+            lead.raw_extras["alternate_urls"] = others[:5]
+
     return lead
+
+
+def _updated_sort_key(lead: LeadData) -> float:
+    """Timestamp négatif pour trier les annonces les plus récentes en premier."""
+    raw = (lead.raw_extras or {}).get("streamestate_updated_at") or lead.published_at or ""
+    if not raw:
+        return 0.0
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return -dt.timestamp()
+    except ValueError:
+        return 0.0
 
 
 def lead_importance_key(lead: LeadData) -> tuple:
     """Tri Veliora — particuliers avec contacts et prix cohérents en premier."""
+    from crawler.validation import _price_per_m2_plausible
+
     has_phone = bool(lead.phone and lead.phone != "—")
     has_email = bool(lead.email and lead.email != "—")
-    ratio_ok = 1
-    if lead.price and lead.surface and lead.surface > 0:
-        ratio = lead.price / lead.surface
-        if lead.transaction_type == "location":
-            ratio_ok = 0 if 50 <= ratio <= 500 else 1
-        elif ratio < 500 or ratio > 50_000:
-            ratio_ok = 1
-        else:
-            ratio_ok = 0
-    updated = (lead.raw_extras or {}).get("streamestate_updated_at") or lead.published_at or ""
+    ratio_ok = 0 if _price_per_m2_plausible(lead) else 1
     return (
         0 if lead.type == "particulier" else 1,
         0 if has_phone or has_email else 1,
         ratio_ok,
         0 if lead.surface else 1,
         0 if lead.price else 1,
-        updated,
+        _updated_sort_key(lead),
     )
 
 
@@ -399,9 +474,9 @@ def fetch_properties_page(
         desc = str(data.get("hydra:description") or data.get("hydra:title") or "")
         if "credit" in desc.lower() or "denied" in desc.lower():
             raise StreamEstateCreditsError(
-                "Crédits StreamEstate insuffisants — rechargez sur https://stream.estate/console/billing"
+                f"{streamestate_display_name()} — quota d'analyses atteint, réessayez plus tard"
             )
-        raise StreamEstateError(desc or "Accès StreamEstate refusé")
+        raise StreamEstateError(desc or f"{streamestate_display_name()} — accès refusé")
 
     if resp.status_code >= 400:
         desc = str(data.get("hydra:description") or data.get("hydra:title") or resp.text[:200])
@@ -469,6 +544,7 @@ def iter_leads(
     veille: bool = False,
 ) -> Iterator[LeadData]:
     """PropertyDocument → LeadData triés, prêts pour save_lead()."""
+    from crawler.storage import get_lead_by_source_url
     from crawler.url_utils import normalize_listing_url
 
     batch: list[LeadData] = []
@@ -483,8 +559,18 @@ def iter_leads(
             continue
         lead.source_url = normalize_listing_url(lead.source_url)
         batch.append(lead)
-    batch.sort(key=lead_importance_key)
-    yield from batch
+
+    existing: list[LeadData] = []
+    fresh: list[LeadData] = []
+    for lead in batch:
+        if get_lead_by_source_url(lead.source_url, None):
+            existing.append(lead)
+        else:
+            fresh.append(lead)
+    existing.sort(key=lead_importance_key)
+    fresh.sort(key=lead_importance_key)
+    yield from existing
+    yield from fresh
 
 
 def streamestate_health() -> dict[str, Any]:

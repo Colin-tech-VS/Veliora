@@ -18,6 +18,7 @@ from crawler.extractors import (
     normalize_phone,
     _get_hero_text,
 )
+from crawler.config import STREAMESTATE_DISPLAY_NAME
 from crawler.portals import resolve_base_portal_id
 
 
@@ -498,17 +499,16 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         id="lesiteimmo",
         name="LeSiteImmo",
         base_url="https://www.lesiteimmo.com",
-        search_url="https://www.lesiteimmo.com/recherche",
+        search_url="https://www.lesiteimmo.com/acheter/appartement",
         listing_patterns=[
             r"lesiteimmo\.com/acheter/[^\"'\s]+/[^\"'\s]+/\d{5,}",
-            r"lesiteimmo\.com/annonce/\d+",
         ],
     ),
     AdapterConfig(
         id="streamestate",
-        name="StreamEstate",
-        base_url="https://stream.estate",
-        search_url="https://api.stream.estate/documents/properties",
+        name=STREAMESTATE_DISPLAY_NAME,
+        base_url="https://www.veliora.fr",
+        search_url="https://www.veliora.fr/analyse-approfondie",
         listing_patterns=[
             r"stream\.estate/property/[a-f0-9-]+",
         ],

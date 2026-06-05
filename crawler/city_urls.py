@@ -139,6 +139,10 @@ def apply_city_to_search_url(
     if portal == "paruvendu":
         return f"{search_url.rstrip('/')}?ville={q_city}"
 
+    if portal == "lesiteimmo":
+        cands = city_search_url_candidates(search_url, source_id, city, postcode=postcode)
+        return cands[0] if cands else search_url
+
     if portal == "lefigaro" or "figaro" in search_url:
         fig_slug = path_slug.replace("-", "+")
         return f"https://immobilier.lefigaro.fr/annonces/immobilier-vente-bien-{fig_slug}.html"

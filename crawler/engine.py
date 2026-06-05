@@ -843,15 +843,16 @@ class CrawlerEngine:
         *,
         veille_mode: bool = False,
     ) -> CrawlResult:
-        """Synchronisation API StreamEstate (pas de crawl HTML)."""
-        from crawler.streamestate import streamestate_configured
+        """Synchronisation API agrégée (pas de crawl HTML)."""
+        from crawler.streamestate import streamestate_configured, streamestate_display_name
         from crawler.storage import get_agency_primary_city, mark_source_scanned
 
         result = CrawlResult()
+        label = adapter.source_name or streamestate_display_name()
         if not streamestate_configured():
             err = CrawlError.issue(
                 CrawlError.SOURCE_UNKNOWN,
-                "StreamEstate — ajoutez STREAMESTATE_API_KEY dans .env",
+                f"{label} — service non configuré (contactez l'administrateur Veliora)",
             )
             result.errors.append(err)
             mark_source_scanned(source_id, error=err["message"][:200])
@@ -867,6 +868,7 @@ class CrawlerEngine:
         try:
             return self._run_streamestate_sync(
                 source_id,
+                adapter,
                 result,
                 job_id,
                 crawl_city,
@@ -878,6 +880,7 @@ class CrawlerEngine:
     def _run_streamestate_sync(
         self,
         source_id: str,
+        adapter: BaseAdapter,
         result: CrawlResult,
         job_id: str | None,
         crawl_city: str | None,
@@ -889,10 +892,12 @@ class CrawlerEngine:
             StreamEstateError,
             StreamEstateNotConfiguredError,
             iter_leads,
+            streamestate_display_name,
             streamestate_settings,
         )
         from crawler.storage import mark_source_scanned
 
+        label = adapter.source_name or streamestate_display_name()
         cfg = streamestate_settings(veille=veille_mode)
         if job_id:
             city_lbl = f" — {crawl_city}" if crawl_city else ""
@@ -901,29 +906,40 @@ class CrawlerEngine:
                 job_id,
                 progress=20,
                 message=(
-                    f"StreamEstate API ({mode_lbl}){city_lbl} — "
+                    f"{label} ({mode_lbl}){city_lbl} — "
                     f"{cfg['max_listings']} annonce(s) max ({cfg['max_pages']} page(s))…"
                 ),
                 listings_total=cfg["max_listings"],
             )
 
         mark_source_scanned(source_id)
+        if self._agency_id and job_id:
+            repaired = repair_source_leads_in_db(source_id, self._agency_id)
+            if repaired:
+                update_crawl_job(
+                    job_id,
+                    message=f"{repaired} prospect(s) corrigé(s) en base — lancement de {label}…",
+                )
         processed = 0
         skipped = 0
         try:
             for lead in iter_leads(city=crawl_city, veille=veille_mode):
+                result.listings_processed += 1
                 if self._crawl_stopped(job_id) or not result.can_process_more_listings():
                     break
-                lead = self._prepare_streamestate_lead(lead, crawl_city)
+                lead, skip_reason = self._prepare_streamestate_lead(lead, crawl_city, source_id, job_id)
                 if lead is None:
                     skipped += 1
+                    if skip_reason == "out_of_city":
+                        result.out_of_city += 1
                     continue
                 processed += 1
                 if job_id and processed % 5 == 0:
                     update_crawl_job(
                         job_id,
-                        message=f"StreamEstate — {processed} fiche(s) enregistrée(s)…",
+                        message=f"{label} — {processed} fiche(s) enregistrée(s)…",
                         progress=min(85, 20 + processed * 2),
+                        listings_done=result.listings_processed,
                     )
                 saved = save_lead(
                     lead,
@@ -953,7 +969,7 @@ class CrawlerEngine:
                     source_id,
                     lead.source_url,
                     "saved" if saved.get("created") else "updated",
-                    f"StreamEstate — {lead.source} ({lead.type})",
+                    f"{label} — {lead.source} ({lead.type})",
                     job_id,
                 )
         except StreamEstateNotConfiguredError as exc:
@@ -980,10 +996,10 @@ class CrawlerEngine:
             result.errors.append(
                 CrawlError.issue(
                     CrawlError.NO_LISTINGS,
-                    "StreamEstate — aucune annonce pour ces critères (ville / filtres / quota)",
+                    f"{label} — aucune annonce pour ces critères (ville / filtres / quota)",
                 )
             )
-            mark_source_scanned(source_id, error="0 annonce StreamEstate")
+            mark_source_scanned(source_id, error=f"0 annonce {label}")
         else:
             mark_source_scanned(source_id, error=None)
 
@@ -998,7 +1014,7 @@ class CrawlerEngine:
                 job_id,
                 progress=90,
                 message=(
-                    f"StreamEstate — {result.leads_saved} nouveau(x), "
+                    f"{label} — {result.leads_saved} nouveau(x), "
                     f"{result.leads_updated} mis à jour{skip_note}"
                 ),
             )
@@ -1008,22 +1024,33 @@ class CrawlerEngine:
         self,
         lead: LeadData,
         crawl_city: str | None,
-    ) -> LeadData | None:
+        source_id: str | None = None,
+        job_id: str | None = None,
+    ) -> tuple[LeadData | None, str | None]:
         """Même qualité que le crawl HTML : ville, cohérence prix/m², champs fiables."""
-        from crawler.listing_guard import validate_field_coherence
-        from crawler.validation import missing_core_fields
+        from crawler.listing_guard import validate_field_coherence, validate_listing_coherence_import
+        from crawler.validation import sanitize_lead
 
         self._clean_unreliable_fields(lead)
+        lead = sanitize_lead(lead)
         if crawl_city and not self._lead_in_target_city(lead):
-            return None
+            add_crawl_log(
+                source_id or "",
+                lead.source_url,
+                "skip_city",
+                f"Hors zone — annonce ignorée (≠ {crawl_city})",
+                job_id,
+            )
+            return None, "out_of_city"
         ok_field, reason = validate_field_coherence(lead)
         if not ok_field:
-            logger.debug("StreamEstate skip %s — %s", lead.source_url, reason)
-            return None
-        miss = missing_core_fields(lead)
-        if len(miss) >= 3:
-            return None
-        return lead
+            logger.debug("Analyse approfondie skip %s — %s", lead.source_url, reason)
+            return None, None
+        coherent, coh_reason = validate_listing_coherence_import(lead.source_url or "", None, lead)
+        if not coherent:
+            logger.debug("Analyse approfondie skip %s — %s", lead.source_url, coh_reason)
+            return None, None
+        return lead, None
 
     def _crawl_url_sync(
         self,
@@ -1357,14 +1384,14 @@ class CrawlerEngine:
             if len(seed_urls) < 4:
                 seed_urls = list(
                     dict.fromkeys(
-                        seed_urls + build_site_seed_urls(base_url, start_url)[:14]
+                        seed_urls + build_site_seed_urls(base_url, start_url, source_id)[:14]
                     )
                 )
         elif SITE_WIDE_CRAWL_ENABLED:
             seed_urls = list(
                 dict.fromkeys(
                     (discover_seeds or [])
-                    + build_site_seed_urls(base_url, start_url)
+                    + build_site_seed_urls(base_url, start_url, source_id)
                 )
             )
         else:
@@ -1496,7 +1523,7 @@ class CrawlerEngine:
                 extra = list(
                     dict.fromkeys(
                         portal_seeds
-                        + build_site_seed_urls(base_url, start_url)[:12]
+                        + build_site_seed_urls(base_url, start_url, source_id)[:12]
                     )
                 )
                 added = 0
@@ -1621,7 +1648,7 @@ class CrawlerEngine:
             dict.fromkeys(
                 [start_url, adapter.config.search_url or "", base_url]
                 + (portal_seeds or [])[:8]
-                + build_site_seed_urls(base_url, start_url)[:10]
+                + build_site_seed_urls(base_url, start_url, source_id)[:10]
             )
         )
         found: list[str] = []

@@ -71,7 +71,8 @@ DISCOVERY_ADAPTIVE_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_ADAPTIVE_MIN_LINKS_D
 DISCOVERY_AI_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_AI_MIN_LINKS_DIV", "20"))
 AI_DISCOVERY_MAX_ATTEMPTS = int(os.getenv("AI_DISCOVERY_MAX_ATTEMPTS", "8"))
 
-# ─── StreamEstate API (source séparée — ne remplace PAS les crawlers HTML) ───
+# ─── Analyse approfondie (API agrégée — ne remplace PAS les crawlers HTML) ───
+STREAMESTATE_DISPLAY_NAME = os.getenv("STREAMESTATE_DISPLAY_NAME", "Analyse approfondie").strip() or "Analyse approfondie"
 # 1 requête API ≈ 1 page (jusqu'à 30 annonces). Défauts bas = peu de crédits.
 STREAMESTATE_ITEMS_PER_PAGE = min(30, max(1, int(os.getenv("STREAMESTATE_ITEMS_PER_PAGE", "30"))))
 STREAMESTATE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_MAX_PAGES", "1")))

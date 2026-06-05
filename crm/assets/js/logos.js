@@ -9,11 +9,15 @@ const SOURCE_LOGO_SVG = {
   paruvendu: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#059669"/><text x="32" y="41" text-anchor="middle" font-weight="700" font-size="14" fill="#fff">PV</text></svg>`,
   lefigaro: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#2563eb"/><text x="32" y="42" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="24" fill="#fff">F</text></svg>`,
   custom: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#64748B"/><text x="32" y="42" text-anchor="middle" font-weight="700" font-size="18" fill="#fff">?</text></svg>`,
+  streamestate: `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" rx="12" fill="#0F766E"/><circle cx="28" cy="28" r="10" fill="none" stroke="#fff" stroke-width="3"/><path d="M35 35 L46 46" stroke="#fff" stroke-width="3" stroke-linecap="round"/><path d="M18 46h28" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.85"/></svg>`,
 };
 
 function resolveLogoId(source) {
   if (SOURCE_LOGO_SVG[source.id]) return source.id;
+  const sid = String(source.id || "").toLowerCase();
+  if (sid.includes("streamestate") || sid.endsWith("_streamestate")) return "streamestate";
   const url = `${source.domain || ""} ${source.base_url || ""} ${source.search_url || ""}`.toLowerCase();
+  if (url.includes("analyse-approfondie") || url.includes("veliora.fr/analyse")) return "streamestate";
   if (url.includes("lefigaro") || url.includes("figaro")) return "lefigaro";
   if (url.includes("paruvendu")) return "paruvendu";
   if (url.includes("leboncoin")) return "leboncoin";

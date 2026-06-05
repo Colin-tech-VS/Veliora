@@ -37,6 +37,15 @@ LISTING_PATH_RE = re.compile(
     re.IGNORECASE,
 )
 
+PORTAL_SEED_PATHS: dict[str, tuple[str, ...]] = {
+    "lesiteimmo": (
+        "/acheter",
+        "/acheter/appartement",
+        "/acheter/maison",
+        "/recherche",
+    ),
+}
+
 COMMON_IMMO_PATHS = (
     "/annonces",
     "/annonce",
@@ -91,8 +100,14 @@ def _same_site(url: str, base_url: str) -> bool:
         return False
 
 
-def build_site_seed_urls(base_url: str, search_url: str) -> list[str]:
+def build_site_seed_urls(
+    base_url: str,
+    search_url: str,
+    source_id: str | None = None,
+) -> list[str]:
     """Points d'entrée pour explorer tout le site (pas une seule page)."""
+    from crawler.portals import resolve_base_portal_id
+
     seeds: list[str] = []
     for raw in (search_url, base_url):
         u = (raw or "").strip().rstrip("/")
@@ -105,7 +120,9 @@ def build_site_seed_urls(base_url: str, search_url: str) -> list[str]:
     parsed = urlparse(base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
 
-    for path in COMMON_IMMO_PATHS:
+    portal_id = resolve_base_portal_id(source_id or "")
+    path_candidates = PORTAL_SEED_PATHS.get(portal_id, COMMON_IMMO_PATHS)
+    for path in path_candidates:
         candidate = f"{origin}{path}"
         if candidate not in seeds:
             seeds.append(candidate)
@@ -180,8 +197,9 @@ PORTAL_DISCOVER_URLS: dict[str, list[str]] = {
         "https://www.ouestfrance-immo.com/achat/maison",
     ],
     "lesiteimmo": [
-        "https://www.lesiteimmo.com/recherche/vente/appartement",
-        "https://www.lesiteimmo.com/recherche/vente/maison",
+        "https://www.lesiteimmo.com/acheter/appartement",
+        "https://www.lesiteimmo.com/acheter/maison",
+        "https://www.lesiteimmo.com/recherche",
     ],
     "notaires": [
         "https://www.immobilier.notaires.fr/fr/ventes",
@@ -212,7 +230,13 @@ def get_portal_discover_urls(
             urls.append(u)
 
     if adapter and adapter.config.base_url:
-        urls.extend(build_site_seed_urls(adapter.config.base_url, primary_search_url or urls[0] if urls else ""))
+        urls.extend(
+            build_site_seed_urls(
+                adapter.config.base_url,
+                primary_search_url or urls[0] if urls else "",
+                source_id,
+            )
+        )
         from crawler.host_discovery import discover_urls_for_host
 
         urls.extend(

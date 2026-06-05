@@ -12,6 +12,7 @@ from crawler.streamestate import (
     lead_importance_key,
     property_to_lead,
     streamestate_configured,
+    streamestate_display_name,
 )
 
 
@@ -65,7 +66,10 @@ class StreamEstateMappingTests(unittest.TestCase):
         self.assertEqual(lead.postcode, "75018")
         self.assertIn("20 30 40 50", lead.phone or "")
         self.assertEqual(lead.email, "contact@agenceimmo2000.fr")
+        self.assertEqual(lead.type, "agence")
+        self.assertIsNone(lead.address)
         self.assertEqual(lead.raw_extras.get("data_provider"), "streamestate")
+        self.assertEqual(lead.raw_extras.get("listing_title"), "Appartement 2 pieces")
 
     def test_build_query_params_insee_filter(self):
         with patch("crawler.fr_communes.resolve_commune") as mock_resolve:
@@ -83,6 +87,9 @@ class StreamEstateMappingTests(unittest.TestCase):
     def test_configured_when_key_set(self):
         with patch.dict(os.environ, {"STREAMESTATE_API_KEY": "test-key"}):
             self.assertTrue(streamestate_configured())
+
+    def test_display_name_default(self):
+        self.assertEqual(streamestate_display_name(), "Analyse approfondie")
 
 
 class StreamEstateFetchTests(unittest.TestCase):

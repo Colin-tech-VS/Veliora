@@ -3102,12 +3102,20 @@ def _row_to_source(
     domain = r["domain"] if "domain" in keys and r["domain"] else registrable_domain(
         urlparse(r["base_url"]).netloc
     )
-    logo_url = r["logo_url"] if "logo_url" in keys and r["logo_url"] else logo_url_for_domain(domain)
-    logo_fallback = (
-        r["logo_fallback"]
-        if "logo_fallback" in keys and r["logo_fallback"]
-        else logo_fallback_for_domain(domain)
-    )
+    from crawler.portals import resolve_base_portal_id
+
+    portal_id = resolve_base_portal_id(r["id"])
+    if portal_id == "streamestate":
+        domain = "veliora.fr"
+        logo_url = None
+        logo_fallback = None
+    else:
+        logo_url = r["logo_url"] if "logo_url" in keys and r["logo_url"] else logo_url_for_domain(domain)
+        logo_fallback = (
+            r["logo_fallback"]
+            if "logo_fallback" in keys and r["logo_fallback"]
+            else logo_fallback_for_domain(domain)
+        )
     leads_count = int(r["found_total"] or 0)
     leads_updated_today = int(r["found_today"] or 0)
     leads_created_today = 0
