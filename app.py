@@ -169,6 +169,76 @@ def add_cors_headers(response):
     return response
 
 
+# Types texte compressibles (JSON API + assets statiques). Les images/binaires
+# sont déjà compressés : on les ignore pour ne pas gaspiller de CPU.
+_COMPRESSIBLE_TYPES = (
+    "application/json",
+    "application/javascript",
+    "application/manifest+json",
+    "text/",
+    "image/svg+xml",
+    "application/xml",
+    "application/rss+xml",
+)
+# En dessous de ce seuil, l'en-tête gzip coûte plus cher que le gain.
+_GZIP_MIN_BYTES = 1024
+
+
+@app.after_request
+def compress_response(response):
+    """Compresse gzip les réponses texte (JSON, JS, CSS, HTML).
+
+    ~750 Ko de JS/CSS + les payloads JSON tombent à ~1/5 de leur taille :
+    chargement bien plus rapide, surtout en mobile / réseau lent. On reste
+    en stdlib (aucune dépendance) et on respecte Accept-Encoding + Vary.
+    """
+    accept = request.headers.get("Accept-Encoding", "")
+    if "gzip" not in accept.lower():
+        return response
+
+    ctype = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    compressible = any(ctype.startswith(t) for t in _COMPRESSIBLE_TYPES)
+    if not compressible:
+        return response
+
+    # Le contenu varie selon l'encodage : indispensable pour les caches / CDN.
+    vary = response.headers.get("Vary", "")
+    if "accept-encoding" not in vary.lower():
+        response.headers["Vary"] = f"{vary}, Accept-Encoding".lstrip(", ")
+
+    cache_control = (response.headers.get("Cache-Control") or "").lower()
+    if (
+        not (200 <= response.status_code < 300)
+        or "Content-Encoding" in response.headers
+        or "no-transform" in cache_control
+    ):
+        return response
+
+    # send_file / send_from_directory renvoient un flux fichier en passthrough :
+    # on le désactive pour pouvoir lire (et compresser) les octets. Un VRAI flux
+    # généré (générateur, ex. NDJSON IA) garde direct_passthrough=False mais un
+    # content-type non compressible — donc déjà écarté plus haut.
+    if response.direct_passthrough:
+        response.direct_passthrough = False
+    elif response.is_streamed:
+        return response
+
+    data = response.get_data()
+    if len(data) < _GZIP_MIN_BYTES:
+        return response
+
+    import gzip
+
+    compressed = gzip.compress(data, compresslevel=6)
+    # Si gzip n'apporte rien (contenu déjà dense), on garde l'original.
+    if len(compressed) >= len(data):
+        return response
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    return response
+
+
 @app.before_request
 def ensure_db():
     if getattr(app, "_db_ready", False):
@@ -807,7 +877,9 @@ def api_radar_summary():
     from crm.radar import build_briefing, build_playbook
 
     agency_id = _aid()
-    leads = get_leads(agency_id)
+    # Briefing consultatif : réutilise l'instantané frais produit par
+    # /api/bootstrap (~1 s plus tôt) plutôt que de tout recalculer.
+    leads = get_leads(agency_id, prefer_snapshot=True)
     settings = get_agency_settings(agency_id)
     agency_name = get_agency_name(agency_id)
     target_cities = settings.get("target_cities") or []
