@@ -56,8 +56,11 @@ def calibrate_agency_weights_from_outcome(
         "sans_agence": "sans_agence",
         "ancienne": "ancienne_45",
         "baisse_prix": "baisse_prix",
+        "baisse_recente": "baisse_recente",
         "multi_baisse": "multi_baisse",
         "dvf_sous_marche": "dvf_sous",
+        "sureval_opportunite": "sureval_opportunite",
+        "motivation_vendeur": "motivation_texte",
         "nouveau": "nouveau",
     }
     for t in tags:

@@ -2,10 +2,32 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 
 from crm.scoring.weights import apply_weight, merge_weights
+
+# Signaux de motivation détectés dans le titre/description (texte normalisé, sans
+# accents). Forts = vendeur sous contrainte (souvent prêt à mandater) ; flexibilité
+# = ouverture explicite sur le prix.
+_MOTIVATION_STRONG = (
+    "succession", "heritage", "deces", "divorce", "separation",
+    "mutation", "mute ", "muté", "cause depart", "doit vendre", "vente rapide",
+    "urgent", "depart etranger", "demenagement", "demenage", "cause sante",
+    "liquidation", "saisie", "depart retraite", "maison de retraite", "ehpad",
+    "vente cause", "cause demenagement",
+)
+_MOTIVATION_FLEX = (
+    "negociable", "a debattre", "faire offre", "prix en baisse", "prix revise",
+    "baisse de prix", "offre bienvenue", "prix a negocier", "prix negocie",
+)
+
+
+def _normalize_text(text: str | None) -> str:
+    """Minuscules + suppression des accents pour une détection robuste."""
+    t = unicodedata.normalize("NFKD", str(text or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
 
 
 def _parse_date(iso: str | None) -> date | None:
@@ -173,6 +195,28 @@ def compute_mandate_score(
             "detail": "Historique de flexibilité prix",
         })
 
+    # Fraîcheur de la baisse : un ajustement de prix récent = vendeur actif MAINTENANT.
+    has_drop = (drop_pct is not None and drop_pct >= 3) or drop_count >= 1
+    drop_days = days_since(lead.get("last_price_change_at"))
+    if has_drop and drop_days is not None:
+        fresh = 6 if drop_days <= 7 else (4 if drop_days <= 14 else (2 if drop_days <= 30 else 0))
+        if fresh:
+            pts = apply_weight(fresh, "baisse_recente", w)
+            contributions.append(
+                ScoreContribution(
+                    "baisse_recente",
+                    f"Baisse il y a {drop_days} j",
+                    pts,
+                    "Ajustement récent — vendeur en mouvement",
+                )
+            )
+            tags.append("baisse_recente")
+            positive.append({
+                "key": "baisse_recente",
+                "label": f"Baisse de prix récente ({drop_days} j)",
+                "detail": "Signal chaud : agir vite",
+            })
+
     dvf_v = lead.get("dvf_verdict")
     if dvf_v == "sous_marche":
         pts = apply_weight(20, "dvf_sous", w)
@@ -202,16 +246,38 @@ def compute_mandate_score(
         pts = apply_weight(4, "dvf_aligne", w)
         contributions.append(ScoreContribution("dvf_aligne", "Prix aligné marché", pts, ""))
     elif dvf_v == "sur_marche":
-        pts = apply_weight(-12, "malus_sur_marche", w)
-        contributions.append(
-            ScoreContribution("malus_sur_marche", "Sur marché DVF", pts, "Prix élevé vs secteur")
-        )
-        tags.append("dvf_sur_marche")
-        negative.append({
-            "key": "dvf_sur",
-            "label": "Sur marché DVF",
-            "detail": "Prix au-dessus des ventes récentes du secteur",
-        })
+        delta = abs(int(lead.get("dvf_delta_pct") or 0))
+        installed = pub_days is not None and pub_days >= 45
+        if is_particulier and installed:
+            # Particulier qui s'entête au-dessus du marché et ne vend pas : il finira
+            # par confier un mandat. Pour la CHASSE AU MANDAT, c'est une cible prime.
+            base = 16 if pub_days is not None and pub_days >= 90 else 12
+            pts = apply_weight(base, "sureval_opportunite", w)
+            contributions.append(
+                ScoreContribution(
+                    "sureval_opportunite",
+                    "Surévalué et invendu",
+                    pts,
+                    f"Particulier ~{delta} % au-dessus du marché depuis {pub_days} j",
+                )
+            )
+            tags.append("sureval_opportunite")
+            positive.append({
+                "key": "sureval",
+                "label": "Surévalué et toujours en ligne",
+                "detail": "Vendeur qui s'entête au-dessus du marché → futur mandat",
+            })
+        else:
+            pts = apply_weight(-12, "malus_sur_marche", w)
+            contributions.append(
+                ScoreContribution("malus_sur_marche", "Sur marché DVF", pts, "Prix élevé vs secteur")
+            )
+            tags.append("dvf_sur_marche")
+            negative.append({
+                "key": "dvf_sur",
+                "label": "Sur marché DVF",
+                "detail": "Prix au-dessus des ventes récentes du secteur",
+            })
 
     if _has_phone(lead):
         pts = apply_weight(7, "contact_phone", w)
@@ -284,6 +350,30 @@ def compute_mandate_score(
             "label": label,
             "detail": "Acheteur/locataire en base — mise en relation rapide",
         })
+
+    # Motivation détectée dans le texte (titre + description si dispo) — souvent le
+    # signal le plus fort : un vendeur sous contrainte mandate plus facilement.
+    motif_text = _normalize_text(
+        f"{lead.get('description') or ''} {lead.get('listing_title') or lead.get('title') or ''}"
+    )
+    if motif_text.strip():
+        strong_hits = [k.strip() for k in _MOTIVATION_STRONG if k in motif_text]
+        flex_hits = [k for k in _MOTIVATION_FLEX if k in motif_text]
+        base = (14 if strong_hits else 0) + (8 if flex_hits else 0)
+        base = min(base, 16)
+        if base:
+            pts = apply_weight(base, "motivation_texte", w)
+            hits = (strong_hits + flex_hits)[:3]
+            detail = "Mots-clés : " + ", ".join(hits)
+            contributions.append(
+                ScoreContribution("motivation_texte", "Motivation vendeur (texte)", pts, detail)
+            )
+            tags.append("motivation_vendeur")
+            positive.append({
+                "key": "motivation",
+                "label": "Signaux de motivation dans l'annonce",
+                "detail": detail,
+            })
 
     raw = sum(c.points for c in contributions)
     capped_reason: str | None = None
