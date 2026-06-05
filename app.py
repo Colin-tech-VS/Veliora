@@ -1901,12 +1901,9 @@ def api_crawler_stop():
 
 def _resolve_crawl_city(agency_id: str) -> str | None:
     """Ville du crawl : requête explicite, sinon 1ʳᵉ ville territoire, sinon national (None)."""
-    data = request.get_json(silent=True) or {}
-    if "city" in data or "ville" in data:
-        raw = (data.get("city") or data.get("ville") or "").strip()
-        return raw or None
-    city = (get_agency_primary_city(agency_id) or "").strip()
-    return city or None
+    from crawler.storage import resolve_crawl_city
+
+    return resolve_crawl_city(agency_id=agency_id, request_data=request.get_json(silent=True) or {})
 
 
 @app.route("/api/crawler/scan", methods=["POST"])

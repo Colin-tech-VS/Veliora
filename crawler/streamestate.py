@@ -409,7 +409,13 @@ def lead_importance_key(lead: LeadData) -> tuple:
     )
 
 
-def build_query_params(city: str | None = None, *, page: int = 1, veille: bool = False) -> dict[str, Any]:
+def build_query_params(
+    city: str | None = None,
+    *,
+    postcode: str | None = None,
+    page: int = 1,
+    veille: bool = False,
+) -> dict[str, Any]:
     """Paramètres API optimisés Veliora (max annonces cohérentes, quota maîtrisé)."""
     cfg = streamestate_settings(veille=veille)
     params: dict[str, list[Any] | Any] = {
@@ -428,11 +434,13 @@ def build_query_params(city: str | None = None, *, page: int = 1, veille: bool =
     if city:
         from crawler.fr_communes import resolve_commune
 
-        row = resolve_commune(city)
+        row = resolve_commune(city, postcode)
         if row and row.get("code"):
             params["includedInseeCodes[]"] = row["code"]
         elif row and row.get("postcode"):
             params["includedZipcodes[]"] = row["postcode"]
+        elif postcode:
+            params["includedZipcodes[]"] = postcode.strip()
 
     return params
 
@@ -453,12 +461,13 @@ def _flatten_params(params: dict[str, Any]) -> list[tuple[str, str]]:
 def fetch_properties_page(
     *,
     city: str | None = None,
+    postcode: str | None = None,
     page: int = 1,
     veille: bool = False,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
     """Une page de résultats StreamEstate."""
-    params = build_query_params(city, page=page, veille=veille)
+    params = build_query_params(city, postcode=postcode, page=page, veille=veille)
     resp = requests.get(
         API_BASE,
         headers=_api_headers(),
@@ -488,6 +497,7 @@ def fetch_properties_page(
 def iter_properties(
     *,
     city: str | None = None,
+    postcode: str | None = None,
     max_pages: int | None = None,
     max_listings: int | None = None,
     veille: bool = False,
@@ -500,7 +510,12 @@ def iter_properties(
     page = 1
 
     while page <= page_limit and yielded < listing_cap:
-        data = fetch_properties_page(city=city, page=page, veille=veille)
+        data = fetch_properties_page(
+            city=city,
+            postcode=postcode,
+            page=page,
+            veille=veille,
+        )
         members = data.get("hydra:member") or []
         if not members:
             break
@@ -539,6 +554,7 @@ def count_properties(city: str | None = None) -> int:
 def iter_leads(
     *,
     city: str | None = None,
+    postcode: str | None = None,
     max_pages: int | None = None,
     max_listings: int | None = None,
     veille: bool = False,
@@ -550,6 +566,7 @@ def iter_leads(
     batch: list[LeadData] = []
     for doc in iter_properties(
         city=city,
+        postcode=postcode,
         max_pages=max_pages,
         max_listings=max_listings,
         veille=veille,

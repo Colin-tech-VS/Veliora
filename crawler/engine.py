@@ -845,7 +845,7 @@ class CrawlerEngine:
     ) -> CrawlResult:
         """Synchronisation API agrégée (pas de crawl HTML)."""
         from crawler.streamestate import streamestate_configured, streamestate_display_name
-        from crawler.storage import get_agency_primary_city, mark_source_scanned
+        from crawler.storage import mark_source_scanned, resolve_crawl_city
 
         result = CrawlResult()
         label = adapter.source_name or streamestate_display_name()
@@ -858,9 +858,7 @@ class CrawlerEngine:
             mark_source_scanned(source_id, error=err["message"][:200])
             return result
 
-        crawl_city = (city or "").strip() or None
-        if not crawl_city and self._agency_id:
-            crawl_city = (get_agency_primary_city(self._agency_id) or "").strip() or None
+        crawl_city = resolve_crawl_city(city, agency_id=self._agency_id)
 
         prev_city = self._crawl_city
         self._crawl_city = crawl_city
@@ -895,18 +893,19 @@ class CrawlerEngine:
             streamestate_display_name,
             streamestate_settings,
         )
-        from crawler.storage import mark_source_scanned
+        from crawler.storage import get_agency_postcode_for_city, mark_source_scanned
 
         label = adapter.source_name or streamestate_display_name()
+        crawl_postcode = get_agency_postcode_for_city(self._agency_id, crawl_city)
         cfg = streamestate_settings(veille=veille_mode)
         if job_id:
-            city_lbl = f" — {crawl_city}" if crawl_city else ""
+            zone_lbl = f" — {crawl_city}" if crawl_city else " — toute la France"
             mode_lbl = "veille" if veille_mode else "manuel"
             update_crawl_job(
                 job_id,
                 progress=20,
                 message=(
-                    f"{label} ({mode_lbl}){city_lbl} — "
+                    f"{label} ({mode_lbl}){zone_lbl} — "
                     f"{cfg['max_listings']} annonce(s) max ({cfg['max_pages']} page(s))…"
                 ),
                 listings_total=cfg["max_listings"],
@@ -923,7 +922,11 @@ class CrawlerEngine:
         processed = 0
         skipped = 0
         try:
-            for lead in iter_leads(city=crawl_city, veille=veille_mode):
+            for lead in iter_leads(
+                city=crawl_city,
+                postcode=crawl_postcode,
+                veille=veille_mode,
+            ):
                 result.listings_processed += 1
                 if self._crawl_stopped(job_id) or not result.can_process_more_listings():
                     break

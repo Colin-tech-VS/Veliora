@@ -78,6 +78,7 @@ const state = {
   pendingCrawlUrl: null,
   sourceCityPreview: {},
   sourceCityPreviewCity: "",
+  crawlerFocusPortal: null,
 };
 
 const POLL_IDLE_MS = 18000;
@@ -1799,7 +1800,11 @@ function setupNavigation() {
     // pas de façon fiable vers un conteneur non interactif (<aside>), donc on
     // déclenche navigation ET fermeture du tiroir mobile ici même.
     btn.addEventListener("click", () => {
-      switchView(btn.dataset.view);
+      const focusPortal = btn.dataset.focusPortal || null;
+      switchView(btn.dataset.view, {
+        focusPortal,
+        clearFocus: !focusPortal,
+      });
       closeMobileSidebar();
     });
   });
@@ -1831,7 +1836,7 @@ function syncNavGroups(view) {
   });
 }
 
-async function switchView(view) {
+async function switchView(view, options = {}) {
   if (
     state.currentView === "analyze" &&
     view !== "analyze" &&
@@ -1843,10 +1848,28 @@ async function switchView(view) {
   if (state.currentView === "map" && view !== "map") {
     window.VelioraMap?.leave?.();
   }
+  if (view === "crawler") {
+    if (options.focusPortal) {
+      state.crawlerFocusPortal = options.focusPortal;
+    } else if (options.clearFocus) {
+      state.crawlerFocusPortal = null;
+    }
+  } else {
+    state.crawlerFocusPortal = null;
+  }
   state.currentView = view;
   syncProductModeTabs(view);
-  document.querySelectorAll(".nav-item").forEach((el) => {
-    el.classList.toggle("active", el.dataset.view === view);
+  document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
+    let active = el.dataset.view === view;
+    if (view === "crawler" && el.dataset.view === "crawler") {
+      const focus = el.dataset.focusPortal || null;
+      if (focus) {
+        active = state.crawlerFocusPortal === focus;
+      } else {
+        active = !state.crawlerFocusPortal;
+      }
+    }
+    el.classList.toggle("active", active);
   });
   syncNavGroups(view);
   document.querySelectorAll(".mobile-bottom-nav button").forEach((el) => {
@@ -1898,6 +1921,9 @@ async function switchView(view) {
     }
   }
   renderAll();
+  if (view === "crawler" && state.crawlerFocusPortal) {
+    requestAnimationFrame(() => focusCrawlerPortal(state.crawlerFocusPortal));
+  }
   if (view === "map" && window.VelioraMap?.enter) {
     try {
       await window.VelioraMap.enter();
@@ -6532,19 +6558,55 @@ function refreshSourceCard(sourceId, { saved = false } = {}) {
   }
 }
 
+function isDeepAnalysisSource(source) {
+  const id = String(source?.id || "").toLowerCase();
+  const name = String(source?.name || "").toLowerCase();
+  return id.includes("streamestate") || name.includes("analyse approfondie");
+}
+
+function findDeepAnalysisSource(list = SOURCES) {
+  return (list || []).find((s) => isDeepAnalysisSource(s)) || null;
+}
+
+function focusCrawlerPortal(portalId = "streamestate") {
+  const src =
+    portalId === "streamestate"
+      ? findDeepAnalysisSource()
+      : SOURCES.find((s) => String(s.id || "").includes(portalId));
+  const card = src
+    ? document.querySelector(`.source-card[data-source-id="${CSS.escape(src.id)}"]`)
+    : null;
+  const target = card || document.getElementById("sources-deep-wrap");
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (card) {
+    card.classList.add("source-card--highlight");
+    window.setTimeout(() => card.classList.remove("source-card--highlight"), 3200);
+  }
+}
+
 function renderCrawler() {
   const reliable = SOURCES.filter((s) => !s.is_custom && !s.is_antibot);
+  const deep = reliable.filter((s) => isDeepAnalysisSource(s));
+  const otherReliable = reliable.filter((s) => !isDeepAnalysisSource(s));
   const antibot = SOURCES.filter((s) => !s.is_custom && s.is_antibot);
   const custom = SOURCES.filter((s) => s.is_custom);
 
+  const deepWrap = document.getElementById("sources-deep-wrap");
+  const deepEl = document.getElementById("sources-grid-deep");
   const reliableEl = document.getElementById("sources-grid-reliable");
   const antibotEl = document.getElementById("sources-grid-antibot");
   const customEl = document.getElementById("sources-grid-custom");
   const customWrap = document.getElementById("sources-custom-wrap");
 
+  if (deepWrap && deepEl) {
+    deepWrap.hidden = deep.length === 0;
+    deepEl.innerHTML = deep.length
+      ? deep.map((s) => buildSourceCardHtml(s)).join("")
+      : '<p class="form-hint">Analyse approfondie — activez la clé API sur le serveur Veliora.</p>';
+  }
   if (reliableEl) {
-    reliableEl.innerHTML = reliable.length
-      ? reliable.map((s) => buildSourceCardHtml(s)).join("")
+    reliableEl.innerHTML = otherReliable.length
+      ? otherReliable.map((s) => buildSourceCardHtml(s)).join("")
       : '<p class="form-hint">Chargement des portails…</p>';
   }
   if (antibotEl) {

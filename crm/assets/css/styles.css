@@ -3579,6 +3579,24 @@ tr.lead-row-flash td {
   border-color: rgba(34, 197, 94, 0.45);
 }
 
+.source-card--highlight {
+  border-color: rgba(15, 118, 110, 0.65) !important;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.2);
+}
+
+.nav-item-deep svg {
+  color: #0f766e;
+}
+
+.sources-subsection-title--deep {
+  color: #0f766e;
+}
+
+.sources-grid--deep .source-card {
+  border-color: rgba(15, 118, 110, 0.28);
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.04), transparent 48%);
+}
+
 .source-status-badge--ok {
   color: #15803d;
   background: rgba(34, 197, 94, 0.12);

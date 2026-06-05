@@ -3725,6 +3725,43 @@ def get_agency_primary_city(agency_id: str) -> str | None:
     return _first_target_city(get_agency_settings(agency_id).get("target_cities"))
 
 
+def resolve_crawl_city(
+    city: str | None = None,
+    *,
+    agency_id: str | None = None,
+    request_data: dict | None = None,
+) -> str | None:
+    """
+    Ville effective du crawl — même règles que POST /api/crawler/scan.
+    Corps avec clé city/ville : valeur explicite ('' = national).
+    Sinon : 1ʳᵉ ville du territoire agence, ou national (None) si territoire vide.
+    """
+    if request_data is not None and ("city" in request_data or "ville" in request_data):
+        raw = (request_data.get("city") or request_data.get("ville") or "").strip()
+        return raw or None
+    if city is not None:
+        normalized = (city or "").strip()
+        return normalized or None
+    if agency_id:
+        return get_agency_primary_city(agency_id)
+    return None
+
+
+def get_agency_postcode_for_city(agency_id: str | None, city: str | None) -> str | None:
+    """Code postal agence si la ville cible correspond à la fiche agence."""
+    if not agency_id or not city:
+        return None
+    from crm.mandates.storage import get_agency_legal_profile
+
+    profile = get_agency_legal_profile(agency_id)
+    pc = (profile.get("postal_code") or "").strip()
+    profile_city = (profile.get("city") or "").strip()
+    target = (city or "").strip().split("(")[0].strip()
+    if pc and profile_city and profile_city.lower() == target.lower():
+        return pc
+    return None
+
+
 def _sync_legal_profile_city(agency_id: str, city: str) -> None:
     """Aligne la ville de la fiche agence sur le territoire (1ʳᵉ ville cible)."""
     city = (city or "").strip()
