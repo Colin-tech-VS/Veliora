@@ -1,6 +1,6 @@
 # Exporte les variables Scalingo vers un fichier local pour remplir le .env du VPS.
 # Usage : .\scripts\export-scalingo-for-vps.ps1
-# Sortie : scripts\ovh-vps-fill.env (gitignored, ne pas commiter)
+# Sortie : scripts\ovh-vps-fill.env (gitignored)
 
 $ErrorActionPreference = "Stop"
 $out = Join-Path $PSScriptRoot "ovh-vps-fill.env"
@@ -15,14 +15,17 @@ function Get-ScalingoCli {
     foreach ($c in $candidates) {
         if ($c -eq "scalingo" -or (Test-Path $c)) { return $c }
     }
-    throw "Scalingo CLI introuvable. scalingo login --password-only"
+    throw "Scalingo CLI introuvable. Lancez scalingo login --password-only"
 }
 
 $scalingo = Get-ScalingoCli
-$raw = & $scalingo --app $app env 2>&1
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$raw = & $scalingo --app $app env 2>&1 | ForEach-Object { "$_" }
+$ErrorActionPreference = $prevEap
 if ($LASTEXITCODE -ne 0) {
     Write-Host $raw
-    throw "Echec scalingo env — connectez-vous : scalingo login --password-only"
+    throw "Echec scalingo env - connectez-vous avec scalingo login --password-only"
 }
 
 $keep = @(
@@ -34,7 +37,7 @@ $keep = @(
 )
 
 $lines = @(
-    "# Genere par export-scalingo-for-vps.ps1 — copier dans /opt/veliora/.env sur le VPS",
+    "# Genere par export-scalingo-for-vps.ps1 - copier dans /opt/veliora/.env sur le VPS",
     "# Ne jamais commiter ce fichier",
     ""
 )
