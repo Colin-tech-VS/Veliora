@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Scalingo (python-buildpack) : exécuté après `pip install`.
+# Installe le navigateur Chromium de Playwright DANS le package pip
+# (PLAYWRIGHT_BROWSERS_PATH=0) pour qu'il voyage avec le slug et soit
+# disponible au runtime — permet de crawler les portails à anti-bot
+# (leboncoin, seloger, bienici…) avec un vrai navigateur sur Scalingo.
+set -e
+echo "-----> Playwright: installation du navigateur Chromium"
+python -m playwright install chromium
+echo "-----> Playwright: Chromium installé"

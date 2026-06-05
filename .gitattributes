@@ -1,0 +1,6 @@
+# Fichiers consommés par le build Linux Scalingo : toujours en LF.
+Aptfile text eol=lf
+.buildpacks text eol=lf
+bin/post_compile text eol=lf
+*.sh text eol=lf
+Procfile text eol=lf
