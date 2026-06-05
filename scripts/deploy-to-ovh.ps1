@@ -27,6 +27,9 @@ Set-Location $repoRoot
 function Step($txt) { Write-Host "`n=== $txt ===" -ForegroundColor Cyan }
 
 # ─── 1. Push GitHub (si message fourni) ───
+# git ecrit des messages normaux sur stderr ("Everything up-to-date"...) :
+# avec ErrorActionPreference=Stop, PowerShell les prend pour une erreur fatale
+# et stoppe le script avant meme l'etape SSH. On neutralise ca le temps du push.
 if ($Message) {
     Step "1/3  Commit + push GitHub"
     git add -A
@@ -38,11 +41,15 @@ if ($Message) {
     } else {
         Write-Host "Rien a committer (deja a jour localement)." -ForegroundColor Yellow
     }
-    git push
-    if ($LASTEXITCODE -ne 0) { throw "Echec du push GitHub." }
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    git push 2>&1 | Write-Host
+    $code = $LASTEXITCODE; $ErrorActionPreference = $prev
+    if ($code -ne 0) { throw "Echec du push GitHub." }
 } else {
     Step "1/3  (pas de message : on saute le commit, push facultatif)"
-    git push 2>$null
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    git push 2>&1 | Write-Host
+    $ErrorActionPreference = $prev
 }
 
 # ─── 2. Pull + restart sur le VPS ───
