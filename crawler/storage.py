@@ -290,7 +290,7 @@ def _persist_recrawl_repairs(lead: LeadData, existing_row: dict, agency_id: str)
                address = ?, city = ?, postcode = ?, sector = ?,
                surface = ?, price = ?, transaction_type = ?, price_period = ?,
                published_at = ?, agency = ?, listing_type = ?, updated_at = ?{geo_touch}
-               WHERE id = ? AND agency_id = ?""",
+               WHERE id = ?""",
             (
                 fields["first_name"],
                 fields["last_name"],
@@ -309,7 +309,6 @@ def _persist_recrawl_repairs(lead: LeadData, existing_row: dict, agency_id: str)
                 fields["listing_type"],
                 now,
                 existing_row["id"],
-                agency_id,
             ),
         )
         conn.commit()
@@ -1779,21 +1778,25 @@ def claim_orphan_leads(agency_id: str) -> int:
 def _record_price_change(
     conn,
     lead_id: int,
-    agency_id: str,
+    agency_id: str | None,
     new_price: int,
     *,
     now: str,
 ) -> tuple[int, str | None]:
     """Historise un prix et met à jour les compteurs de baisses."""
+    # Les leads du pool national ont agency_id NULL ; or lead_price_history.agency_id
+    # est NOT NULL et `WHERE agency_id = NULL` ne matche jamais en SQL. On historise
+    # donc sous une clé sentinelle stable, et on cible le lead par sa PK (id).
+    hist_agency_id = (agency_id or "").strip() or "__shared__"
     conn.execute(
         """INSERT INTO lead_price_history (lead_id, agency_id, price, recorded_at)
            VALUES (?, ?, ?, ?)""",
-        (lead_id, agency_id, new_price, now),
+        (lead_id, hist_agency_id, new_price, now),
     )
     rows = conn.execute(
         """SELECT price, recorded_at FROM lead_price_history
            WHERE lead_id = ? AND agency_id = ? ORDER BY recorded_at ASC""",
-        (lead_id, agency_id),
+        (lead_id, hist_agency_id),
     ).fetchall()
     hist = [{"price": r["price"], "recorded_at": r["recorded_at"]} for r in rows]
     from crm.scoring.price_history import count_price_drops_from_history
@@ -1802,8 +1805,8 @@ def _record_price_change(
     last_at = now if drops > 0 else None
     conn.execute(
         """UPDATE leads SET price_change_count = ?, last_price_change_at = COALESCE(?, last_price_change_at)
-           WHERE id = ? AND agency_id = ?""",
-        (drops, last_at, lead_id, agency_id),
+           WHERE id = ?""",
+        (drops, last_at, lead_id),
     )
     return drops, last_at
 
@@ -2127,7 +2130,7 @@ def save_lead(
                    facts_audit = COALESCE(?, facts_audit),
                    listing_image_url = COALESCE(NULLIF(?, ''), listing_image_url),
                    updated_at = ?{dvf_touch}{geo_touch}
-                   WHERE source_url = ? AND agency_id = ?""",
+                   WHERE id = ?""",
                 (
                     lead.first_name,
                     lead.last_name,
@@ -2158,8 +2161,7 @@ def save_lead(
                     facts_audit_json,
                     listing_image_url or "",
                     now,
-                    lead.source_url,
-                    agency_id,
+                    existing_row["id"],
                 ),
             )
             conn.commit()

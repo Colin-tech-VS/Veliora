@@ -605,3 +605,177 @@ def streamestate_health() -> dict[str, Any]:
     out["status"] = "configured"
     out["include_in_veille"] = cfg.get("include_in_veille")
     return out
+
+
+# ─── Vérification / enrichissement des annonces déjà en base ───
+
+
+def _blank(value: Any) -> bool:
+    s = str(value).strip() if value is not None else ""
+    return s == "" or s == "—"
+
+
+def lead_needs_verification(row: dict[str, Any]) -> bool:
+    """Annonce existante incomplète : au moins un champ clé manquant à compléter."""
+    has_phone = not _blank(row.get("phone"))
+    has_email = not _blank(row.get("email"))
+    if not (has_phone or has_email):
+        return True
+    if _blank(row.get("surface")) or not row.get("surface"):
+        return True
+    if _blank(row.get("price")) or not row.get("price"):
+        return True
+    if _blank(row.get("address")):
+        return True
+    return False
+
+
+def _city_group_key(row: dict[str, Any]) -> tuple[str, str]:
+    city = (row.get("city") or "").strip().lower()
+    postcode = (row.get("postcode") or "").strip()
+    return city, postcode
+
+
+def _build_advert_url_index(
+    *,
+    city: str | None,
+    postcode: str | None,
+    pages: int,
+) -> tuple[dict[str, dict[str, Any]], int]:
+    """Index URL d'annonce normalisée → PropertyDocument, sur N pages (= N crédits max)."""
+    from crawler.extractors import normalize_listing_url
+
+    url_index: dict[str, dict[str, Any]] = {}
+    pages_used = 0
+    for page in range(1, max(1, pages) + 1):
+        data = fetch_properties_page(city=city, postcode=postcode, page=page)
+        pages_used += 1
+        members = data.get("hydra:member") or []
+        for doc in members:
+            if not isinstance(doc, dict):
+                continue
+            for advert in doc.get("adverts") or []:
+                if not isinstance(advert, dict) or not advert.get("url"):
+                    continue
+                key = normalize_listing_url(str(advert["url"]).split("#")[0].strip())
+                if key:
+                    url_index.setdefault(key, doc)
+        view = data.get("hydra:view") or {}
+        if not members or not view.get("hydra:next"):
+            break
+    return url_index, pages_used
+
+
+def verify_existing_leads(
+    agency_id: str,
+    *,
+    max_pages: int | None = None,
+    max_pages_per_city: int | None = None,
+    only_incomplete: bool = True,
+    save: bool = True,
+    progress: Any = None,
+) -> dict[str, Any]:
+    """Vérifie et complète les annonces déjà en base via StreamEstate, au coût minimal.
+
+    Économie de crédits : les annonces existantes sont regroupées par ville ; une
+    seule page (≤30 annonces, ~1 crédit) vérifie d'un coup TOUTES les annonces de
+    cette ville par correspondance d'URL. On ne dépense des crédits que sur les
+    villes qui ont des annonces à vérifier, dans la limite d'un budget de pages.
+    """
+    from crawler.config import (
+        STREAMESTATE_VERIFY_MAX_PAGES,
+        STREAMESTATE_VERIFY_MAX_PAGES_PER_CITY,
+    )
+    from crawler.extractors import normalize_listing_url
+    from crawler.storage import get_leads, save_lead
+
+    summary: dict[str, Any] = {
+        "configured": streamestate_configured(),
+        "candidates": 0,
+        "cities_total": 0,
+        "cities_scanned": 0,
+        "credits_used": 0,
+        "matched": 0,
+        "updated": 0,
+        "not_found": 0,
+        "budget_exhausted": False,
+    }
+    if not streamestate_configured():
+        raise StreamEstateNotConfiguredError(
+            f"{streamestate_display_name()} — service non configuré (contactez l'administrateur Veliora)"
+        )
+
+    budget = max(1, int(max_pages if max_pages is not None else STREAMESTATE_VERIFY_MAX_PAGES))
+    per_city = max(
+        1,
+        int(
+            max_pages_per_city
+            if max_pages_per_city is not None
+            else STREAMESTATE_VERIFY_MAX_PAGES_PER_CITY
+        ),
+    )
+
+    candidates: list[dict[str, Any]] = []
+    for row in get_leads(agency_id, enrich=False):
+        if (row.get("status") or "nouveau") == "retire":
+            continue
+        if not (row.get("source_url") or "").strip():
+            continue
+        if only_incomplete and not lead_needs_verification(row):
+            continue
+        candidates.append(row)
+    summary["candidates"] = len(candidates)
+    if not candidates:
+        return summary
+
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in candidates:
+        groups.setdefault(_city_group_key(row), []).append(row)
+    summary["cities_total"] = len(groups)
+    # Villes les plus « rentables » d'abord : un crédit couvre plus d'annonces.
+    ordered = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)
+
+    for (city, postcode), leads_in_city in ordered:
+        if budget <= 0:
+            summary["budget_exhausted"] = True
+            break
+        url_index, pages_used = _build_advert_url_index(
+            city=city or None,
+            postcode=postcode or None,
+            pages=min(per_city, budget),
+        )
+        budget -= pages_used
+        summary["credits_used"] += pages_used
+        summary["cities_scanned"] += 1
+
+        for row in leads_in_city:
+            stored_url = (row.get("source_url") or "").strip()
+            doc = url_index.get(normalize_listing_url(stored_url))
+            if not doc:
+                summary["not_found"] += 1
+                continue
+            summary["matched"] += 1
+            lead = property_to_lead(doc)
+            if not lead:
+                continue
+            # URL stockée exacte : save_lead retrouve et enrichit la ligne existante
+            # (get_lead_by_source_url fait un match exact), pas un doublon.
+            lead.source_url = stored_url
+            lead.raw_extras["streamestate_verified_at"] = datetime.now(timezone.utc).isoformat()
+            if not save:
+                continue
+            saved = save_lead(
+                lead,
+                source_id=row.get("source_id") or "streamestate",
+                agency_id=agency_id,
+                require_verification=False,
+                veille_recrawl=True,
+            )
+            if saved and saved.get("id"):
+                summary["updated"] += 1
+        if callable(progress):
+            progress(dict(summary))
+
+    if budget <= 0 and summary["cities_scanned"] < summary["cities_total"]:
+        summary["budget_exhausted"] = True
+    return summary

@@ -92,6 +92,110 @@ class StreamEstateMappingTests(unittest.TestCase):
         self.assertEqual(streamestate_display_name(), "Analyse approfondie")
 
 
+class StreamEstateVerifyTests(unittest.TestCase):
+    def test_lead_needs_verification(self):
+        from crawler.streamestate import lead_needs_verification
+
+        # Champs clés présents → rien à vérifier
+        complete = {"phone": "01 23 45 67 89", "surface": 30, "price": 200000, "address": "1 rue X"}
+        self.assertFalse(lead_needs_verification(complete))
+        # Aucun contact → à vérifier
+        self.assertTrue(lead_needs_verification({"surface": 30, "price": 200000, "address": "1 rue X"}))
+        # Surface manquante → à vérifier
+        self.assertTrue(lead_needs_verification({"email": "a@b.fr", "price": 200000, "address": "1 rue X"}))
+        # Prix manquant / adresse vide → à vérifier
+        self.assertTrue(lead_needs_verification({"email": "a@b.fr", "surface": 30, "address": ""}))
+
+    @patch("crawler.streamestate.fetch_properties_page")
+    def test_verify_existing_leads_matches_by_url_and_amortizes_credits(self, mock_fetch):
+        # Une seule page (1 crédit) couvre 2 annonces existantes de la même ville.
+        mock_fetch.return_value = {
+            "hydra:member": [SAMPLE_PROPERTY],
+            "hydra:view": {},
+        }
+        leads_db = [
+            {  # incomplète (pas de prix) → candidate, URL présente dans la page
+                "id": 1,
+                "status": "nouveau",
+                "city": "Paris 18e",
+                "postcode": "75018",
+                "source_url": "https://www.century21.fr/trouver_logement/detail/2424196788",
+                "source_id": "century21",
+                "phone": "01 23 45 67 89",
+                "surface": 30,
+                "price": None,
+                "address": "1 rue de Test",
+            },
+            {  # incomplète, même ville, URL absente de la page → not_found
+                "id": 2,
+                "status": "nouveau",
+                "city": "Paris 18e",
+                "postcode": "75018",
+                "source_url": "https://www.seloger.com/annonces/999",
+                "source_id": "seloger",
+                "phone": None,
+                "email": None,
+                "surface": 40,
+                "price": 300000,
+                "address": "2 rue X",
+            },
+            {  # complète → ignorée (ne consomme aucun crédit)
+                "id": 3,
+                "status": "nouveau",
+                "city": "Lyon",
+                "postcode": "69003",
+                "source_url": "https://exemple.fr/lyon/1",
+                "phone": "04 11 22 33 44",
+                "surface": 50,
+                "price": 250000,
+                "address": "3 rue Y",
+            },
+        ]
+        saved_calls = []
+
+        def fake_save_lead(lead, **kwargs):
+            saved_calls.append(lead)
+            return {"id": 1, "updated": True}
+
+        from crawler import streamestate as se
+
+        with patch("crawler.storage.get_leads", return_value=leads_db), patch(
+            "crawler.storage.save_lead", side_effect=fake_save_lead
+        ), patch.dict(os.environ, {"STREAMESTATE_API_KEY": "k"}):
+            summary = se.verify_existing_leads("agency-1")
+
+        # Seule Paris 18e (2 candidates) est scannée : 1 crédit, 1 match, 1 not_found.
+        self.assertEqual(summary["candidates"], 2)
+        self.assertEqual(summary["cities_scanned"], 1)
+        self.assertEqual(summary["credits_used"], 1)
+        self.assertEqual(summary["matched"], 1)
+        self.assertEqual(summary["updated"], 1)
+        self.assertEqual(summary["not_found"], 1)
+        self.assertEqual(mock_fetch.call_count, 1)
+        self.assertEqual(len(saved_calls), 1)
+
+    @patch("crawler.streamestate.fetch_properties_page")
+    def test_verify_respects_credit_budget(self, mock_fetch):
+        mock_fetch.return_value = {"hydra:member": [], "hydra:view": {}}
+        leads_db = [
+            {"id": i, "status": "nouveau", "city": f"Ville{i}", "postcode": f"7500{i}",
+             "source_url": f"https://exemple.fr/{i}", "phone": None, "email": None,
+             "surface": None, "price": None, "address": ""}
+            for i in range(1, 6)
+        ]
+        from crawler import streamestate as se
+
+        with patch("crawler.storage.get_leads", return_value=leads_db), patch(
+            "crawler.storage.save_lead", return_value={"id": 1}
+        ), patch.dict(os.environ, {"STREAMESTATE_API_KEY": "k"}):
+            summary = se.verify_existing_leads("agency-1", max_pages=2, max_pages_per_city=1)
+
+        # Budget de 2 crédits → au plus 2 villes scannées, le reste reporté.
+        self.assertEqual(summary["credits_used"], 2)
+        self.assertEqual(summary["cities_scanned"], 2)
+        self.assertTrue(summary["budget_exhausted"])
+
+
 class StreamEstateFetchTests(unittest.TestCase):
     @patch("crawler.streamestate.requests.get")
     def test_iter_properties_pagination(self, mock_get):

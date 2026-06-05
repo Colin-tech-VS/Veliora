@@ -1913,6 +1913,30 @@ def api_crawler_scan():
     return jsonify(_job_response(job))
 
 
+@app.route("/api/crawler/streamestate/verify", methods=["POST"])
+def api_crawler_streamestate_verify():
+    """Vérifie/complète les annonces déjà en base via StreamEstate, à coût crédit minimal."""
+    from crawler.streamestate import StreamEstateError, verify_existing_leads
+
+    data = request.get_json(silent=True) or {}
+    kwargs: dict = {}
+    if data.get("max_pages") is not None:
+        try:
+            kwargs["max_pages"] = int(data["max_pages"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "max_pages invalide"}), 400
+    if data.get("only_incomplete") is False:
+        kwargs["only_incomplete"] = False
+    try:
+        summary = verify_existing_leads(_aid(), **kwargs)
+    except StreamEstateError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logging.exception("streamestate verify")
+        return jsonify({"ok": False, "error": f"Erreur serveur : {exc}"}), 500
+    return jsonify({"ok": True, "summary": summary})
+
+
 @app.route("/api/crawler/scan/<source_id>", methods=["POST"])
 def api_crawler_scan_source(source_id):
     source = get_source(source_id, _aid())
