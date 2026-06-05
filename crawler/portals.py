@@ -18,6 +18,7 @@ PORTAL_IDS = (
     "maisonappart",
     "ouestfranceimmo",
     "lesiteimmo",
+    "streamestate",
     "notaires",
 )
 
@@ -61,6 +62,7 @@ CITY_SEARCH_PORTAL_IDS = frozenset({
     "paruvendu",
     "ouestfranceimmo",
     "lesiteimmo",
+    "streamestate",
     # Portails anti-bot (URL ville native) — exclus du crawl gratuit mais city-capables.
     "leboncoin",
     "pap",

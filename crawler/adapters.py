@@ -505,6 +505,15 @@ DEFAULT_SOURCES: list[AdapterConfig] = [
         ],
     ),
     AdapterConfig(
+        id="streamestate",
+        name="StreamEstate",
+        base_url="https://stream.estate",
+        search_url="https://api.stream.estate/documents/properties",
+        listing_patterns=[
+            r"stream\.estate/property/[a-f0-9-]+",
+        ],
+    ),
+    AdapterConfig(
         id="notaires",
         name="Immobilier Notaires",
         base_url="https://www.immobilier.notaires.fr",
@@ -531,6 +540,7 @@ ADAPTER_CLASSES = {
     "maisonappart": GenericAdapter,
     "ouestfranceimmo": GenericAdapter,
     "lesiteimmo": GenericAdapter,
+    "streamestate": GenericAdapter,
     "notaires": GenericAdapter,
 }
 

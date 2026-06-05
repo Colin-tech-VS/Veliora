@@ -71,6 +71,34 @@ DISCOVERY_ADAPTIVE_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_ADAPTIVE_MIN_LINKS_D
 DISCOVERY_AI_MIN_LINKS_DIV = int(os.getenv("DISCOVERY_AI_MIN_LINKS_DIV", "20"))
 AI_DISCOVERY_MAX_ATTEMPTS = int(os.getenv("AI_DISCOVERY_MAX_ATTEMPTS", "8"))
 
+# ─── StreamEstate API (source séparée — ne remplace PAS les crawlers HTML) ───
+# 1 requête API ≈ 1 page (jusqu'à 30 annonces). Défauts bas = peu de crédits.
+STREAMESTATE_ITEMS_PER_PAGE = min(30, max(1, int(os.getenv("STREAMESTATE_ITEMS_PER_PAGE", "30"))))
+STREAMESTATE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_MAX_PAGES", "1")))
+STREAMESTATE_MAX_LISTINGS = max(1, int(os.getenv("STREAMESTATE_MAX_LISTINGS", "30")))
+STREAMESTATE_VEILLE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_VEILLE_MAX_PAGES", "1")))
+STREAMESTATE_VEILLE_MAX_LISTINGS = max(1, int(os.getenv("STREAMESTATE_VEILLE_MAX_LISTINGS", "15")))
+STREAMESTATE_INCLUDE_IN_VEILLE = os.getenv("STREAMESTATE_INCLUDE_IN_VEILLE", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+STREAMESTATE_PARTICULIER_ONLY = os.getenv("STREAMESTATE_PARTICULIER_ONLY", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+STREAMESTATE_TRANSACTION_SALE = os.getenv("STREAMESTATE_TRANSACTION_SALE", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+STREAMESTATE_WITH_COHERENT_PRICE = os.getenv("STREAMESTATE_WITH_COHERENT_PRICE", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Ne pas enchaîner le crawl des blocs « annonces similaires » (évite confusion + surcharge)
 CRAWL_SIMILAR_LISTINGS = False
 
@@ -440,4 +468,7 @@ def background_crawl_config() -> dict:
         "proxies_configured": proxies_enabled(),
         "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
         "ai_discovery": (os.getenv("CRAWL_AI_DISCOVERY") or "auto").strip(),
+        "streamestate": __import__(
+            "crawler.streamestate", fromlist=["streamestate_health"]
+        ).streamestate_health(),
     }

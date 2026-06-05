@@ -1048,7 +1048,13 @@ def is_recommended_crawl_source(src: dict) -> bool:
         from crawler.config import CRAWL_INCLUDE_CATALOG_IN_AUTO
 
         return CRAWL_INCLUDE_CATALOG_IN_AUTO
-    return resolve_base_portal_id(src.get("id") or "") is not None
+    base = resolve_base_portal_id(src.get("id") or "")
+    if base == "streamestate":
+        from crawler.config import STREAMESTATE_INCLUDE_IN_VEILLE
+        from crawler.streamestate import streamestate_configured
+
+        return streamestate_configured() and STREAMESTATE_INCLUDE_IN_VEILLE
+    return base is not None
 
 
 def get_sources_for_full_crawl(agency_id: str) -> list[dict]:

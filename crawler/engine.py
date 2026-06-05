@@ -717,6 +717,13 @@ class CrawlerEngine:
                 errors=[CrawlError.issue(CrawlError.SOURCE_UNKNOWN, source_id)],
             )
 
+        from crawler.portals import resolve_base_portal_id
+
+        if resolve_base_portal_id(source_id) == "streamestate":
+            return self._crawl_streamestate_source(
+                source_id, adapter, job_id, city=city, veille_mode=veille_mode
+            )
+
         base_search = adapter.config.search_url
         if city:
             from crawler.city_urls import pick_best_city_search_url, pick_working_city_search_url
@@ -826,6 +833,197 @@ class CrawlerEngine:
 
             recalc_source_found_counts(self._agency_id)
         return result
+
+    def _crawl_streamestate_source(
+        self,
+        source_id: str,
+        adapter: BaseAdapter,
+        job_id: str | None = None,
+        city: str | None = None,
+        *,
+        veille_mode: bool = False,
+    ) -> CrawlResult:
+        """Synchronisation API StreamEstate (pas de crawl HTML)."""
+        from crawler.streamestate import streamestate_configured
+        from crawler.storage import get_agency_primary_city, mark_source_scanned
+
+        result = CrawlResult()
+        if not streamestate_configured():
+            err = CrawlError.issue(
+                CrawlError.SOURCE_UNKNOWN,
+                "StreamEstate — ajoutez STREAMESTATE_API_KEY dans .env",
+            )
+            result.errors.append(err)
+            mark_source_scanned(source_id, error=err["message"][:200])
+            return result
+
+        crawl_city = (city or "").strip() or None
+        if not crawl_city and self._agency_id:
+            crawl_city = (get_agency_primary_city(self._agency_id) or "").strip() or None
+
+        prev_city = self._crawl_city
+        self._crawl_city = crawl_city
+
+        try:
+            return self._run_streamestate_sync(
+                source_id,
+                result,
+                job_id,
+                crawl_city,
+                veille_mode=veille_mode,
+            )
+        finally:
+            self._crawl_city = prev_city
+
+    def _run_streamestate_sync(
+        self,
+        source_id: str,
+        result: CrawlResult,
+        job_id: str | None,
+        crawl_city: str | None,
+        *,
+        veille_mode: bool,
+    ) -> CrawlResult:
+        from crawler.streamestate import (
+            StreamEstateCreditsError,
+            StreamEstateError,
+            StreamEstateNotConfiguredError,
+            iter_leads,
+            streamestate_settings,
+        )
+        from crawler.storage import mark_source_scanned
+
+        cfg = streamestate_settings(veille=veille_mode)
+        if job_id:
+            city_lbl = f" — {crawl_city}" if crawl_city else ""
+            mode_lbl = "veille" if veille_mode else "manuel"
+            update_crawl_job(
+                job_id,
+                progress=20,
+                message=(
+                    f"StreamEstate API ({mode_lbl}){city_lbl} — "
+                    f"{cfg['max_listings']} annonce(s) max ({cfg['max_pages']} page(s))…"
+                ),
+                listings_total=cfg["max_listings"],
+            )
+
+        mark_source_scanned(source_id)
+        processed = 0
+        skipped = 0
+        try:
+            for lead in iter_leads(city=crawl_city, veille=veille_mode):
+                if self._crawl_stopped(job_id) or not result.can_process_more_listings():
+                    break
+                lead = self._prepare_streamestate_lead(lead, crawl_city)
+                if lead is None:
+                    skipped += 1
+                    continue
+                processed += 1
+                if job_id and processed % 5 == 0:
+                    update_crawl_job(
+                        job_id,
+                        message=f"StreamEstate — {processed} fiche(s) enregistrée(s)…",
+                        progress=min(85, 20 + processed * 2),
+                    )
+                saved = save_lead(
+                    lead,
+                    source_id=source_id,
+                    job_id=job_id,
+                    agency_id=self._agency_id,
+                    require_verification=True,
+                    veille_recrawl=veille_mode,
+                )
+                if not saved or not saved.get("id"):
+                    if saved and saved.get("errors"):
+                        add_crawl_log(
+                            source_id,
+                            lead.source_url,
+                            "incomplete",
+                            "; ".join(saved.get("errors") or [])[:180],
+                            job_id,
+                        )
+                    continue
+                self._submit_address_match(saved, lead)
+                result.leads_found += 1
+                if saved.get("created"):
+                    result.leads_saved += 1
+                else:
+                    result.leads_updated += 1
+                add_crawl_log(
+                    source_id,
+                    lead.source_url,
+                    "saved" if saved.get("created") else "updated",
+                    f"StreamEstate — {lead.source} ({lead.type})",
+                    job_id,
+                )
+        except StreamEstateNotConfiguredError as exc:
+            err = CrawlError.issue(CrawlError.SOURCE_UNKNOWN, str(exc))
+            result.errors.append(err)
+            mark_source_scanned(source_id, error=str(exc)[:200])
+            return result
+        except StreamEstateCreditsError as exc:
+            err = CrawlError.issue(CrawlError.FETCH_FAILED, str(exc))
+            result.errors.append(err)
+            if processed:
+                result.warnings.append(
+                    CrawlError.issue(CrawlError.FETCH_FAILED, f"Arrêt quota — {processed} fiche(s) déjà importée(s)")
+                )
+            mark_source_scanned(source_id, error=str(exc)[:200])
+            return result
+        except StreamEstateError as exc:
+            err = CrawlError.issue(CrawlError.FETCH_FAILED, str(exc))
+            result.errors.append(err)
+            mark_source_scanned(source_id, error=str(exc)[:200])
+            return result
+
+        if result.leads_found == 0:
+            result.errors.append(
+                CrawlError.issue(
+                    CrawlError.NO_LISTINGS,
+                    "StreamEstate — aucune annonce pour ces critères (ville / filtres / quota)",
+                )
+            )
+            mark_source_scanned(source_id, error="0 annonce StreamEstate")
+        else:
+            mark_source_scanned(source_id, error=None)
+
+        if self._agency_id:
+            from crawler.storage import recalc_source_found_counts
+
+            recalc_source_found_counts(self._agency_id)
+
+        if job_id:
+            skip_note = f", {skipped} ignorée(s)" if skipped else ""
+            update_crawl_job(
+                job_id,
+                progress=90,
+                message=(
+                    f"StreamEstate — {result.leads_saved} nouveau(x), "
+                    f"{result.leads_updated} mis à jour{skip_note}"
+                ),
+            )
+        return result
+
+    def _prepare_streamestate_lead(
+        self,
+        lead: LeadData,
+        crawl_city: str | None,
+    ) -> LeadData | None:
+        """Même qualité que le crawl HTML : ville, cohérence prix/m², champs fiables."""
+        from crawler.listing_guard import validate_field_coherence
+        from crawler.validation import missing_core_fields
+
+        self._clean_unreliable_fields(lead)
+        if crawl_city and not self._lead_in_target_city(lead):
+            return None
+        ok_field, reason = validate_field_coherence(lead)
+        if not ok_field:
+            logger.debug("StreamEstate skip %s — %s", lead.source_url, reason)
+            return None
+        miss = missing_core_fields(lead)
+        if len(miss) >= 3:
+            return None
+        return lead
 
     def _crawl_url_sync(
         self,
