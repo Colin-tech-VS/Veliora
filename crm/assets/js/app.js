@@ -2935,6 +2935,41 @@ function setupLeadsActions() {
     }
   });
 
+  document.getElementById("leads-streamestate-verify-btn")?.addEventListener("click", async () => {
+    const verifyBtn = document.getElementById("leads-streamestate-verify-btn");
+    if (crawlState.active || leadRefreshState.busy) {
+      showToast("Un crawl est déjà en cours", "warning");
+      return;
+    }
+    const original = verifyBtn ? verifyBtn.textContent : "";
+    try {
+      if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "Vérification…";
+      }
+      showToast("Vérification des fiches via l'Analyse approfondie…", "info", 2500);
+      const res = await api("/crawler/streamestate/verify", { method: "POST" });
+      const s = res.summary || {};
+      if (!s.candidates) {
+        showToast("Aucune fiche à compléter (toutes déjà renseignées)", "success", 5000);
+      } else {
+        showToast(
+          `Vérification terminée: ${s.matched || 0} fiche(s) trouvée(s), ${s.updated || 0} complétée(s) · ${s.credits_used || 0} crédit(s) utilisé(s)${s.budget_exhausted ? " · budget atteint, relancez pour continuer" : ""}`,
+          "success",
+          7000,
+        );
+        await window.velioraReloadLeads();
+      }
+    } catch (err) {
+      showToast(err.message || "Vérification indisponible (clé API ?)", "error");
+    } finally {
+      if (verifyBtn) {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = original || "Vérifier les fiches";
+      }
+    }
+  });
+
   document.getElementById("leads-delete-all-btn")?.addEventListener("click", async () => {
     const count = LEADS.length;
     if (!count) {

@@ -73,12 +73,21 @@ AI_DISCOVERY_MAX_ATTEMPTS = int(os.getenv("AI_DISCOVERY_MAX_ATTEMPTS", "8"))
 
 # ─── Analyse approfondie (API agrégée — ne remplace PAS les crawlers HTML) ───
 STREAMESTATE_DISPLAY_NAME = os.getenv("STREAMESTATE_DISPLAY_NAME", "Analyse approfondie").strip() or "Analyse approfondie"
-# 1 requête API ≈ 1 page (jusqu'à 30 annonces). Défauts bas = peu de crédits.
+# 1 requête API ≈ 1 page (jusqu'à 30 annonces) ≈ 1 crédit.
+# itemsPerPage reste maxé à 30 : meilleur ratio annonces/crédit.
+# Crawl manuel : plus que 30 annonces, mais plafonné pour préserver les crédits.
 STREAMESTATE_ITEMS_PER_PAGE = min(30, max(1, int(os.getenv("STREAMESTATE_ITEMS_PER_PAGE", "30"))))
-STREAMESTATE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_MAX_PAGES", "1")))
-STREAMESTATE_MAX_LISTINGS = max(1, int(os.getenv("STREAMESTATE_MAX_LISTINGS", "30")))
+STREAMESTATE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_MAX_PAGES", "3")))
+STREAMESTATE_MAX_LISTINGS = max(1, int(os.getenv("STREAMESTATE_MAX_LISTINGS", "90")))
 STREAMESTATE_VEILLE_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_VEILLE_MAX_PAGES", "1")))
 STREAMESTATE_VEILLE_MAX_LISTINGS = max(1, int(os.getenv("STREAMESTATE_VEILLE_MAX_LISTINGS", "15")))
+# Vérification des annonces déjà en base : budget de crédits (pages) par run.
+# Une page ville vérifie d'un coup TOUTES les annonces existantes de la ville
+# par correspondance d'URL → coût mutualisé, très économe.
+STREAMESTATE_VERIFY_MAX_PAGES = max(1, int(os.getenv("STREAMESTATE_VERIFY_MAX_PAGES", "5")))
+STREAMESTATE_VERIFY_MAX_PAGES_PER_CITY = max(
+    1, int(os.getenv("STREAMESTATE_VERIFY_MAX_PAGES_PER_CITY", "2"))
+)
 STREAMESTATE_INCLUDE_IN_VEILLE = os.getenv("STREAMESTATE_INCLUDE_IN_VEILLE", "false").strip().lower() in (
     "1",
     "true",
