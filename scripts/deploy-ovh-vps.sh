@@ -11,8 +11,14 @@ APP_DIR="/opt/veliora"
 APP_USER="veliora"
 
 usage() {
-  echo "Usage: sudo bash $0 --domain veliora.example.com [--repo URL]"
+  echo "Usage: sudo bash $0 --domain veliora.example.com"
+  echo "       sudo bash $0 --domain 51.210.12.34   # sans nom de domaine (HTTP)"
+  echo "Options: [--repo URL]"
   exit 1
+}
+
+is_ip() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
 while [[ $# -gt 0 ]]; do
@@ -53,10 +59,19 @@ sudo -u "$APP_USER" bash -lc "
   playwright install-deps chromium
 "
 
+if is_ip "$DOMAIN"; then
+  PUBLIC_URL="http://$DOMAIN"
+  USE_HTTPS=false
+else
+  PUBLIC_URL="https://$DOMAIN"
+  USE_HTTPS=true
+fi
+
 if [[ ! -f "$APP_DIR/.env" ]]; then
   cp "$APP_DIR/scripts/ovh-vps.env.example" "$APP_DIR/.env"
-  sed -i "s|https://veliora.votredomaine.fr|https://$DOMAIN|g" "$APP_DIR/.env"
+  sed -i "s|APP_PUBLIC_URL=.*|APP_PUBLIC_URL=$PUBLIC_URL|" "$APP_DIR/.env"
   chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
+  chmod 600 "$APP_DIR/.env"
   echo ""
   echo "IMPORTANT: editez $APP_DIR/.env (DATABASE_URL, CRAWL_PROXIES, Stripe, SMTP...)"
   echo "  nano $APP_DIR/.env"
@@ -84,8 +99,14 @@ echo ""
 echo "=== Veliora OVH VPS ==="
 echo "1. Editez les secrets : nano $APP_DIR/.env"
 echo "2. Demarrez l'app    : systemctl start veliora"
-echo "3. HTTPS             : certbot --nginx -d $DOMAIN"
-echo "4. Stripe webhook    : https://$DOMAIN/api/billing/webhook"
-echo "5. Verifiez          : curl -s https://$DOMAIN/api/health"
+if [[ "$USE_HTTPS" == true ]]; then
+  echo "3. HTTPS             : certbot --nginx -d $DOMAIN"
+  echo "4. Stripe webhook    : https://$DOMAIN/api/billing/webhook"
+  echo "5. Verifiez          : bash $APP_DIR/scripts/verify-ovh-vps.sh"
+else
+  echo "3. Pas de domaine    : acces http://$DOMAIN/ et http://$DOMAIN/crm"
+  echo "4. Verifiez          : bash $APP_DIR/scripts/verify-ovh-vps.sh"
+  echo "5. HTTPS plus tard   : certbot apres achat d'un nom de domaine"
+fi
 echo ""
 echo "Logs : journalctl -u veliora -f"

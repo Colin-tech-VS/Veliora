@@ -2,6 +2,7 @@
 .env.local
 scripts/scalingo-env-residential.env
 scripts/crawl-worker-local.env
+scripts/ovh-vps-fill.env
 *.pyc
 __pycache__/
 .venv/
