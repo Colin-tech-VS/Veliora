@@ -182,10 +182,12 @@ def extract_listing_location(
     text = " ".join(p for p in (addr, title, city_hint) if p)
     sector: str | None = None
 
+    from crawler.address_quality import _sector_is_commune_like, looks_like_street_in_commune_field
+
     m = re.search(r"F-\d{5},\s*([^(]+)", addr, re.I)
     if m:
         sector = m.group(1).strip()
-        if not loc.get("city"):
+        if _sector_is_commune_like(sector) and not loc.get("city"):
             loc["city"] = _normalize_city_name(sector)
 
     arr = _ARRONDISSEMENT_CITY_RE.search(text)
@@ -195,6 +197,9 @@ def extract_listing_location(
             loc["city"] = arr.group(1).title()
 
     city = loc.get("city")
+    if city and looks_like_street_in_commune_field(city):
+        city = None
+        loc["city"] = None
     if city and sector:
         city_norm = _normalize_city_name(city)
         sector_norm = sector.strip()
@@ -202,7 +207,7 @@ def extract_listing_location(
             sector = city_norm
     elif city and not sector:
         sector = city
-    elif sector and not city:
+    elif sector and not city and _sector_is_commune_like(sector):
         city = _normalize_city_name(sector)
 
     return {

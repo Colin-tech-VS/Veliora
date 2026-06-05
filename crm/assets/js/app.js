@@ -5002,14 +5002,43 @@ function getFilteredLeads() {
   return leads.sort((a, b) => (b.mandate_score || 0) - (a.mandate_score || 0));
 }
 
+const LEAD_STREET_IN_CITY_RE =
+  /\b\d{1,4}\s+(?:rue|avenue|av\.?|bd|boulevard|chemin|impasse|route|allée|place|cours|quai|sentier|passage)\b/i;
+
+function normalizedLeadCommune(lead) {
+  let city = String(lead?.city || "").trim();
+  let postcode = String(lead?.postcode || "").trim();
+  const looksLikeStreet = (s) =>
+    !s ||
+    LEAD_STREET_IN_CITY_RE.test(s) ||
+    /^\d{1,4}\s+\S/.test(s);
+
+  if (city && looksLikeStreet(city)) {
+    const tail = city.match(/,\s*([A-Za-zÀ-ÿ0-9\s\-']+?)(?:\s*\((\d{5})\))?\s*$/);
+    if (tail) {
+      city = tail[1].trim();
+      if (tail[2]) postcode = tail[2];
+    } else {
+      const addr = String(lead?.address || "").trim();
+      const f = addr.match(/F-\d{5},\s*([^(]+)/i);
+      const comma = addr.match(/,\s*([A-Za-zÀ-ÿ\s\-']{2,})\s*$/);
+      city = (f && f[1]) || (comma && comma[1]) || "";
+      city = city.trim();
+    }
+  }
+  if (!city || looksLikeStreet(city)) return { key: "", label: "" };
+  const label = postcode ? `${city} (${postcode})` : city;
+  const key = `${city.toLowerCase()}||${postcode}`;
+  return { key, label };
+}
+
 function populateLeadsCityFilterOptions() {
   const select = document.getElementById("leads-city-filter");
   if (!select) return;
   const selected = state.leadsCityFilter || "";
   const cityMap = new Map();
   LEADS.forEach((lead) => {
-    const key = leadCityFilterKey(lead);
-    const label = leadCityDisplay(lead);
+    const { key, label } = normalizedLeadCommune(lead);
     if (!key || !label) return;
     if (!cityMap.has(key)) cityMap.set(key, label);
   });
@@ -5023,17 +5052,11 @@ function populateLeadsCityFilterOptions() {
 }
 
 function leadCityDisplay(lead) {
-  const city = String(lead?.city || "").trim();
-  const postcode = String(lead?.postcode || "").trim();
-  if (city && postcode) return `${city} (${postcode})`;
-  return city || postcode || "";
+  return normalizedLeadCommune(lead).label;
 }
 
 function leadCityFilterKey(lead) {
-  const city = String(lead?.city || "").trim().toLowerCase();
-  const postcode = String(lead?.postcode || "").trim();
-  if (!city && !postcode) return "";
-  return `${city}||${postcode}`;
+  return normalizedLeadCommune(lead).key;
 }
 
 function getLeadSearchText(lead) {

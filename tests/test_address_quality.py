@@ -10,9 +10,13 @@ from crawler.address_quality import (
     is_city_only_address,
     is_street_level_address,
     pick_best_address,
+    pick_best_commune_fields,
     real_street_or_none,
+    sanitize_location_triplet,
     synthesize_approx_street,
 )
+from crawler.extractors import LeadData
+from crawler.validation import lead_from_db_row, merge_lead_for_update
 
 
 class _Lead:
@@ -57,6 +61,58 @@ class AddressGuaranteeTests(unittest.TestCase):
         lead = _Lead(source_url="https://x.fr/ad/1", address="8 rue de la Ronce", city="Lyon")
         ensure_street_address_from_data(lead, run_full_match=False)
         self.assertEqual(lead.address, "8 rue de la Ronce")
+
+    def test_pick_best_commune_repairs_polluted_existing(self):
+        city, pc, _ = pick_best_commune_fields(
+            None,
+            None,
+            "12 rue de la Gare, Nantes",
+            "44000",
+            address="12 rue de la Gare",
+        )
+        self.assertEqual(city, "Nantes")
+        self.assertEqual(pc, "44000")
+
+    def test_merge_lead_for_update_loads_and_repairs_city(self):
+        existing = lead_from_db_row(
+            {
+                "first_name": "Jean",
+                "last_name": "Dupont",
+                "phone": "0612345678",
+                "email": "j@example.com",
+                "address": "12 rue de la Gare",
+                "city": "12 rue de la Gare, Nantes",
+                "postcode": "44000",
+                "source_url": "https://example.com/ad/1",
+                "source": "test",
+            }
+        )
+        fresh = LeadData(
+            source="test",
+            source_url="https://example.com/ad/1",
+            address="12 rue de la Gare",
+            price=250000,
+            surface=65,
+        )
+        merged = merge_lead_for_update(existing, fresh)
+        self.assertEqual(merged.city, "Nantes")
+        self.assertEqual(merged.postcode, "44000")
+        self.assertEqual(merged.address, "12 rue de la Gare")
+
+    def test_sanitize_location_separates_street_and_city(self):
+        addr, city, pc = sanitize_location_triplet(
+            "12 rue de la Gare",
+            "12 rue de la Gare, Nantes",
+            "44000",
+        )
+        self.assertEqual(addr, "12 rue de la Gare")
+        self.assertEqual(city, "Nantes")
+        self.assertEqual(pc, "44000")
+
+        addr2, city2, pc2 = sanitize_location_triplet(None, "Nantes (44000)", "44000")
+        self.assertIsNone(addr2)
+        self.assertEqual(city2, "Nantes")
+        self.assertEqual(pc2, "44000")
 
     def test_pick_best_prefers_real_over_approx(self):
         approx = synthesize_approx_street("long-seed-to-make-it-lengthy")

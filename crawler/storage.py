@@ -177,7 +177,7 @@ def _clean_lead_location_fields(lead: LeadData) -> None:
 
         if is_city_only_address(addr, city, postcode):
             addr = ""
-    if city and (_looks_like_listing_title(city) or any(ch.isdigit() for ch in city)):
+    if city and _looks_like_listing_title(city):
         city = ""
     if postcode and not re.fullmatch(r"\d{5}", postcode):
         m_pc = re.search(r"\b(\d{5})\b", postcode)
@@ -195,6 +195,9 @@ def _clean_lead_location_fields(lead: LeadData) -> None:
     lead.address = addr or None
     lead.city = city or None
     lead.postcode = postcode or None
+    from crawler.address_quality import sanitize_lead_commune_fields
+
+    sanitize_lead_commune_fields(lead)
 
 
 def _clean_location_values(
@@ -210,7 +213,9 @@ def _clean_location_values(
 
     if addr and _looks_like_listing_title(addr):
         addr = ""
-    if ct and (_looks_like_listing_title(ct) or any(ch.isdigit() for ch in ct)):
+    from crawler.address_quality import looks_like_street_in_commune_field
+
+    if ct and (_looks_like_listing_title(ct) or looks_like_street_in_commune_field(ct)):
         ct = ""
     if pc and not re.fullmatch(r"\d{5}", pc):
         m_pc = re.search(r"\b(\d{5})\b", pc)
@@ -223,7 +228,92 @@ def _clean_location_values(
         if not pc:
             pc = m.group(2)
 
-    return (addr or None, ct or None, pc or None)
+    from crawler.address_quality import sanitize_location_triplet
+
+    return sanitize_location_triplet(addr or None, ct or None, pc or None)
+
+
+def _persist_recrawl_repairs(lead: LeadData, existing_row: dict, agency_id: str) -> bool:
+    """Recrawl : persiste les champs réparés même si la vérification stricte échoue."""
+    lead_city = getattr(lead, "city", None)
+    lead_postcode = getattr(lead, "postcode", None)
+    lead_sector = getattr(lead, "sector", None)
+    fields = {
+        "first_name": lead.first_name,
+        "last_name": lead.last_name,
+        "phone": lead.phone,
+        "email": lead.email,
+        "address": lead.address,
+        "city": lead_city,
+        "postcode": lead_postcode,
+        "sector": lead_sector,
+        "surface": lead.surface,
+        "price": lead.price,
+        "transaction_type": lead.transaction_type,
+        "price_period": lead.price_period,
+        "published_at": lead.published_at,
+        "agency": lead.agency,
+        "listing_type": lead.type,
+    }
+    row_keys = {
+        "first_name": existing_row.get("first_name"),
+        "last_name": existing_row.get("last_name"),
+        "phone": existing_row.get("phone") if existing_row.get("phone") != "—" else None,
+        "email": existing_row.get("email") if existing_row.get("email") != "—" else None,
+        "address": existing_row.get("address") if existing_row.get("address") != "—" else None,
+        "city": existing_row.get("city"),
+        "postcode": existing_row.get("postcode"),
+        "sector": existing_row.get("sector"),
+        "surface": existing_row.get("surface"),
+        "price": existing_row.get("price") or None,
+        "transaction_type": existing_row.get("transaction_type"),
+        "price_period": existing_row.get("price_period"),
+        "published_at": existing_row.get("published_at"),
+        "agency": existing_row.get("agency"),
+        "listing_type": existing_row.get("listing_type") or existing_row.get("type"),
+    }
+    if fields == row_keys:
+        return False
+
+    loc_changed = (
+        (row_keys.get("address") or "").strip().lower() != (fields.get("address") or "").strip().lower()
+        or row_keys.get("city") != fields.get("city")
+        or row_keys.get("postcode") != fields.get("postcode")
+        or row_keys.get("sector") != fields.get("sector")
+    )
+    geo_touch = ", latitude = NULL, longitude = NULL" if loc_changed else ""
+    now = _now()
+    with get_connection() as conn:
+        conn.execute(
+            f"""UPDATE leads SET
+               first_name = ?, last_name = ?, phone = ?, email = ?,
+               address = ?, city = ?, postcode = ?, sector = ?,
+               surface = ?, price = ?, transaction_type = ?, price_period = ?,
+               published_at = ?, agency = ?, listing_type = ?, updated_at = ?{geo_touch}
+               WHERE id = ? AND agency_id = ?""",
+            (
+                fields["first_name"],
+                fields["last_name"],
+                fields["phone"],
+                fields["email"],
+                fields["address"],
+                fields["city"],
+                fields["postcode"],
+                fields["sector"],
+                fields["surface"],
+                fields["price"],
+                fields["transaction_type"],
+                fields["price_period"],
+                fields["published_at"],
+                fields["agency"],
+                fields["listing_type"],
+                now,
+                existing_row["id"],
+                agency_id,
+            ),
+        )
+        conn.commit()
+    return True
 
 
 def _canonicalize_city_postcode_values(
@@ -1863,7 +1953,9 @@ def save_lead(
         getattr(lead, "city", None),
         getattr(lead, "postcode", None),
     )
-    from crawler.address_quality import ensure_street_address_from_data
+    from crawler.address_quality import ensure_street_address_from_data, sanitize_lead_commune_fields
+
+    sanitize_lead_commune_fields(lead)
     from crawler.config import ADDRESS_MATCH_DURING_CRAWL
 
     # Voie via DPE/BAN (sync si pas de file parallèle, sinon la file post-crawl).
@@ -1872,8 +1964,8 @@ def save_lead(
     lead.published_at = resolve_published_at(lead.published_at, stored_pub)
 
     effective_require_verification = require_verification
-    if existing_row and (deep_refresh or veille_recrawl):
-        # Recrawl veille / fiche existante : fusionner prix, adresse, contacts sans bloquer.
+    if existing_row:
+        # Recrawl (tous crawlers) : fusionner et réparer les champs sans bloquer sur la vérif stricte.
         effective_require_verification = False
 
     verification, partial = resolve_crawl_verification(
@@ -1886,32 +1978,17 @@ def save_lead(
                 verification = snap
                 partial = True
         if not verification.ok:
-            if existing_row:
-                listing_title_hint = (
-                    (lead.raw_extras or {}).get("listing_title")
-                    or existing_row.get("listing_title")
-                    or None
-                )
-                clean_addr, clean_city, clean_pc = _clean_location_values(
-                    existing_row.get("address"),
-                    existing_row.get("city"),
-                    existing_row.get("postcode"),
-                    listing_title_hint,
-                )
-                clean_city, clean_pc = _canonicalize_city_postcode_values(clean_city, clean_pc)
-                if (
-                    clean_addr != existing_row.get("address")
-                    or clean_city != existing_row.get("city")
-                    or clean_pc != existing_row.get("postcode")
-                ):
-                    with get_connection() as conn:
-                        conn.execute(
-                            """UPDATE leads
-                               SET address = ?, city = ?, postcode = ?, updated_at = ?
-                               WHERE id = ? AND agency_id = ?""",
-                            (clean_addr, clean_city, clean_pc, _now(), existing_row["id"], agency_id),
-                        )
-                        conn.commit()
+            if existing_row and _persist_recrawl_repairs(lead, existing_row, agency_id):
+                return {
+                    "id": existing_row["id"],
+                    "created": False,
+                    "verified": False,
+                    "partial": True,
+                    "verification": verification.summary(),
+                    "errors": verification.errors,
+                    "updated": True,
+                    "repaired": True,
+                }
             return {
                 "id": existing_row["id"] if existing_row else None,
                 "created": False,
@@ -2402,6 +2479,8 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
             lead = lead_from_db_row(dict(row))
             before = (
                 lead.address,
+                lead.city,
+                lead.postcode,
                 lead.first_name,
                 lead.last_name,
                 lead.phone,
@@ -2409,8 +2488,20 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
             )
             lead = sanitize_lead(lead)
             lead = prepare_lead_defaults(lead)
+            from crm.dvf import apply_lead_location_fields
+
+            apply_lead_location_fields(lead)
+            _clean_lead_location_fields(lead)
+            from crawler.address_quality import sanitize_lead_commune_fields
+
+            lead.city, lead.postcode = _canonicalize_city_postcode_values(
+                lead.city, lead.postcode
+            )
+            sanitize_lead_commune_fields(lead)
             after = (
                 lead.address,
+                lead.city,
+                lead.postcode,
                 lead.first_name,
                 lead.last_name,
                 lead.phone,
@@ -2421,7 +2512,7 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
             conn.execute(
                 """UPDATE leads SET
                    first_name = ?, last_name = ?, phone = ?, email = ?,
-                   address = ?, updated_at = ?
+                   address = ?, city = ?, postcode = ?, updated_at = ?
                    WHERE id = ? AND agency_id = ?""",
                 (
                     lead.first_name,
@@ -2429,6 +2520,8 @@ def repair_source_leads_in_db(source_id: str, agency_id: str) -> int:
                     lead.phone,
                     lead.email,
                     lead.address,
+                    lead.city,
+                    lead.postcode,
                     _now(),
                     row["id"],
                     agency_id,
@@ -2648,6 +2741,13 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
     else:
         city = city or _extract_city(row["address"])
 
+    from crawler.address_quality import sanitize_location_triplet
+
+    addr_clean = address if address != "—" else None
+    addr_clean, city, postcode = sanitize_location_triplet(addr_clean, city, postcode)
+    if addr_clean:
+        address = addr_clean
+
     raw_first = row["first_name"]
     raw_last = row["last_name"]
     agency_name = row["agency"] if "agency" in keys else None
@@ -2808,16 +2908,26 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
 def _extract_city(address: str | None) -> str:
     if not address:
         return ""
+    from crawler.address_quality import looks_like_street_in_commune_field
+
     m = re.search(r"F-\d{5},\s*([^(]+)", address, re.I)
     if m:
-        return m.group(1).strip()
+        candidate = m.group(1).strip()
+        if not looks_like_street_in_commune_field(candidate):
+            return candidate
     m2 = re.search(r"[àa]\s+([A-Za-zÀ-ÿ\s'-]+?)\s*\(\d{2,3}\)", address)
     if m2:
         return m2.group(1).strip()
     parts = address.split(",")
-    city = parts[-1].strip() if parts else ""
+    if len(parts) >= 2:
+        city = parts[-1].strip()
+        if looks_like_street_in_commune_field(city):
+            return ""
+    else:
+        city = parts[-1].strip() if parts else ""
     m3 = re.match(r"^(.+?)\s*\(\d{2,3}\)\s*$", city)
-    return m3.group(1).strip() if m3 else city
+    result = m3.group(1).strip() if m3 else city
+    return "" if looks_like_street_in_commune_field(result) else result
 
 
 def _source_url_like(domain: str, base_url: str) -> str:

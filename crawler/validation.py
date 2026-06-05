@@ -623,12 +623,22 @@ def lead_from_db_row(row: dict) -> LeadData:
                 pass
         elif isinstance(fa, dict):
             raw_extras["facts_audit"] = fa
+    from crawler.address_quality import sanitize_location_triplet
+
+    addr = row.get("address") if row.get("address") != "—" else None
+    city = row.get("city")
+    postcode = row.get("postcode")
+    _, city, postcode = sanitize_location_triplet(addr, city, postcode)
+
     return LeadData(
         first_name=row.get("first_name"),
         last_name=row.get("last_name"),
         phone=row.get("phone") if row.get("phone") != "—" else None,
         email=row.get("email") if row.get("email") != "—" else None,
-        address=row.get("address") if row.get("address") != "—" else None,
+        address=addr,
+        city=city,
+        postcode=postcode,
+        sector=row.get("sector"),
         surface=row.get("surface"),
         price=row.get("price") or None,
         transaction_type=row.get("transaction_type") or "vente",
@@ -763,6 +773,20 @@ def merge_lead_for_update(
         merged.agency = None
 
     merged.raw_extras = {**existing.raw_extras, **fresh.raw_extras}
+
+    from crawler.address_quality import pick_best_commune_fields
+
+    listing_title = (merged.raw_extras or {}).get("listing_title")
+    merged.city, merged.postcode, merged.sector = pick_best_commune_fields(
+        getattr(fresh, "city", None),
+        getattr(fresh, "postcode", None),
+        getattr(existing, "city", None),
+        getattr(existing, "postcode", None),
+        fresh_sector=getattr(fresh, "sector", None),
+        existing_sector=getattr(existing, "sector", None),
+        address=merged.address,
+        listing_title=listing_title,
+    )
 
     return sanitize_lead(merged)
 

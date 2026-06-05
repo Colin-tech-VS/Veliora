@@ -311,3 +311,197 @@ def scrub_lead_address_for_storage(lead) -> None:
         getattr(lead, "postcode", None),
     ):
         lead.address = None
+
+
+def looks_like_street_in_commune_field(text: str | None) -> bool:
+    """True si le champ « ville » contient en réalité une adresse (voie)."""
+    t = (text or "").strip()
+    if not t or t in ("—", "-"):
+        return False
+    if _STREET_IN_ADDRESS_RE.search(t):
+        return True
+    if _LEADING_STREET_NUM_RE.match(t):
+        return True
+    if _STREET_NAME_RE.search(t) and not _CITY_ONLY_PAREN_RE.match(t):
+        return True
+    if "," in t and len(t) > 28:
+        return True
+    return False
+
+
+def _sector_is_commune_like(sector: str | None) -> bool:
+    s = (sector or "").strip()
+    if not s or looks_like_street_in_commune_field(s):
+        return False
+    return len(s) <= 42
+
+
+def _commune_from_parenthetical(text: str) -> tuple[str | None, str | None]:
+    """« Nantes (44000) » → (« Nantes », « 44000 »)."""
+    m = re.match(r"^([A-Za-zÀ-ÿ\s\-']+?)\s*\((\d{5})\)\s*$", (text or "").strip())
+    if not m or looks_like_street_in_commune_field(m.group(1)):
+        return None, None
+    return m.group(1).strip(), m.group(2)
+
+
+def _split_street_and_commune(text: str) -> tuple[str | None, str | None, str | None]:
+    """« 12 rue X, Nantes (44000) » → voie, commune, CP."""
+    raw = (text or "").strip()
+    if not raw:
+        return None, None, None
+    tail = re.search(
+        r",\s*([A-Za-zÀ-ÿ0-9\s\-']+?)(?:\s*\((\d{5})\))?\s*$",
+        raw,
+    )
+    if not tail:
+        return None, None, None
+    commune = tail.group(1).strip()
+    pc = tail.group(2)
+    street = raw[: tail.start()].strip(" ,")
+    if not commune or looks_like_street_in_commune_field(commune):
+        return street or None, None, pc
+    return street or None, commune, pc
+
+
+def sanitize_location_triplet(
+    address: str | None,
+    city: str | None,
+    postcode: str | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Sépare commune/CP et voie — évite qu'une rue se retrouve dans `city`."""
+    from crm.dvf import _normalize_city_name, parse_location_hint
+
+    addr = (address or "").strip() or None
+    ct = (city or "").strip() or None
+    pc = (postcode or "").strip() or None
+
+    if ct and not looks_like_street_in_commune_field(ct):
+        parsed_ct, parsed_pc = _commune_from_parenthetical(ct)
+        if parsed_ct:
+            ct = parsed_ct
+            pc = pc or parsed_pc
+
+    if ct and looks_like_street_in_commune_field(ct):
+        street_part, parsed_city, parsed_pc = _split_street_and_commune(ct)
+        if not parsed_city:
+            loc = parse_location_hint(ct, "")
+            parsed_city = loc.get("city")
+            parsed_pc = loc.get("postcode") or pc
+            street_part = ct
+            if parsed_city:
+                for frag in (
+                    parsed_city,
+                    parsed_pc,
+                    f"({parsed_pc})" if parsed_pc else None,
+                    f"{parsed_city} ({parsed_pc})" if parsed_pc else None,
+                ):
+                    if frag:
+                        street_part = re.sub(
+                            re.escape(str(frag)),
+                            "",
+                            street_part,
+                            flags=re.I,
+                        ).strip(" ,;")
+        if street_part and looks_like_street_in_commune_field(street_part):
+            if not addr or is_city_only_address(addr, parsed_city, parsed_pc):
+                addr = street_part
+        if parsed_city and _sector_is_commune_like(parsed_city):
+            ct = _normalize_city_name(parsed_city)
+            pc = parsed_pc or pc
+        else:
+            ct = None
+
+    if ct and looks_like_street_in_commune_field(ct):
+        ct = None
+
+    if ct:
+        parsed_ct, parsed_pc = _commune_from_parenthetical(ct)
+        if parsed_ct:
+            ct = _normalize_city_name(parsed_ct)
+            pc = pc or parsed_pc
+
+    if addr and is_city_only_address(addr, ct, pc) and not real_street_or_none(addr):
+        if not ct:
+            from crm.dvf import parse_location_hint, _normalize_city_name
+
+            loc = parse_location_hint(addr, "")
+            if loc.get("city"):
+                ct = _normalize_city_name(loc["city"])
+            if loc.get("postcode"):
+                pc = loc["postcode"]
+        addr = None
+
+    return addr, ct, pc
+
+
+def _commune_field_quality(city: str | None, postcode: str | None) -> int:
+    """Score commune : 0 = invalide, 2 = commune, 3 = commune + CP valide."""
+    _, ct, pc = sanitize_location_triplet(None, city, postcode)
+    if not ct:
+        return 0
+    if pc and re.fullmatch(r"\d{5}", pc):
+        return 3
+    return 2
+
+
+def pick_best_commune_fields(
+    fresh_city: str | None,
+    fresh_postcode: str | None,
+    existing_city: str | None,
+    existing_postcode: str | None,
+    *,
+    fresh_sector: str | None = None,
+    existing_sector: str | None = None,
+    address: str | None = None,
+    listing_title: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    """Fusion recrawl : meilleure commune/CP/secteur (répare les champs pollués)."""
+    from crm.dvf import extract_listing_location
+
+    candidates: list[tuple[str | None, str | None, int, str]] = []
+    for ct, pc, tag in (
+        (fresh_city, fresh_postcode, "fresh"),
+        (existing_city, existing_postcode, "existing"),
+    ):
+        _, norm_ct, norm_pc = sanitize_location_triplet(address, ct, pc)
+        if norm_ct:
+            q = _commune_field_quality(norm_ct, norm_pc)
+            fresh_bonus = 1 if tag == "fresh" else 0
+            candidates.append((norm_ct, norm_pc, q + fresh_bonus, tag))
+
+    loc = extract_listing_location(address, listing_title, fresh_city or existing_city)
+    if loc.get("city"):
+        _, norm_ct, norm_pc = sanitize_location_triplet(
+            address,
+            loc.get("city"),
+            loc.get("postcode"),
+        )
+        if norm_ct:
+            candidates.append((norm_ct, norm_pc, _commune_field_quality(norm_ct, norm_pc) + 1, "extract"))
+
+    if not candidates:
+        return None, None, None
+
+    candidates.sort(key=lambda row: row[2], reverse=True)
+    best_city, best_pc = candidates[0][0], candidates[0][1]
+
+    sector: str | None = None
+    for cand in (loc.get("sector"), fresh_sector, existing_sector):
+        s = (cand or "").strip()
+        if s and _sector_is_commune_like(s) and not looks_like_street_in_commune_field(s):
+            sector = s
+            break
+
+    return best_city, best_pc, sector
+
+
+def sanitize_lead_commune_fields(lead) -> None:
+    """Garantit city = commune, address = voie (après crawl / avant INSERT)."""
+    addr, ct, pc = sanitize_location_triplet(
+        getattr(lead, "address", None),
+        getattr(lead, "city", None),
+        getattr(lead, "postcode", None),
+    )
+    lead.address = addr
+    lead.city = ct
+    lead.postcode = pc
