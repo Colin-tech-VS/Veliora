@@ -266,8 +266,9 @@ class CrawlerEngine:
         try:
             from crawler.proxy_manager import begin_crawl_session, reset_block_rotation_counter
 
-            # Tous les types de job : nouvelle IP si pool dispo (payant ou auto-gratuit).
-            begin_crawl_session(force_new=True)
+            # Niveau d'IP choisi selon la cible : gros portail anti-bot → Decodo,
+            # petit site → IP gratuite/serveur. all_sources/veille : re-choisi par portail.
+            begin_crawl_session(force_new=True, url=target_url, source_id=source_id)
             reset_block_rotation_counter()
             self.refresh_adapters(agency_id)
             self._veille_mode = job_type == "veille_auto"
@@ -493,7 +494,8 @@ class CrawlerEngine:
                 break
             from crawler.proxy_manager import begin_crawl_session, reset_block_rotation_counter
 
-            begin_crawl_session(force_new=True)
+            # Decodo seulement si ce portail est un gros site anti-bot (sinon IP gratuite).
+            begin_crawl_session(force_new=True, source_id=src.get("id"))
             reset_block_rotation_counter()
             pct = int(10 + (i / len(sources)) * 80)
             update_crawl_job(
