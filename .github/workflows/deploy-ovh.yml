@@ -1,0 +1,57 @@
+name: Deploy OVH
+
+# Auto-deploiement du VPS OVH a chaque push sur main (et bouton manuel).
+# Depuis mobile : pousser sur main suffit, le VPS se met a jour tout seul.
+#
+# Secret requis (Settings > Secrets and variables > Actions > New repository secret) :
+#   OVH_SSH_KEY  -> cle privee SSH autorisee sur ubuntu@37.59.97.63
+#
+# L'IP et l'utilisateur ne sont pas secrets (deja dans scripts/deploy-to-ovh.ps1).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+  workflow_dispatch: {}
+
+# Un seul deploiement a la fois ; on n'annule pas un deploiement en cours.
+concurrency:
+  group: deploy-ovh
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifier le secret SSH
+        id: guard
+        run: |
+          if [ -z "${{ secrets.OVH_SSH_KEY }}" ]; then
+            echo "::warning::Secret OVH_SSH_KEY absent — ajoutez-le dans Settings > Secrets and variables > Actions. Deploiement saute."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull + restart sur le VPS
+        if: steps.guard.outputs.skip != 'true'
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: 37.59.97.63
+          username: ubuntu
+          key: ${{ secrets.OVH_SSH_KEY }}
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/veliora
+            echo '--- git pull ---'
+            sudo -u veliora git pull --ff-only
+            echo '--- dependances (si requirements.txt a change) ---'
+            sudo -u veliora bash -lc 'cd /opt/veliora && source .venv/bin/activate && pip install -q -r requirements.txt'
+            echo '--- restart service ---'
+            sudo systemctl restart veliora
+            sleep 3
+            echo -n 'service: '; sudo systemctl is-active veliora
+            curl -s -o /dev/null -w 'health HTTP %{http_code}\n' http://127.0.0.1:8000/api/health
