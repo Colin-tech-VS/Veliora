@@ -1,6 +1,6 @@
 /* ─── Veliora CRM — design agence immobilière (tokens partagés vitrine) ─── */
 @import url('veliora-brand.css');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+/* Polices Google chargées via <link> dans le <head> (voir veliora-brand.css). */
 
 :root {
   --brand-night-soft: var(--brand-primary);
