@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploiement Veliora sur OVH VPS (Ubuntu 22.04+).
+# Deploiement Veliora sur OVH VPS (Ubuntu 24.04 / 26.04 LTS).
 # Usage (en root sur le VPS) :
 #   curl -fsSL ... ou git clone puis :
 #   sudo bash scripts/deploy-ovh-vps.sh --domain veliora.votredomaine.fr

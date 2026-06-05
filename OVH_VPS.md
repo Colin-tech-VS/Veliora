@@ -10,7 +10,7 @@ Architecture : **CRM + crawl Playwright + Decodo** sur un seul serveur. Supabase
 | **VPS-2 (12 Go)** | **Recommande** — confortable, marge pour plusieurs agences |
 | VPS-3 (24 Go) | Reseau / IA locale lourde |
 
-A la commande : **Ubuntu 22.04 LTS**, region **France** (Gravelines ou Roubaix).
+A la commande : **Ubuntu 26.04 LTS** (propose par OVH VPS 2026) ou **24.04 LTS**, region **France** (Gravelines ou Roubaix).
 
 ## Avant de commencer
 
