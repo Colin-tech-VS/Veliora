@@ -1,8 +1,11 @@
 /**
  * Veliora — design system partagé (vitrine + CRM + connexion)
  * Premium immobilier : sobre, chaleureux, sans effet « tech / IA ».
+ *
+ * Les polices Google ne sont PAS importées ici : elles sont chargées via
+ * <link rel="preconnect"> + <link rel="stylesheet"> dans le <head> des pages
+ * pour éviter une cascade de requêtes render-blocking (HTML → CSS → @import).
  */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&display=swap');
 
 :root {
   /* Primaire — ardoise profonde (confiance, mandats) */

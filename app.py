@@ -510,7 +510,8 @@ def _serve_html_file(path: Path) -> object:
     if not path.is_file():
         logging.error("Fichier HTML introuvable : %s", path)
         abort(404, description=f"Fichier introuvable : {path}")
-    return send_file(path, mimetype="text/html; charset=utf-8")
+    resp = send_file(path, mimetype="text/html; charset=utf-8")
+    return _apply_static_gzip(resp, path)
 
 
 def _serve_vitrine_page(slug: str):
@@ -786,24 +787,89 @@ def _with_asset_cache(resp):
     return resp
 
 
+# Cache mémoire des assets statiques pré-compressés gzip. Les fichiers CSS/JS/HTML
+# ne changent pas entre deux déploiements : les recompresser à chaque requête
+# (gzip niveau 6 sur 300 Ko de JS) gaspille du CPU et augmente le TTFB. On garde
+# les octets gzip en mémoire, invalidés dès que le mtime/la taille du fichier change.
+_STATIC_GZIP_CACHE: dict[str, tuple[int, int, bytes]] = {}
+_STATIC_GZIP_LOCK = threading.Lock()
+
+
+def _cached_gzip(path: Path) -> bytes | None:
+    """Retourne les octets gzip d'un fichier (mis en cache), ou None si inutile."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = str(path)
+    cached = _STATIC_GZIP_CACHE.get(key)
+    if cached and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+        return cached[2]
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    import gzip
+
+    # Compression maximale : calculée une seule fois puis réutilisée.
+    gz = gzip.compress(raw, compresslevel=9)
+    if len(gz) >= len(raw):
+        return None
+    with _STATIC_GZIP_LOCK:
+        if len(_STATIC_GZIP_CACHE) > 128:
+            _STATIC_GZIP_CACHE.clear()
+        _STATIC_GZIP_CACHE[key] = (st.st_mtime_ns, st.st_size, gz)
+    return gz
+
+
+def _apply_static_gzip(resp, path: Path):
+    """Sert la version gzip mise en cache d'un fichier statique si possible.
+
+    Pose ``Content-Encoding: gzip`` pour que ``compress_response`` n'essaie pas
+    de recompresser. Respecte ``Accept-Encoding`` et les réponses 304/partielles.
+    """
+    if resp.status_code != 200:
+        return resp
+    if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+        return resp
+    if "Content-Encoding" in resp.headers:
+        return resp
+    ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    if not any(ctype.startswith(t) for t in _COMPRESSIBLE_TYPES):
+        return resp
+    gz = _cached_gzip(path)
+    if gz is None:
+        return resp
+    resp.direct_passthrough = False
+    resp.set_data(gz)
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Content-Length"] = str(len(gz))
+    vary = resp.headers.get("Vary", "")
+    if "accept-encoding" not in vary.lower():
+        resp.headers["Vary"] = f"{vary}, Accept-Encoding".lstrip(", ")
+    return resp
+
+
 @app.route("/crm/assets/<path:filename>")
 def crm_assets(filename):
+    base = CRM_DIR / "assets"
     resp = send_from_directory(
-        CRM_DIR / "assets",
+        base,
         filename,
         mimetype=_static_mimetype(filename),
     )
-    return _with_asset_cache(resp)
+    return _with_asset_cache(_apply_static_gzip(resp, base / filename))
 
 
 @app.route("/vitrine/assets/<path:filename>")
 def vitrine_assets(filename):
+    base = VITRINE_DIR / "assets"
     resp = send_from_directory(
-        VITRINE_DIR / "assets",
+        base,
         filename,
         mimetype=_static_mimetype(filename),
     )
-    return _with_asset_cache(resp)
+    return _with_asset_cache(_apply_static_gzip(resp, base / filename))
 
 
 @app.route("/assets/<path:filename>")
