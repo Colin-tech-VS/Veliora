@@ -297,5 +297,19 @@ class StreamEstateFetchTests(unittest.TestCase):
         self.assertEqual(mock_get.call_count, 2)
 
 
+class TestCrawlSkipStreamEstate(unittest.TestCase):
+    def test_skip_env_disables_streamestate_for_agency(self):
+        with patch.dict(os.environ, {"CRAWL_SKIP_STREAMESTATE": "true"}, clear=False):
+            import importlib
+
+            import crawler.config as cfg
+            import crawler.storage as st
+
+            importlib.reload(cfg)
+            importlib.reload(st)
+            self.assertTrue(cfg.CRAWL_SKIP_STREAMESTATE)
+            self.assertFalse(st.is_streamestate_enabled_for_agency("any-agency"))
+
+
 if __name__ == "__main__":
     unittest.main()

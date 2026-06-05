@@ -1,0 +1,13 @@
+# IPRoyal Residential — France, rotation à chaque requête
+# Dashboard : https://dashboard.iproyal.com → Residential → Proxy Generator
+# Location: France | Rotation: session-rotate | Host: geo.iproyal.com | Port: 12321
+#
+# Remplacez USER et PASS par vos identifiants (le PASS contient _country-fr_session-rotate)
+http://USER:PASS_country-fr_session-rotate@geo.iproyal.com:12321
+#
+# Test :
+#   python scripts/configure_proxy_rotation.py --file scripts/proxies-iproyal.example.txt --test
+# Worker local (.env) :
+#   python scripts/configure_proxy_rotation.py --file scripts/proxies-iproyal.example.txt --test --write-env
+# Scalingo (secret) :
+#   scalingo --app veliora env-set CRAWL_PROXIES="http://USER:PASS_country-fr_session-rotate@geo.iproyal.com:12321"

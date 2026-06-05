@@ -93,6 +93,12 @@ STREAMESTATE_INCLUDE_IN_VEILLE = os.getenv("STREAMESTATE_INCLUDE_IN_VEILLE", "fa
     "true",
     "yes",
 )
+# Mettre de côté StreamEstate (code conservé) — crawl 100 % HTML + Decodo/Playwright.
+CRAWL_SKIP_STREAMESTATE = os.getenv("CRAWL_SKIP_STREAMESTATE", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 STREAMESTATE_PARTICULIER_ONLY = os.getenv("STREAMESTATE_PARTICULIER_ONLY", "true").strip().lower() in (
     "1",
     "true",
@@ -478,6 +484,7 @@ def background_crawl_config() -> dict:
         "proxies_configured": proxies_enabled(),
         "auto_free_proxies": CRAWL_AUTO_FREE_PROXIES,
         "ai_discovery": (os.getenv("CRAWL_AI_DISCOVERY") or "auto").strip(),
+        "crawl_skip_streamestate": CRAWL_SKIP_STREAMESTATE,
         "streamestate": __import__(
             "crawler.streamestate", fromlist=["streamestate_health"]
         ).streamestate_health(),

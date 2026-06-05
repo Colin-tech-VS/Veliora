@@ -1050,6 +1050,10 @@ def find_streamestate_source(agency_id: str) -> dict | None:
 
 def is_streamestate_enabled_for_agency(agency_id: str) -> bool:
     """True si l'analyse approfondie est activée dans les portails de l'agence."""
+    from crawler.config import CRAWL_SKIP_STREAMESTATE
+
+    if CRAWL_SKIP_STREAMESTATE:
+        return False
     src = find_streamestate_source(agency_id)
     return bool(src and src.get("enabled"))
 
@@ -1074,9 +1078,11 @@ def is_recommended_crawl_source(src: dict) -> bool:
         return CRAWL_INCLUDE_CATALOG_IN_AUTO
     base = resolve_base_portal_id(src.get("id") or "")
     if base == "streamestate":
-        from crawler.config import STREAMESTATE_INCLUDE_IN_VEILLE
+        from crawler.config import CRAWL_SKIP_STREAMESTATE, STREAMESTATE_INCLUDE_IN_VEILLE
         from crawler.streamestate import streamestate_configured
 
+        if CRAWL_SKIP_STREAMESTATE:
+            return False
         return streamestate_configured() and STREAMESTATE_INCLUDE_IN_VEILLE
     return base is not None
 

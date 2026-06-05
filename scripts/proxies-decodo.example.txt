@@ -1,0 +1,13 @@
+# Decodo France rotating (dashboard Location=France, Session=Rotating)
+# Endpoint : fr.decodo.com | Port rotating : 40000 | Sticky : 40001-49999
+http://USER:PASS@fr.decodo.com:40000
+#
+# Alternative gateway (pays dans le username) :
+# http://user-USER-country-fr:PASS@gate.decodo.com:7000
+#
+# Test :
+#   python scripts/configure_proxy_rotation.py --file scripts/proxies-decodo.example.txt --test
+# Worker :
+#   CRAWL_PROXIES=http://user-USER-country-fr:PASS@gate.decodo.com:7000
+# Scalingo (secret) :
+#   scalingo --app veliora env-set CRAWL_PROXIES="http://user-USER-country-fr:PASS@gate.decodo.com:7000"

@@ -1,5 +1,7 @@
 .env
 .env.local
+scripts/scalingo-env-residential.env
+scripts/crawl-worker-local.env
 *.pyc
 __pycache__/
 .venv/

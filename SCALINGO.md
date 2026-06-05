@@ -151,6 +151,23 @@ Activez dans le CRM les portails **sans badge « Navigateur requis »** pour vot
 
 Clé API (secret, hors repo) : `scalingo --app veliora env-set STREAMESTATE_API_KEY=...`
 
+### Proxies résidentiels (LBC / PAP / SeLoger)
+
+Guide complet : **[DECODO.md](DECODO.md)** (recommandé, 10 Go) · [PROXIES_RESIDENTIELS.md](PROXIES_RESIDENTIELS.md) (IPRoyal).
+
+Résumé :
+- Proxies seuls sur Scalingo → améliore les portails HTTP, **pas** DataDome
+- **Tout débloquer** → worker local `scripts/run-crawl-worker.ps1` (Playwright + IPRoyal) + `CRAWL_AUTO_START=false` sur Scalingo
+
+```powershell
+copy scripts\scalingo-env-residential.env.example scripts\scalingo-env-residential.env
+copy scripts\crawl-worker-local.env.example scripts\crawl-worker-local.env
+# Remplir CRAWL_PROXIES (IPRoyal) dans les deux fichiers
+.\scripts\apply-residential-crawl.ps1
+playwright install chromium
+.\scripts\run-crawl-worker.ps1
+```
+
 ### Proxies (rotation IP — fortement recommandé en prod)
 
 **Sans configuration**, Veliora active déjà une rotation d'IP gratuite : avec `CRAWL_AUTO_FREE_PROXIES=true` (défaut Scalingo), dès qu'un portail bloque, l'app récupère et teste un pool de proxies HTTP publics puis change d'IP automatiquement. C'est suffisant contre les blocages par rate-limit d'IP, **mais pas** contre DataDome / Cloudflare avancés.
