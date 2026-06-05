@@ -573,10 +573,12 @@ def _valid_catalog_agency_id(agency_id: str | None) -> str | None:
 
 def purge_broken_catalog_sources(conn) -> int:
     """Supprime les sources catalogue créées par erreur (agency_id manquant)."""
+    # Motifs en paramètres bindés : psycopg refuse les « % » littéraux dans le SQL.
     rows = conn.execute(
         """SELECT id FROM sources
-           WHERE id LIKE 'None_net_%'
-              OR (TRIM(COALESCE(agency_id, '')) = '' AND id LIKE '%_net_%')"""
+           WHERE id LIKE ?
+              OR (TRIM(COALESCE(agency_id, '')) = '' AND id LIKE ?)""",
+        ("None_net_%", "%_net_%"),
     ).fetchall()
     removed = 0
     for row in rows:

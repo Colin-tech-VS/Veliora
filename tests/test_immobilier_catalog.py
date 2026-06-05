@@ -54,3 +54,15 @@ def test_catalog_sync_rejects_invalid_agency_id():
     assert _valid_catalog_agency_id("None") is None
     assert _valid_catalog_agency_id("agence-abc") == "agence-abc"
     assert sync_immobilier_catalog_for_agency(None) == 0
+
+
+def test_purge_broken_catalog_uses_bound_like_patterns():
+    """Les motifs LIKE doivent être bindés (compat psycopg / Postgres)."""
+    import inspect
+
+    from crawler.immobilier_catalog import purge_broken_catalog_sources
+
+    src = inspect.getsource(purge_broken_catalog_sources)
+    assert "LIKE ?" in src
+    assert "None_net_%" in src
+    assert "LIKE 'None_net_%'" not in src
