@@ -6483,6 +6483,7 @@ function buildSourceCardHtml(s, { saved = false, job = null } = {}) {
             <span class="source-title">${escapeHtml(s.name)}</span>
             ${s.is_custom ? '<span class="source-custom-badge">Personnalisé</span>' : ""}
             ${s.is_antibot && !s.is_custom ? '<span class="source-antibot-badge">Bientôt disponible</span>' : ""}
+            ${s.is_protected_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Navigateur requis</span>' : ""}
             ${s.is_default_portal && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Recommandé</span>' : ""}
             ${s.is_catalog && !s.is_custom && !s.is_antibot ? '<span class="source-reliable-badge">Réseau / annonces</span>' : ""}
             ${hasError ? '<span class="source-status-badge source-status-badge--error">Erreur veille</span>' : ""}
@@ -6644,6 +6645,8 @@ function renderCrawler() {
       ? otherReliable.map((s) => buildSourceCardHtml(s)).join("")
       : '<p class="form-hint">Chargement des portails…</p>';
   }
+  const antibotWrap = document.getElementById("sources-antibot-wrap");
+  if (antibotWrap) antibotWrap.hidden = antibot.length === 0;
   if (antibotEl) {
     antibotEl.innerHTML = antibot.map((s) => buildSourceCardHtml(s)).join("");
   }

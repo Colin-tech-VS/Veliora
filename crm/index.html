@@ -757,9 +757,11 @@
           </div>
           <h4 class="sources-subsection-title">Portails recommandés</h4>
           <div class="sources-grid" id="sources-grid-reliable"></div>
-          <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (bientôt disponibles)</h4>
-          <p class="form-hint sources-subsection-hint">PAP, Leboncoin, SeLoger, Bien’ici, Logic-Immo — portails à accès restreint. Connexion en cours d’amélioration ; pas encore activés dans la liste ci-dessous.</p>
-          <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
+          <div id="sources-antibot-wrap">
+            <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (bientôt disponibles)</h4>
+            <p class="form-hint sources-subsection-hint" id="sources-antibot-hint">PAP, Leboncoin, SeLoger, Bien’ici, Logic-Immo — portails à accès restreint. Activez Chrome + proxies sur le serveur pour les inclure dans les portails recommandés.</p>
+            <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
+          </div>
           <div id="sources-custom-wrap" hidden>
             <h4 class="sources-subsection-title">Vos portails personnalisés</h4>
             <div class="sources-grid" id="sources-grid-custom"></div>

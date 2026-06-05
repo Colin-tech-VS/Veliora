@@ -100,6 +100,8 @@ class CrawlerEngine:
         self.adapters: dict[str, BaseAdapter] = {}
         self._agency_id: str | None = None
         self._crawl_city: str | None = None
+        self._crawl_postcode: str | None = None
+        self._crawl_commune_row: dict | None = None
         self._dvf_queue: DvfParallelQueue | None = None
         self._address_queue = None  # AddressMatchQueue | None
         self.running = False
@@ -118,53 +120,44 @@ class CrawlerEngine:
 
         return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
 
+    def _bind_crawl_city_context(
+        self, city: str | None, *, restore: tuple | None = None
+    ) -> str | None:
+        """Résout ville agence + CP + commune INSEE pour le filtre local."""
+        from crawler.commune_filter import crawl_commune_row
+        from crawler.storage import get_agency_postcode_for_city, resolve_crawl_city
+
+        if restore is not None:
+            prev_city, prev_pc, prev_row = restore
+            self._crawl_city = prev_city
+            self._crawl_postcode = prev_pc
+            self._crawl_commune_row = prev_row
+            return prev_city
+
+        crawl_city = resolve_crawl_city(city, agency_id=self._agency_id)
+        crawl_postcode = (
+            get_agency_postcode_for_city(self._agency_id, crawl_city) if crawl_city else None
+        )
+        self._crawl_city = crawl_city
+        self._crawl_postcode = crawl_postcode
+        self._crawl_commune_row = (
+            crawl_commune_row(crawl_city, crawl_postcode) if crawl_city else None
+        )
+        return crawl_city
+
     def _lead_in_target_city(self, lead) -> bool:
-        """Crawl local : la fiche doit concerner la ville cible (sinon rejetée)."""
+        """Crawl local : fiche dans la commune cible (INSEE / CP, comme l'API agrégée)."""
         target = (self._crawl_city or "").strip()
         if not target:
             return True
-        from crm.dvf import extract_listing_location
+        from crawler.commune_filter import lead_matches_commune
 
-        loc = extract_listing_location(
-            getattr(lead, "address", None),
-            (getattr(lead, "raw_extras", None) or {}).get("listing_title"),
-            getattr(lead, "city", None),
+        return lead_matches_commune(
+            lead,
+            target,
+            target_postcode=self._crawl_postcode,
+            commune_row=self._crawl_commune_row,
         )
-        hay = self._city_slug(
-            " ".join(
-                p
-                for p in (
-                    loc.get("city"),
-                    getattr(lead, "address", None),
-                    getattr(lead, "city", None),
-                    (getattr(lead, "raw_extras", None) or {}).get("listing_title"),
-                )
-                if p
-            )
-        )
-        tslug = self._city_slug(target)
-        if not tslug:
-            return True
-        if not hay or len(hay) < 4:
-            return False
-        padded = f" {hay} "
-        if f" {tslug} " in padded or hay.endswith(tslug) or hay.startswith(tslug):
-            return True
-        # Correspondance partielle (ex. « lyon » dans « lyon 3eme »).
-        for part in tslug.split():
-            if len(part) >= 4 and part in hay:
-                return True
-        loc_city = self._city_slug(loc.get("city"))
-        if loc_city:
-            for part in tslug.split():
-                if len(part) >= 4 and part in loc_city:
-                    return True
-            for part in loc_city.split():
-                if len(part) >= 4 and part in tslug:
-                    return True
-            if loc_city != tslug and len(loc_city) >= 4:
-                return False
-        return False
 
     def _load_adapters(self, agency_id: str) -> dict[str, BaseAdapter]:
         return build_adapters(get_sources(agency_id, sync=True, live_counts=False))
@@ -583,7 +576,19 @@ class CrawlerEngine:
             adapter = self.adapters.get(s["id"])
             raw = (adapter.config.search_url if adapter else None) or s.get("search_url") or s.get("base_url")
             if raw:
-                url = apply_city_to_search_url(raw, s["id"], city) if city else raw
+                from crawler.storage import get_agency_postcode_for_city, resolve_crawl_city
+
+                crawl_city = resolve_crawl_city(city, agency_id=self._agency_id) if city else None
+                crawl_pc = (
+                    get_agency_postcode_for_city(self._agency_id, crawl_city)
+                    if crawl_city
+                    else None
+                )
+                url = (
+                    apply_city_to_search_url(raw, s["id"], crawl_city, crawl_pc)
+                    if crawl_city
+                    else raw
+                )
                 targets.append((s["name"], url))
 
         if not targets:
@@ -724,115 +729,134 @@ class CrawlerEngine:
                 source_id, adapter, job_id, city=city, veille_mode=veille_mode
             )
 
-        base_search = adapter.config.search_url
-        if city:
-            from crawler.city_urls import pick_best_city_search_url, pick_working_city_search_url
-            from crawler.config import CRAWL_SKIP_CITY_PROBE
+        prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)
+        crawl_city = self._bind_crawl_city_context(city)
+        crawl_postcode = self._crawl_postcode
 
-            if CRAWL_SKIP_CITY_PROBE:
-                search_url = pick_best_city_search_url(base_search, source_id, city)
+        try:
+            base_search = adapter.config.search_url
+            if crawl_city:
+                from crawler.city_urls import pick_best_city_search_url, pick_working_city_search_url
+                from crawler.config import CRAWL_SKIP_CITY_PROBE
+
+                if CRAWL_SKIP_CITY_PROBE:
+                    search_url = pick_best_city_search_url(
+                        base_search, source_id, crawl_city, crawl_postcode
+                    )
+                else:
+
+                    def _probe_city_list_url(u: str) -> bool:
+                        fetched = fetch_page(
+                            u,
+                            referer=adapter.config.base_url,
+                            prefer_browser=url_needs_browser(u),
+                            fast_mode=True,
+                        )
+                        if not fetched.ok:
+                            return False
+                        listings = adapter.find_listings(fetched.html or "", u, limit=8)
+                        if not listings:
+                            return False
+                        in_city = sum(
+                            1
+                            for link in listings
+                            if listing_url_likely_in_city(link, crawl_city)
+                        )
+                        return in_city >= max(1, len(listings) // 3)
+
+                    search_url = pick_working_city_search_url(
+                        base_search,
+                        source_id,
+                        crawl_city,
+                        _probe_city_list_url,
+                        crawl_postcode,
+                    )
             else:
-
-                def _probe_city_list_url(u: str) -> bool:
-                    fetched = fetch_page(
-                        u,
-                        referer=adapter.config.base_url,
-                        prefer_browser=url_needs_browser(u),
-                        fast_mode=True,
-                    )
-                    if not fetched.ok:
-                        return False
-                    listings = adapter.find_listings(fetched.html or "", u, limit=8)
-                    if not listings:
-                        return False
-                    in_city = sum(
-                        1 for link in listings if listing_url_likely_in_city(link, city)
-                    )
-                    return in_city >= max(1, len(listings) // 3)
-
-                search_url = pick_working_city_search_url(
-                    base_search, source_id, city, _probe_city_list_url
+                search_url = apply_city_to_search_url(
+                    base_search, source_id, crawl_city, crawl_postcode
                 )
-        else:
-            search_url = apply_city_to_search_url(base_search, source_id, city)
 
-        from crawler.site_discovery import get_portal_discover_urls
+            from crawler.site_discovery import get_portal_discover_urls
 
-        discover_url = search_url
-        if self._looks_like_listing(search_url) and adapter.config.base_url:
-            discover_url = adapter.config.base_url
-        # Seeds prioritaires filtrés sur la ville de l'agence (crawl local) — tapés
-        # en premier pour trouver vite des annonces de la ville.
-        city_seeds = build_city_seed_urls(
-            adapter.config.base_url or search_url, search_url, source_id, city
-        )
-        portal_seeds = get_portal_discover_urls(source_id, adapter, search_url)
-        from crawler.immobilier_catalog import resolve_catalog_id
-        from crawler.portals import resolve_base_portal_id
-
-        if city:
-            # Pas de seeds nationaux bruts : pages vides / hors-zone. Uniquement URLs filtrées ville.
-            extra_portal: list[str] = []
-            if resolve_base_portal_id(source_id) or resolve_catalog_id(source_id):
-                extra_portal = [
-                    apply_city_to_search_url(u, source_id, city)
-                    for u in portal_seeds[:5]
-                ]
-            discover_seeds = list(
-                dict.fromkeys(
-                    city_seeds
-                    + [search_url, discover_url, adapter.config.base_url or ""]
-                    + extra_portal
-                    # Repli national : si l'URL ville échoue (404/anti-bot), on explore
-                    # quand même la recherche nationale ; les annonces sont ensuite
-                    # filtrées par ville en aval (listing_url_likely_in_city /
-                    # _lead_in_target_city), donc pas d'évasion hors-zone.
-                    + [base_search]
-                )
+            discover_url = search_url
+            if self._looks_like_listing(search_url) and adapter.config.base_url:
+                discover_url = adapter.config.base_url
+            city_seeds = build_city_seed_urls(
+                adapter.config.base_url or search_url,
+                search_url,
+                source_id,
+                crawl_city,
+                crawl_postcode,
             )
-        else:
-            discover_seeds = list(dict.fromkeys(city_seeds + portal_seeds))
+            portal_seeds = get_portal_discover_urls(source_id, adapter, search_url)
+            from crawler.immobilier_catalog import resolve_catalog_id
+            from crawler.portals import resolve_base_portal_id
 
-        mark_source_scanned(source_id)
-        if self._agency_id and job_id:
-            repaired = repair_source_leads_in_db(source_id, self._agency_id)
-            if repaired:
-                update_crawl_job(
-                    job_id,
-                    message=f"{repaired} prospect(s) corrigé(s) en base — lancement du crawl…",
+            if crawl_city:
+                extra_portal: list[str] = []
+                if resolve_base_portal_id(source_id) or resolve_catalog_id(source_id):
+                    extra_portal = [
+                        apply_city_to_search_url(u, source_id, crawl_city, crawl_postcode)
+                        for u in portal_seeds[:5]
+                    ]
+                discover_seeds = list(
+                    dict.fromkeys(
+                        city_seeds
+                        + [search_url, discover_url, adapter.config.base_url or ""]
+                        + extra_portal
+                        + [base_search]
+                    )
                 )
-        from crawler.config import CRAWL_SPEED_PROFILE
+            else:
+                discover_seeds = list(dict.fromkeys(city_seeds + portal_seeds))
 
-        if (
-            DOMAIN_WARMUP_ENABLED
-            and adapter.config.base_url
-            and CRAWL_SPEED_PROFILE == "quality"
-        ):
-            if job_id:
-                update_crawl_job(
-                    job_id,
-                    message=f"Échauffement session — {adapter.source_name}…",
-                )
-            warmup_domain(adapter.config.base_url, search_url)
-            warmup_sleep()
+            mark_source_scanned(source_id)
+            if self._agency_id and job_id:
+                repaired = repair_source_leads_in_db(source_id, self._agency_id)
+                if repaired:
+                    update_crawl_job(
+                        job_id,
+                        message=f"{repaired} prospect(s) corrigé(s) en base — lancement du crawl…",
+                    )
+            from crawler.config import CRAWL_SPEED_PROFILE
 
-        result = self._crawl_url_sync(
-            discover_url,
-            adapter=adapter,
-            source_id=source_id,
-            job_id=job_id,
-            discover_seeds=discover_seeds,
-            city=city,
-        )
-        if result.errors and not result.leads_saved and not result.leads_updated and not result.leads_found:
-            mark_source_scanned(source_id, error=result.errors[0]["message"][:200])
-        else:
-            mark_source_scanned(source_id, error=None)
-        if self._agency_id:
-            from crawler.storage import recalc_source_found_counts
+            if (
+                DOMAIN_WARMUP_ENABLED
+                and adapter.config.base_url
+                and CRAWL_SPEED_PROFILE == "quality"
+            ):
+                if job_id:
+                    update_crawl_job(
+                        job_id,
+                        message=f"Échauffement session — {adapter.source_name}…",
+                    )
+                warmup_domain(adapter.config.base_url, search_url)
+                warmup_sleep()
 
-            recalc_source_found_counts(self._agency_id)
-        return result
+            result = self._crawl_url_sync(
+                discover_url,
+                adapter=adapter,
+                source_id=source_id,
+                job_id=job_id,
+                discover_seeds=discover_seeds,
+                city=crawl_city,
+            )
+            if (
+                result.errors
+                and not result.leads_saved
+                and not result.leads_updated
+                and not result.leads_found
+            ):
+                mark_source_scanned(source_id, error=result.errors[0]["message"][:200])
+            else:
+                mark_source_scanned(source_id, error=None)
+            if self._agency_id:
+                from crawler.storage import recalc_source_found_counts
+
+                recalc_source_found_counts(self._agency_id)
+            return result
+        finally:
+            self._bind_crawl_city_context(None, restore=prev_ctx)
 
     def _crawl_streamestate_source(
         self,
@@ -845,7 +869,7 @@ class CrawlerEngine:
     ) -> CrawlResult:
         """Synchronisation API agrégée (pas de crawl HTML)."""
         from crawler.streamestate import streamestate_configured, streamestate_display_name
-        from crawler.storage import mark_source_scanned, resolve_crawl_city
+        from crawler.storage import mark_source_scanned
 
         result = CrawlResult()
         label = adapter.source_name or streamestate_display_name()
@@ -858,10 +882,8 @@ class CrawlerEngine:
             mark_source_scanned(source_id, error=err["message"][:200])
             return result
 
-        crawl_city = resolve_crawl_city(city, agency_id=self._agency_id)
-
-        prev_city = self._crawl_city
-        self._crawl_city = crawl_city
+        prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)
+        crawl_city = self._bind_crawl_city_context(city)
 
         try:
             return self._run_streamestate_sync(
@@ -873,7 +895,7 @@ class CrawlerEngine:
                 veille_mode=veille_mode,
             )
         finally:
-            self._crawl_city = prev_city
+            self._bind_crawl_city_context(None, restore=prev_ctx)
 
     def _run_streamestate_sync(
         self,
@@ -1070,7 +1092,8 @@ class CrawlerEngine:
         if not adapter:
             adapter = resolve_adapter(url, self.adapters)
 
-        self._crawl_city = (city or "").strip() or None
+        if city is not None:
+            self._bind_crawl_city_context(city)
         result = CrawlResult(url=url)
 
         domain = urlparse(url).netloc.replace("www.", "") or url[:40]
@@ -1310,13 +1333,20 @@ class CrawlerEngine:
             adapter = self.adapters.get(src["id"])
             if not adapter:
                 continue
+            from crawler.storage import get_agency_postcode_for_city, resolve_crawl_city
+
+            crawl_city = resolve_crawl_city(city, agency_id=self._agency_id) if city else None
+            crawl_pc = (
+                get_agency_postcode_for_city(self._agency_id, crawl_city) if crawl_city else None
+            )
             start = (
                 apply_city_to_search_url(
                     adapter.config.search_url or adapter.config.base_url,
                     src["id"],
-                    city,
+                    crawl_city,
+                    crawl_pc,
                 )
-                if city
+                if crawl_city
                 else (adapter.config.search_url or adapter.config.base_url)
             )
             if not start or not start.startswith("http"):

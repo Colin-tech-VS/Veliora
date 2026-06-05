@@ -119,8 +119,14 @@ def apply_city_to_search_url(
 
     if portal == "pap":
         base = search_url.rstrip("/")
+        row = resolve_commune(city, postcode)
+        cp = (row or {}).get("postcode") or (postcode or "")
+        if slug and "/annonce/" in base:
+            if cp:
+                return f"{base}/{slug}-{cp}"
+            return f"{base}/{slug}"
         if slug:
-            return f"{base}/{slug}" if "/annonce/" in base else f"{base}?ville={q_city}"
+            return f"{base}?ville={q_city}"
         return search_url
 
     if portal == "seloger":
@@ -190,7 +196,12 @@ def city_search_url_candidates(
         immo = path_slug
         _add(f"https://www.seloger.com/immobilier/achat/immo-{immo}/")
         _add(f"https://www.seloger.com/immobilier/tout/immo-{immo}/")
-        places = json.dumps([{"label": city}], ensure_ascii=False, separators=(",", ":"))
+        row = resolve_commune(city, postcode)
+        cp = (row or {}).get("postcode") or (postcode or "")
+        place_label = f"{city} ({cp})" if cp else city
+        places = json.dumps(
+            [{"label": place_label}], ensure_ascii=False, separators=(",", ":")
+        )
         base = (
             search_url
             if "seloger.com" in (search_url or "").lower()
@@ -210,12 +221,16 @@ def city_search_url_candidates(
         return out
 
     if portal == "leboncoin":
-        _add(apply_city_to_search_url(search_url, source_id, city))
+        _add(apply_city_to_search_url(search_url, source_id, city, postcode))
         return out
 
     if portal == "pap":
         base = (search_url or "https://www.pap.fr/annonce/vente-appartements").rstrip("/")
+        row = resolve_commune(city, postcode)
+        cp = (row or {}).get("postcode") or (postcode or "")
         if "/annonce/" in base and slug:
+            if cp:
+                _add(f"{base}/{slug}-{cp}")
             _add(f"{base}/{slug}")
         _add(f"{base}?ville={q_city}")
         return out
@@ -381,6 +396,7 @@ def build_city_seed_urls(
     search_url: str,
     source_id: str,
     city: str | None,
+    postcode: str | None = None,
 ) -> list[str]:
     """Points d'entrée prioritaires filtrés sur la ville (le crawl est local).
 
@@ -399,7 +415,7 @@ def build_city_seed_urls(
             if u not in out:
                 out.append(u)
 
-    for u in city_search_url_candidates(search_url, source_id, city)[:3]:
+    for u in city_search_url_candidates(search_url, source_id, city, postcode)[:4]:
         _add(u)
 
     from crawler.immobilier_catalog import resolve_catalog_id

@@ -999,12 +999,21 @@ def is_default_portal_source(source_id: str) -> bool:
     return resolve_base_portal_id(source_id) is not None
 
 
-def is_antibot_source(src: dict) -> bool:
-    """Portail protégé (anti-bot) — crawl pas encore activé (« Bientôt disponible »)."""
-    from crawler.portals import is_coming_soon_portal, resolve_base_portal_id
+def is_protected_portal_source(src: dict) -> bool:
+    """Portail anti-bot (PAP, LBC…) — indépendant de l'activation crawl."""
+    from crawler.portals import COMING_SOON_PORTAL_IDS, resolve_base_portal_id
 
     base = resolve_base_portal_id(src.get("id") or "")
-    return is_coming_soon_portal(base)
+    return bool(base and base in COMING_SOON_PORTAL_IDS)
+
+
+def is_antibot_source(src: dict) -> bool:
+    """Portail protégé — « Bientôt disponible » seulement si le crawl navigateur est inactif."""
+    from crawler.config import antibot_portals_crawl_enabled
+
+    if antibot_portals_crawl_enabled():
+        return False
+    return is_protected_portal_source(src)
 
 
 def _source_sort_key(src: dict) -> tuple:
@@ -1639,7 +1648,7 @@ def withdraw_lead_incoherent(
     reason = (reason or "annonce incohérente").strip()[:500]
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id, notes, owner, address FROM leads WHERE id = ? AND agency_id = ?",
+            "SELECT id, notes, first_name, last_name, address FROM leads WHERE id = ? AND agency_id = ?",
             (lead_id, agency_id),
         ).fetchone()
         if not row:
@@ -1663,7 +1672,8 @@ def withdraw_lead_incoherent(
             (reason[:200], missing_json, notes, _now(), lead_id, agency_id),
         )
         conn.commit()
-    label = (row["address"] or row["owner"] or f"#{lead_id}")[:80]
+    owner_label = " ".join(p for p in (row["first_name"], row["last_name"]) if p)
+    label = (row["address"] or owner_label or f"#{lead_id}")[:80]
     add_activity(
         "crawl",
         f"Fiche retirée (incohérente) — {label}",
@@ -3155,6 +3165,9 @@ def _row_to_source(
         "is_catalog": bool(resolve_catalog_id(r["id"])),
         "is_default_portal": is_default_portal_source(r["id"]),
         "is_antibot": is_antibot_source(
+            {"id": r["id"], "base_url": r["base_url"], "search_url": r["search_url"]}
+        ),
+        "is_protected_portal": is_protected_portal_source(
             {"id": r["id"], "base_url": r["base_url"], "search_url": r["search_url"]}
         ),
         "logo_url": logo_url,
