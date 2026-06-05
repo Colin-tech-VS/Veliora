@@ -1697,10 +1697,13 @@ class CrawlerEngine:
         return found
 
     def _existing_lead_urls_for_source(self, source_id: str | None) -> list[str]:
-        """Toutes les URLs de fiches actives pour ce portail (recrawl veille)."""
+        """URLs actives triées par priorité mandat (particuliers / contacts / prix OK)."""
         if not source_id or not self._agency_id:
             return []
-        existing_valid: list[str] = []
+        from crawler.lead_priority import lead_importance_key
+        from crawler.validation import lead_from_db_row
+
+        scored: list[tuple[tuple, str]] = []
         seen: set[str] = set()
         for raw in get_source_lead_urls(source_id, self._agency_id):
             u = normalize_listing_url(raw)
@@ -1709,10 +1712,14 @@ class CrawlerEngine:
             ok, _ = validate_listing_url_import(u)
             if not ok:
                 ok, _ = validate_listing_url(u)
-            if ok:
-                seen.add(u)
-                existing_valid.append(u)
-        return existing_valid
+            if not ok:
+                continue
+            seen.add(u)
+            row = get_lead_by_source_url(u, None)
+            key = lead_importance_key(lead_from_db_row(row)) if row else (1, 1, 1, 1, 1, 0.0)
+            scored.append((key, u))
+        scored.sort(key=lambda row: row[0])
+        return [u for _, u in scored]
 
     def _prepare_listing_targets(
         self,
@@ -2033,6 +2040,42 @@ class CrawlerEngine:
             if not is_hub_listing_address(dom_addr):
                 lead.address = dom_addr
 
+    def _prepare_crawl_lead(
+        self,
+        lead: LeadData,
+        html: str | None,
+        url: str,
+    ) -> LeadData:
+        """Aligné sur l'API : réparation mix → adresse → nettoyage → sanitize."""
+        from crawler.validation import repair_mixed_listing, sanitize_lead
+
+        if html and url:
+            lead = repair_mixed_listing(lead, html, url)
+        self._boost_listing_address(lead, html or "", url or "")
+        self._clean_unreliable_fields(lead)
+        return sanitize_lead(lead)
+
+    @staticmethod
+    def _field_coherence_blocks_partial_save(lead: LeadData, coh_reason: str = "") -> bool:
+        """Pas d'enregistrement minimal si prix/surface manifestement faux."""
+        from crawler.listing_guard import validate_field_coherence
+
+        ok_field, _ = validate_field_coherence(lead)
+        if not ok_field:
+            return True
+        r = (coh_reason or "").lower()
+        return any(
+            m in r
+            for m in (
+                "prix/surface",
+                "loyer/surface",
+                "€/m²",
+                "mix annonces",
+                "plusieurs prix",
+                "contradictoire",
+            )
+        )
+
     def _clean_unreliable_fields(self, lead) -> None:
         """Zéro donnée faussée : on n'enregistre jamais un nom/adresse douteux.
 
@@ -2320,11 +2363,7 @@ class CrawlerEngine:
                     message=f"Type : {type_lbl}{extra} — enregistrement…",
                 )
 
-        from crawler.validation import repair_mixed_listing
-
-        lead = repair_mixed_listing(lead, fetched.html, url)
-        self._boost_listing_address(lead, fetched.html, url)
-        self._clean_unreliable_fields(lead)
+        lead = self._prepare_crawl_lead(lead, fetched.html, url)
 
         # Crawl strictement local : on rejette toute annonce hors de la ville cible.
         if not skip_city_check and not self._lead_in_target_city(lead):
@@ -2386,7 +2425,9 @@ class CrawlerEngine:
                 ):
                     from crawler.config import SAVE_MINIMAL_LEADS
 
-                    if SAVE_MINIMAL_LEADS:
+                    if SAVE_MINIMAL_LEADS and not self._field_coherence_blocks_partial_save(
+                        lead, coh_reason
+                    ):
                         saved_try = save_lead(
                             lead,
                             source_id=source_id or adapter.source_id,
@@ -2444,7 +2485,11 @@ class CrawlerEngine:
 
             from crawler.config import SAVE_MINIMAL_LEADS
 
-            if import_mode or SAVE_MINIMAL_LEADS:
+            allow_minimal = import_mode or (
+                SAVE_MINIMAL_LEADS
+                and not self._field_coherence_blocks_partial_save(lead, coh_reason)
+            )
+            if allow_minimal:
                 saved_try = save_lead(
                     lead,
                     source_id=source_id or adapter.source_id,
