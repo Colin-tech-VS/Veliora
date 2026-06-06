@@ -2393,6 +2393,23 @@ def _schedule_lead_image_after_save(
         )
     except Exception:
         logger.exception("schedule lead image %s", lead_id)
+    # Galerie complète (toutes les images de l'annonce) — nettoyage marquages inclus.
+    try:
+        gallery = (lead.raw_extras or {}).get("listing_image_urls") or []
+        if not gallery and url:
+            gallery = [url]
+        if gallery:
+            from crm.leads.images import schedule_lead_gallery_sync
+
+            schedule_lead_gallery_sync(
+                lead_id,
+                agency_id,
+                list(gallery),
+                referer=lead.source_url or None,
+                force=deep_refresh,
+            )
+    except Exception:
+        logger.exception("schedule lead gallery %s", lead_id)
     try:
         from crm.maps.service import schedule_lead_geocode
 

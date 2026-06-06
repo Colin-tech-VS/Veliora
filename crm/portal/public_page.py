@@ -80,7 +80,9 @@ def _json_ld(item: dict, canonical: str) -> str:
             "streetAddress": item.get("address"),
         },
     }
-    if item.get("image_url"):
+    if item.get("_seo_image"):
+        data["image"] = item["_seo_image"]
+    elif item.get("image_url"):
         data["image"] = item["image_url"]
     if item.get("agency_name"):
         data["seller"] = {"@type": "RealEstateAgent", "name": item["agency_name"]}
@@ -106,10 +108,52 @@ def listing_detail_response(slug: str) -> Response:
     ptype = html.escape((item.get("property_type") or "").capitalize())
     tx = html.escape((item.get("transaction_type") or "vente").capitalize())
     listing_id = html.escape(item["id"])
-    img_block = ""
-    if item.get("image_url"):
-        src = html.escape(item["image_url"], quote=True)
-        img_block = f'<img class="v-ann-detail-hero-img" src="{src}" alt="{title} — {city}" width="1200" height="675" loading="eager" decoding="async">'
+
+    # Galerie servie par l'app (WebP, marquages retirés). Repli sur l'URL externe.
+    source_images = item.get("source_images") or (
+        [item["image_url"]] if item.get("image_url") else []
+    )
+    gallery = [
+        f"/api/public/portal/listings/{item['id']}/image/{i}"
+        for i in range(len(source_images))
+    ]
+    if not gallery and item.get("image_url"):
+        gallery = [item["image_url"]]
+    # Image absolue pour og:image / JSON-LD.
+    if gallery:
+        first = gallery[0]
+        item["_seo_image"] = first if first.startswith("http") else f"{SITE_URL}{first}"
+
+    if gallery:
+        slide_parts = []
+        for i, u in enumerate(gallery):
+            loading = 'loading="eager" fetchpriority="high"' if i == 0 else 'loading="lazy"'
+            slide_parts.append(
+                f'<div class="v-ann-slide" role="group" aria-label="Photo {i + 1} sur {len(gallery)}">'
+                f'<img class="v-ann-slide-img" src="{html.escape(u, quote=True)}" '
+                f'alt="{title} — {city} ({i + 1})" width="1200" height="675" '
+                f'{loading} decoding="async"></div>'
+            )
+        slides = "".join(slide_parts)
+        controls = ""
+        dots = ""
+        if len(gallery) > 1:
+            dots_inner = "".join(
+                f'<button type="button" class="v-ann-dot{" is-active" if i == 0 else ""}" '
+                f'data-slide-to="{i}" aria-label="Aller à la photo {i + 1}"></button>'
+                for i in range(len(gallery))
+            )
+            dots = f'<div class="v-ann-dots" role="tablist">{dots_inner}</div>'
+            controls = (
+                '<button type="button" class="v-ann-nav v-ann-prev" aria-label="Photo précédente">‹</button>'
+                '<button type="button" class="v-ann-nav v-ann-next" aria-label="Photo suivante">›</button>'
+                f'<span class="v-ann-counter"><span class="v-ann-counter-cur">1</span>/{len(gallery)}</span>'
+            )
+        img_block = (
+            f'<div class="v-ann-slider" data-slider data-count="{len(gallery)}">'
+            f'<div class="v-ann-slides">{slides}</div>'
+            f"{controls}{dots}</div>"
+        )
     else:
         img_block = '<div class="v-ann-detail-hero-placeholder" aria-hidden="true"></div>'
 

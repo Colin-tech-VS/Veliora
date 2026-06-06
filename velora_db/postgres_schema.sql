@@ -102,6 +102,19 @@ CREATE TABLE IF NOT EXISTS lead_estimates (
     PRIMARY KEY (lead_id, agency_id)
 );
 
+-- Galerie photos d'une annonce (1 ligne par image). Les fichiers WebP nettoyés
+-- (marquages iad/Orpi retirés) vivent sur disque ; cette table garde l'ordre et
+-- l'URL source pour re-synchronisation.
+CREATE TABLE IF NOT EXISTS lead_images (
+    agency_id         TEXT NOT NULL,
+    lead_id           INTEGER NOT NULL,
+    position          INTEGER NOT NULL,
+    source_url        TEXT,
+    watermark_removed SMALLINT NOT NULL DEFAULT 0,
+    created_at        TEXT,
+    PRIMARY KEY (agency_id, lead_id, position)
+);
+
 -- Rapprochement d'adresse (DPE/DVF/cadastre/BAN) : table dédiée, même logique
 -- anti-verrou que lead_estimates. Le détail (candidats + raisons) vit en JSON ;
 -- probable_address / confidence sont dénormalisés pour tri & filtre rapides.

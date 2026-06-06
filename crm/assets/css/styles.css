@@ -8545,6 +8545,65 @@ body:has(.crawl-dock.open) .script-dock.open {
   color: var(--text-muted);
 }
 
+/* Slider galerie (drawer prospect) */
+.drawer-gallery {
+  position: relative;
+  overflow: hidden;
+}
+
+.drawer-gallery-track {
+  display: flex;
+  transition: transform 0.3s ease;
+  will-change: transform;
+}
+
+.drawer-gallery-slide {
+  flex: 0 0 100%;
+  min-width: 100%;
+}
+
+.drawer-gallery-slide .drawer-lead-image-img {
+  max-height: 240px;
+}
+
+.drawer-gallery-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 30, 0.55);
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawer-gallery-nav:hover {
+  background: rgba(15, 23, 30, 0.85);
+}
+
+.drawer-gallery-prev {
+  left: 8px;
+}
+
+.drawer-gallery-next {
+  right: 8px;
+}
+
+.drawer-gallery-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(15, 23, 30, 0.6);
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}
+
 .drawer-lead-image-actions {
   display: flex;
   flex-wrap: wrap;
