@@ -1221,10 +1221,16 @@ body.vitrine main {
   margin-inline: auto;
 }
 
-/* Reveal animations */
+/* Reveal animations
+   On ne masque (.v-reveal opacity:0) que si le JS est actif (html.js, posé
+   par le script inline du <head>). Sans JS — ou si le script de révélation
+   échoue — le contenu reste visible : plus jamais de page blanche. */
 .v-reveal {
-  opacity: 0;
   transition: opacity 0.6s var(--v-ease);
+}
+
+.js .v-reveal {
+  opacity: 0;
 }
 
 .v-reveal.is-visible {
@@ -1232,8 +1238,11 @@ body.vitrine main {
 }
 
 .v-reveal-group [data-reveal-delay] {
-  opacity: 0;
   transition: opacity 0.5s var(--v-ease);
+}
+
+.js .v-reveal-group [data-reveal-delay] {
+  opacity: 0;
 }
 
 .v-reveal-group.is-visible [data-reveal-delay]:nth-child(1) { transition-delay: 0.05s; }

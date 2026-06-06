@@ -2,6 +2,21 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <script>
+    /* Affiche la vitrine immédiatement et garantit qu'aucune section ne reste
+       masquée : on active le mode animé (.js) puis, si le script de révélation
+       n'a pas tourné peu après le chargement, on rend tout visible de force. */
+    (function () {
+      document.documentElement.classList.add("js");
+      window.addEventListener("load", function () {
+        setTimeout(function () {
+          if (window.__vitrineRevealReady) return;
+          document.querySelectorAll(".v-reveal, .v-reveal-group, [data-reveal-delay]")
+            .forEach(function (el) { el.classList.add("is-visible"); });
+        }, 1000);
+      });
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Mentions légales, CGV, politique de confidentialité et DPA Veliora — SaaS priorité mandat pour agences immobilières.">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
@@ -11,9 +26,10 @@
   <title>Veliora — Informations légales</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap"></noscript>
   <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=3">
-  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=38">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=50">
 </head>
 <body class="vitrine vitrine-legal">
   <header class="v-nav" id="top">
@@ -202,7 +218,7 @@
   </footer>
 
   <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
-  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=40" defer></script>
   <script src="/vitrine/assets/js/legal.js?v=1" defer></script>
   <script>
     (function () {

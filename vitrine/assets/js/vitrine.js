@@ -69,6 +69,10 @@
     }
   }
 
+  // Signale au filet anti-page-blanche (script inline du <head>) que la
+  // révélation est en place : il n'aura donc pas à tout afficher de force.
+  window.__vitrineRevealReady = true;
+
   fetch("/api/public/config")
     .then((r) => (r.ok ? r.json() : null))
     .then((cfg) => {
