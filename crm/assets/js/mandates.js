@@ -660,6 +660,14 @@ async function submitAgencyProfile(e) {
         : "Fiche agence enregistrée",
       "success",
     );
+    // La ville de la fiche alimente le territoire (target_cities) côté serveur :
+    // on recharge données + briefing pour que l'affichage colle instantanément
+    // au secteur (ville renseignée ⇒ ce secteur, vide ⇒ toutes les annonces).
+    if (typeof window.VelioraRefreshAppData === "function") {
+      await window.VelioraRefreshAppData();
+    } else if (typeof window.velioraReloadLeads === "function") {
+      await window.velioraReloadLeads();
+    }
   } catch (err) {
     mandateDeps.showToast(err.message, "error");
   }

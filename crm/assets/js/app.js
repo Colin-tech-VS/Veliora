@@ -5030,6 +5030,11 @@ async function refreshAppData() {
   await refreshOnboardingUi();
 }
 
+// Exposé pour les modules (ex. Fiche agence dans mandates.js) : après un
+// changement de ville, recharger données + briefing pour que l'affichage colle
+// instantanément au secteur (vide ⇒ toutes les annonces, ville ⇒ ce secteur).
+window.VelioraRefreshAppData = refreshAppData;
+
 function clearUrlSearchInputs() {
   const globalSearch = document.getElementById("global-search");
   if (globalSearch) globalSearch.value = "";
@@ -6091,8 +6096,17 @@ function setupRadar() {
       }
       updateCrawlCityDisplay();
       scheduleSourceUrlsForCity();
-      showToast("Territoire enregistré — liens sources mis à jour", "success");
       document.getElementById("radar-settings-modal")?.classList.remove("open");
+      // Le filtre territoire s'applique côté serveur (get_leads) : on recharge
+      // données + briefing pour que l'affichage colle instantanément à la ville
+      // (vidée ⇒ toutes les annonces, renseignée ⇒ seulement ce secteur).
+      await refreshAppData();
+      showToast(
+        cities.length
+          ? `Territoire enregistré — annonces filtrées sur ${cities.length > 1 ? "vos secteurs" : cities[0]}`
+          : "Territoire vidé — toutes les annonces sont affichées",
+        "success",
+      );
     } catch (err) {
       showToast(err.message, "error");
     }
