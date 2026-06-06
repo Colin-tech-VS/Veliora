@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crawler.storage import get_connection
+from velora_db.introspect import table_column_names
 
 ALLOWED_PHOTO_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 MAX_PHOTO_BYTES = 8 * 1024 * 1024
@@ -185,7 +186,8 @@ def ensure_dossier_tables(conn) -> None:
         "ON mandate_dossiers(mandate_id, agency_id)"
     )
     # Migration : colonne documents_json sur les tables existantes.
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(mandate_dossiers)").fetchall()}
+    # PRAGMA n'existe pas sous PostgreSQL → introspection portable.
+    cols = table_column_names(conn, "mandate_dossiers")
     if "documents_json" not in cols:
         conn.execute(
             "ALTER TABLE mandate_dossiers ADD COLUMN documents_json TEXT NOT NULL DEFAULT '{}'"
