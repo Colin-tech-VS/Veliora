@@ -922,6 +922,16 @@ def init_db() -> None:
             ensure_lead_image_schema()
         except Exception:
             logger.exception("ensure_map_schema / lead images")
+        # Sécurité Supabase : RLS + verrou API sur TOUTES les tables public,
+        # une fois que tous les modules ont créé les leurs (auto-réparation des
+        # tables « RLS Disabled »). L'app (rôle propriétaire) contourne RLS.
+        if os.getenv("VELIORA_AUTO_RLS", "1").strip().lower() not in ("0", "false", "no", ""):
+            try:
+                from velora_db.connection import secure_public_schema_rls
+
+                secure_public_schema_rls()
+            except Exception:
+                logger.exception("secure_public_schema_rls au démarrage")
         try:
             prune_crawl_logs()
         except Exception:

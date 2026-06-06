@@ -142,6 +142,145 @@ body {
   color: var(--v-brass);
 }
 
+.brand-icon img {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+/* ─── Écran de chargement de la webapp (logo animé + messages rassurants) ─── */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--v-cream, #f8f6f2);
+  opacity: 1;
+  transition: opacity 0.5s var(--v-ease, ease), visibility 0.5s;
+}
+
+.app-splash.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Photo immobilière en fond, léger zoom « Ken Burns » */
+.app-splash-bg {
+  position: absolute;
+  inset: -4%;
+  background: url("/vitrine/assets/img/hero-facade.jpg") center / cover no-repeat;
+  opacity: 0.16;
+  transform: scale(1.05);
+  animation: app-splash-zoom 14s ease-in-out infinite alternate;
+}
+
+/* Voile crème/doré pour garder le texte lisible et l'ambiance premium */
+.app-splash-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 80% at 50% 35%, rgba(248, 246, 242, 0.55) 0%, rgba(248, 246, 242, 0.92) 60%, var(--v-cream, #f8f6f2) 100%),
+    linear-gradient(180deg, rgba(154, 123, 79, 0.06), rgba(90, 125, 106, 0.05));
+}
+
+.app-splash-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 1.5rem;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  text-align: center;
+  animation: app-splash-rise 0.6s var(--v-ease, ease) both;
+}
+
+.app-splash-logo {
+  width: 92px;
+  height: 92px;
+  display: block;
+  filter: drop-shadow(0 8px 22px rgba(154, 123, 79, 0.26));
+}
+
+.app-splash-name {
+  margin: 0.55rem 0 0;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--v-ink, #1e3340);
+}
+
+.app-splash-tag {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--v-brass, #9a7b4f);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app-splash-msg {
+  margin: 1.15rem 0 0;
+  min-height: 1.3em;
+  max-width: 30ch;
+  font-size: 0.95rem;
+  color: var(--v-ink-soft, #4a5c68);
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.32s var(--v-ease, ease), transform 0.32s var(--v-ease, ease);
+}
+
+.app-splash-msg.is-out {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.app-splash-bar {
+  position: relative;
+  margin-top: 1.1rem;
+  width: 150px;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(154, 123, 79, 0.16);
+}
+
+.app-splash-bar > i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--v-brass, #9a7b4f), var(--v-brass-light, #c4a574), var(--v-sage, #5a7d6a));
+  animation: app-splash-slide 1.25s var(--v-ease, ease) infinite;
+}
+
+@keyframes app-splash-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+@keyframes app-splash-zoom {
+  0% { transform: scale(1.05); }
+  100% { transform: scale(1.14); }
+}
+
+@keyframes app-splash-rise {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-bg { animation: none; }
+  .app-splash-bar > i { animation: none; width: 100%; opacity: 0.7; }
+  .app-splash-inner { animation: none; }
+}
+
 /* Le bloc texte doit pouvoir rétrécir (min-width:0) pour ne jamais
    déborder du drawer mobile quel que soit le libellé/locale. */
 .brand-text {

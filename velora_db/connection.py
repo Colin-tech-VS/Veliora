@@ -303,6 +303,13 @@ def _postgres_driver_kwargs(url: str | None = None) -> dict:
     Le pooler Supabase en mode *transaction* (port 6543 / PgBouncer) ne gère pas
     les prepared statements nommés (_pg3_0, …) réutilisés entre transactions :
     sans ``prepare_threshold=None`` → DuplicatePreparedStatement.
+
+    On active aussi les *keepalives* TCP et un ``connect_timeout`` court : sans
+    eux, une connexion silencieusement coupée (Supabase/PgBouncer ferme les
+    connexions inactives, NAT/box qui expire le flux) n'est détectée qu'au
+    moment où l'on s'en sert → « base de données indisponible ». Les keepalives
+    sondent la connexion en continu et la déclarent morte tôt, pour qu'elle soit
+    recyclée plutôt que servie à une requête web.
     """
     from psycopg.rows import dict_row
 
@@ -310,6 +317,12 @@ def _postgres_driver_kwargs(url: str | None = None) -> dict:
     return {
         "row_factory": dict_row,
         "prepare_threshold": None,
+        "connect_timeout": int(os.getenv("DATABASE_CONNECT_TIMEOUT", "10")),
+        # Keepalives TCP (paramètres libpq) — sondent la connexion au repos.
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("DATABASE_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("DATABASE_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("DATABASE_KEEPALIVES_COUNT", "5")),
         **_resolve_ipv4_hostaddr(u),
     }
 
@@ -435,19 +448,37 @@ def _get_postgres_pool():
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "10"))
         # File courte : 503 + retry client plutôt que 20 requêtes bloquées.
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "8"))
+        # Recyclage : on ne garde pas une connexion éternellement (PgBouncer en
+        # mode transaction peut la couper côté serveur) ni au repos trop
+        # longtemps. Au-delà, le pool la referme et en rouvre une saine.
+        max_lifetime = float(os.getenv("DATABASE_POOL_MAX_LIFETIME", "1800"))
+        max_idle = float(os.getenv("DATABASE_POOL_MAX_IDLE", "300"))
+        # check : valide chaque connexion (SELECT 1) AVANT de la prêter. Une
+        # connexion morte est alors recyclée de façon transparente au lieu de
+        # faire échouer la requête en « base de données indisponible ». C'est le
+        # garde-fou central contre les connexions zombies du pooler Supabase.
+        use_check = os.getenv("DATABASE_POOL_CHECK", "1").strip() not in ("0", "false", "")
+        pool_check = ConnectionPool.check_connection if use_check else None
         _pg_pool = ConnectionPool(
             url,
             min_size=0,
             max_size=pool_max,
             timeout=pool_timeout,
             max_waiting=pool_waiting,
+            max_lifetime=max_lifetime,
+            max_idle=max_idle,
+            check=pool_check,
             kwargs=_postgres_driver_kwargs(url),
             open=True,
         )
         logger.info(
-            "Pool PostgreSQL Veliora actif (max=%s, timeout=%ss)",
+            "Pool PostgreSQL Veliora actif (max=%s, timeout=%ss, check=%s, "
+            "max_lifetime=%ss, max_idle=%ss)",
             pool_max,
             pool_timeout,
+            "on" if use_check else "off",
+            max_lifetime,
+            max_idle,
         )
         return _pg_pool
     except ImportError as exc:
@@ -674,6 +705,87 @@ def _split_sql_script(script: str) -> list[str]:
     if buf:
         chunks.append("\n".join(buf))
     return [c.strip().rstrip(";").strip() for c in chunks if c.strip()]
+
+
+def secure_public_schema_rls() -> int:
+    """Active RLS + révoque l'accès API sur toutes les tables ``public``.
+
+    Pourquoi : Supabase expose le schéma ``public`` via l'API PostgREST aux
+    rôles ``anon`` / ``authenticated``. Une table sans RLS y est lisible /
+    modifiable par quiconque possède la clé anon → fuite de données. Le
+    dashboard les signale « Unrestricted » / « RLS Disabled in Public ».
+
+    Veliora se connecte en Postgres avec le rôle **propriétaire** (``postgres``)
+    qui *contourne* RLS (ownership ⇒ BYPASSRLS) : activer RLS n'a donc AUCUN
+    impact sur l'app, mais ferme la porte à l'API publique.
+
+    Idempotent, appelé à l'init : toute table — y compris créée plus tard par un
+    module (transactions, portail, IA…) — est verrouillée automatiquement, ce
+    qui évite la réapparition de tables « Critical ». Renvoie le nombre de
+    tables traitées.
+    """
+    if not is_postgres():
+        return 0
+    import psycopg
+    from psycopg import sql as _sql
+
+    url = database_url()
+    if not url:
+        return 0
+
+    secured = 0
+    try:
+        with psycopg.connect(url, **_postgres_driver_kwargs(url)) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+                )
+                rows = cur.fetchall()
+                tables = [
+                    (r["tablename"] if isinstance(r, dict) else r[0]) for r in rows
+                ]
+                for table in tables:
+                    cur.execute(
+                        _sql.SQL("ALTER TABLE public.{} ENABLE ROW LEVEL SECURITY").format(
+                            _sql.Identifier(table)
+                        )
+                    )
+                    secured += 1
+
+                # Révoque l'accès API (présent ET futur) pour les rôles Supabase.
+                # Sur un Postgres générique ces rôles peuvent ne pas exister.
+                for role in ("anon", "authenticated"):
+                    cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
+                    if cur.fetchone() is None:
+                        continue
+                    rid = _sql.Identifier(role)
+                    cur.execute(
+                        _sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {}").format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+                            "REVOKE ALL ON TABLES FROM {}"
+                        ).format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+                            "REVOKE ALL ON SEQUENCES FROM {}"
+                        ).format(rid)
+                    )
+            conn.commit()
+        logger.info("RLS Supabase appliqué — %d table(s) public verrouillée(s)", secured)
+    except Exception:
+        logger.warning(
+            "secure_public_schema_rls ignoré (droits insuffisants ?) — "
+            "appliquez scripts/supabase_enable_rls.sql manuellement",
+            exc_info=True,
+        )
+    return secured
 
 
 def init_postgres_schema() -> None:

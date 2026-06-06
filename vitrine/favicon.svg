@@ -1,4 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#0B1220"/>
-  <path d="M6 14L16 7l10 7v11a1 1 0 01-1 1h-6v-7h-8v7H7a1 1 0 01-1-1V14z" stroke="#3B82F6" stroke-width="1.8" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Veliora">
+  <title>Veliora</title>
+  <defs>
+    <linearGradient id="fvGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EBD08A"/>
+      <stop offset="0.5" stop-color="#CDA458"/>
+      <stop offset="1" stop-color="#9A7B4F"/>
+    </linearGradient>
+    <linearGradient id="fvGoldLid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0D89C"/>
+      <stop offset="1" stop-color="#C49A4C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond blanc arrondi -->
+  <rect width="64" height="64" rx="14" fill="#ffffff"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none"
+        stroke="#E7DECB" stroke-width="1.5"/>
+
+  <!-- Corps de la boîte / maison -->
+  <rect x="14" y="31" width="36" height="20.5" rx="3.4" fill="url(#fvGold)"/>
+  <!-- Porte verte -->
+  <path d="M28.7 51.5V43a3.3 3.3 0 0 1 6.6 0v8.5z" fill="#5A7D6A"/>
+  <circle cx="33.8" cy="47" r="1" fill="#EBD08A"/>
+
+  <!-- Couvercle = toit + poignée -->
+  <path d="M11 31.6 32 16l21 15.6Z" fill="url(#fvGoldLid)"/>
+  <path d="M25.8 16.6c0-3.5 2.8-5.4 6.2-5.4s6.2 1.9 6.2 5.4"
+        fill="none" stroke="#8A6E45" stroke-width="3" stroke-linecap="round"/>
+  <rect x="28.8" y="29" width="6.4" height="4" rx="1.1" fill="#8A6E45"/>
 </svg>

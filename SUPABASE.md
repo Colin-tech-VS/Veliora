@@ -59,6 +59,10 @@ Vérifier : `GET /api/health` → `"database": { "backend": "supabase", ... }`
 
 **L’app Veliora n’est pas impactée** : elle passe par le pooler avec le rôle propriétaire (`postgres`), qui contourne la RLS.
 
+**Auto-réparation (depuis cette version)** : au démarrage, l’app active RLS + verrouille l’API (`anon`/`authenticated`) sur **toutes** les tables `public`, y compris celles créées plus tard par un module (transactions, portail, IA…). Une table « RLS Disabled in Public » (Critical) qui réapparaît est donc re-sécurisée au prochain déploiement. Pilotable par `VELIORA_AUTO_RLS` (défaut activé). Pour corriger **immédiatement** sans redéployer, exécutez `scripts/supabase_enable_rls.sql` dans le SQL Editor.
+
+**« RLS Enabled No Policy »** (entrées sans badge *Critical*) = état **sain** ici, pas une faille : RLS activée + aucune policy ⇒ la table est fermée à l’API publique et n’est accessible qu’à l’app (rôle propriétaire). N’ajoutez **pas** de policy permissive `authenticated`/`anon` : cela ré-ouvrirait l’API. Seules les entrées **Critical** (RLS Disabled) doivent disparaître — ce que fait le script / l’auto-réparation.
+
 **Ne pas** mettre `SUPABASE_ANON_KEY` dans le front-end Veliora tant que vous n’avez pas de politiques RLS métier par agence.
 
 ---
@@ -171,6 +175,7 @@ python scripts/migrate_sqlite_to_supabase.py
 | Quota Storage / « image » | Vider buckets Storage ; pas SQL seul |
 | DB > 500 Mo | `supabase_maintenance.sql` + Pro ou purge |
 | `connection refused` | URI pooler 6543, mot de passe |
+| « base de données indisponible » à la connexion / par intermittence | Connexions zombies servies par le pool (PgBouncer coupe l'inactif). Corrigé : `check` valide chaque connexion avant de la prêter + recyclage (`max_lifetime`/`max_idle`) + keepalives TCP. Réglages : voir `.env.example` (`DATABASE_POOL_CHECK`, `DATABASE_POOL_MAX_LIFETIME`, `DATABASE_KEEPALIVES_*`). |
 | `DuplicatePreparedStatement` / `_pg3_0` | Pooler 6543 + code récent (`prepare_threshold=None` dans `velora_db/connection.py`) |
 | `relation does not exist` | `postgres_schema.sql` |
 | Retour SQLite | Retirer `DATABASE_URL` |
