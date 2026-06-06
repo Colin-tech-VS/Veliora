@@ -35,7 +35,7 @@ _LEADS_LIST_SQL = """
     dvf_sample_count, dvf_compared_at, dvf_sector, dvf_reference_period,
     listing_title, price_change_count, last_price_change_at, priority_tier,
     score_explanation, scores_computed_at, latitude, longitude, listing_image_url,
-    image_custom, image_updated_at, missing_fields, created_at, updated_at
+    image_custom, image_updated_at, relisted_at, missing_fields, created_at, updated_at
 """.strip()
 
 _SOURCES_CACHE_TTL_SEC = 50.0
@@ -630,6 +630,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             ("listing_image_url", "TEXT"),
             ("image_custom", "INTEGER NOT NULL DEFAULT 0"),
             ("image_updated_at", "TEXT"),
+            ("relisted_at", "TEXT"),
         ):
             if col not in lcols:
                 conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typedef}")
@@ -914,6 +915,12 @@ def init_db() -> None:
             ensure_mandate_tables(conn)
             ensure_portal_tables(conn)
             ensure_leads_performance_indexes(conn)
+            try:
+                from velora_db.introspect import ensure_columns
+
+                ensure_columns(conn, "leads", {"relisted_at": "TEXT"})
+            except Exception:
+                logger.exception("ensure leads.relisted_at (postgres)")
         try:
             from crm.maps.service import ensure_map_schema
             from crm.leads.images import ensure_lead_image_schema
@@ -2070,6 +2077,15 @@ def save_lead(
         else:
             previous_price = existing_row.get("previous_price")
 
+    # Annonce retirée (hors vente finalisée) revue en ligne = republiée : vendeur
+    # de retour, signal de motivation. On réactive la fiche et on horodate.
+    relisted = bool(
+        existing_row
+        and (existing_row.get("status") == "retire")
+        and (existing_row.get("pipeline") != "vendu")
+    )
+    relisted_at_value = now if relisted else (existing_row or {}).get("relisted_at")
+
     from crm.scoring.recalc import enrich_lead_scores
 
     preview = enrich_lead_scores({
@@ -2089,6 +2105,7 @@ def save_lead(
         "dvf_verdict": (existing_row or {}).get("dvf_verdict"),
         "dvf_delta_pct": (existing_row or {}).get("dvf_delta_pct"),
         "agency": lead.agency,
+        "relisted_at": relisted_at_value,
     })
     mandate_score = preview["mandate_score"]
     mandate_reason = preview["mandate_score_reason"]
@@ -2209,6 +2226,19 @@ def save_lead(
                     existing_row["id"],
                 ),
             )
+            if relisted:
+                # Réactive la fiche republiée et l'horodate (le score inclut déjà
+                # le bonus via preview["relisted_at"]).
+                new_pipeline = (
+                    "nouveau"
+                    if (existing_row.get("pipeline") in (None, "", "perdu"))
+                    else existing_row.get("pipeline")
+                )
+                conn.execute(
+                    """UPDATE leads SET status = 'nouveau', pipeline = ?,
+                       relisted_at = ?, updated_at = ? WHERE id = ?""",
+                    (new_pipeline, now, now, existing_row["id"]),
+                )
             conn.commit()
             saved_out = {
                 "id": existing_row["id"],
@@ -2219,6 +2249,7 @@ def save_lead(
                 "updated": True,
                 "price_changed": price_changed,
                 "surface_changed": surface_changed,
+                "relisted": relisted,
             }
             _schedule_lead_image_after_save(
                 lead,
@@ -2941,6 +2972,7 @@ def _row_to_lead(row: sqlite3.Row, *, enrich_scores: bool = True) -> dict:
         "price_estimate": None,
         "price_estimate_at": None,
         "property_fingerprint": _compute_property_fingerprint(postcode, surface, row["price"] or 0),
+        "relisted_at": row["relisted_at"] if "relisted_at" in keys else None,
     }
     try:
         from crm.leads.images import lead_image_meta_from_row

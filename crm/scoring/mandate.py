@@ -111,6 +111,27 @@ def compute_mandate_score(
             "detail": "Opportunité mandat limitée",
         })
 
+    # Annonce retirée puis republiée : vendeur revenu = motivation forte (cible
+    # idéale pour un mandat exclusif). Réservé aux particuliers, signal récent (≤90 j).
+    if is_particulier:
+        relisted_days = days_since(lead.get("relisted_at"))
+        if relisted_days is not None and relisted_days <= 90:
+            pts = apply_weight(15, "republie", w)
+            contributions.append(
+                ScoreContribution(
+                    "republie",
+                    "Republiée après retrait",
+                    pts,
+                    "Le vendeur a remis le bien en ligne — motivation accrue",
+                )
+            )
+            tags.append("republie")
+            positive.append({
+                "key": "republie",
+                "label": "Republiée après retrait",
+                "detail": "Vendeur revenu sur le marché",
+            })
+
     pub_days = days_since(lead.get("published_at") or lead.get("listedAt"))
     if pub_days is not None:
         if pub_days >= 60:
