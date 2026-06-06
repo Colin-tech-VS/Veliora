@@ -115,6 +115,18 @@ def publish_listing_from_lead(
         "image_url": (data.get("image_url") or lead.get("listing_image_url") or "").strip() or None,
         "status": (data.get("status") or "published").strip().lower(),
     }
+    # Galerie : reprend toutes les images sources crawlées (nettoyées à l'affichage).
+    images = data.get("images")
+    if not images:
+        try:
+            from crm.leads.images import lead_gallery_source_urls
+
+            images = lead_gallery_source_urls(agency_id, int(lead_id))
+        except Exception:
+            images = []
+    if not images and listing_data["image_url"]:
+        images = [listing_data["image_url"]]
+    listing_data["images"] = images
     err = validate_listing_data(listing_data, require_contact=False)
     if err:
         return {"ok": False, "error": err}

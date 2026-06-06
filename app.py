@@ -1133,6 +1133,25 @@ def api_lead_image(lead_id):
     return jsonify({"ok": True, "lead": get_lead(lead_id, agency_id)})
 
 
+@app.route("/api/leads/<int:lead_id>/image/<int:idx>", methods=["GET"])
+def api_lead_gallery_image(lead_id, idx):
+    """Sert une image de la galerie de l'annonce (WebP, marquages retirés)."""
+    from crm.leads.images import resolve_lead_gallery_path
+    from velora_db.connection import DatabaseBusyError
+
+    try:
+        agency_id = _aid()
+    except DatabaseBusyError as exc:
+        return jsonify({"error": str(exc), "code": "database_busy"}), 503
+
+    path = resolve_lead_gallery_path(agency_id, lead_id, idx)
+    if not path:
+        return jsonify({"error": "Image introuvable"}), 404
+    resp = send_file(path, mimetype="image/webp", max_age=86400, conditional=True)
+    resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+    return resp
+
+
 @app.route("/api/leads/<int:lead_id>/image/sync", methods=["POST"])
 def api_lead_image_sync(lead_id):
     """Re-télécharge l'image depuis l'URL portail (si pas d'image personnalisée)."""
@@ -2159,6 +2178,19 @@ def api_public_portal_listing_detail(listing_id):
     if not item:
         return jsonify({"ok": False, "error": "Annonce introuvable."}), 404
     return jsonify({"ok": True, "listing": public_listing_payload(item)})
+
+
+@app.route("/api/public/portal/listings/<listing_id>/image/<int:idx>", methods=["GET"])
+def api_public_portal_listing_image(listing_id, idx):
+    """Sert une image d'annonce portail (WebP, marquages retirés, cache local)."""
+    from crm.portal.images import resolve_portal_image_path
+
+    path = resolve_portal_image_path(listing_id, idx)
+    if not path:
+        abort(404)
+    resp = send_file(path, mimetype="image/webp", max_age=86400, conditional=True)
+    resp.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+    return resp
 
 
 @app.route("/api/public/portal/listings/<listing_id>/inquiry", methods=["POST"])

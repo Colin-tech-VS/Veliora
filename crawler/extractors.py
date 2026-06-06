@@ -1352,12 +1352,13 @@ def deep_enhance_listing_contacts(html: str, url: str, lead: LeadData) -> LeadDa
     extract_from_json_ld(soup, lead, page_url=url)
     apply_listing_classification_to_lead(lead, soup, url)
     if not (lead.raw_extras or {}).get("listing_image_url"):
-        from crawler.listing_images import extract_primary_listing_image
+        from crawler.listing_images import extract_listing_images
 
-        img_url = extract_primary_listing_image(soup, url)
-        if img_url:
+        imgs = extract_listing_images(soup, url)
+        if imgs:
             lead.raw_extras = dict(lead.raw_extras or {})
-            lead.raw_extras["listing_image_url"] = img_url
+            lead.raw_extras["listing_image_url"] = imgs[0]
+            lead.raw_extras["listing_image_urls"] = imgs
     lead.raw_extras["deep_contact_refresh"] = True
     return lead
 
@@ -2158,11 +2159,12 @@ def enrich_core_listing_fields(html: str, url: str, lead: LeadData) -> LeadData:
             if not is_hub_listing_address(addr_text):
                 lead.address = addr_text
 
-    from crawler.listing_images import extract_primary_listing_image
+    from crawler.listing_images import extract_listing_images
 
-    img_url = extract_primary_listing_image(soup, url)
-    if img_url:
-        lead.raw_extras["listing_image_url"] = img_url
+    imgs = extract_listing_images(soup, url)
+    if imgs:
+        lead.raw_extras["listing_image_url"] = imgs[0]
+        lead.raw_extras["listing_image_urls"] = imgs
 
     return lead
 

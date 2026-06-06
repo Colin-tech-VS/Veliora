@@ -56,6 +56,7 @@ def ensure_portal_tables(conn) -> None:
             "agent_name": "TEXT",
             "source_lead_id": "INTEGER",
             "public_slug": "TEXT",
+            "images_json": "TEXT",
         },
     )
     conn.execute("""
@@ -108,7 +109,39 @@ def _row_to_listing(row) -> dict:
                 pass
     if d.get("agency_id"):
         d["agency_name"] = get_agency_name(d["agency_id"]) or d["agency_id"]
+    # URLs sources de la galerie (externes) — sérialisées en JSON.
+    raw_imgs = d.get("images_json")
+    imgs: list[str] = []
+    if raw_imgs:
+        try:
+            parsed = json.loads(raw_imgs)
+            if isinstance(parsed, list):
+                imgs = [str(u).strip() for u in parsed if str(u or "").strip()]
+        except (TypeError, ValueError):
+            imgs = []
+    if not imgs and d.get("image_url"):
+        imgs = [str(d["image_url"]).strip()]
+    d["source_images"] = imgs
     return d
+
+
+def _images_json(data: dict, existing: dict | None = None) -> str | None:
+    """Sérialise la liste d'URLs source de la galerie depuis ``data``/existant."""
+    imgs = data.get("images")
+    if imgs is None and existing is not None:
+        imgs = existing.get("source_images")
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for u in imgs or []:
+        u = str(u or "").strip()
+        if u and u not in seen:
+            seen.add(u)
+            cleaned.append(u)
+    if not cleaned:
+        single = (data.get("image_url") or "").strip()
+        if single:
+            cleaned = [single]
+    return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
 
 
 def list_listings(
@@ -342,10 +375,10 @@ def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) ->
             """INSERT INTO portal_listings
                (id, agency_id, publisher_type, status, transaction_type, title, description,
                 property_type, price, surface, rooms, city, postcode, address,
-                contact_name, contact_phone, contact_email, image_url,
+                contact_name, contact_phone, contact_email, image_url, images_json,
                 agent_id, agent_name, source_lead_id,
                 created_at, updated_at, published_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 lid,
                 agency_id,
@@ -365,6 +398,7 @@ def create_listing(data: dict, *, agency_id: str | None, publisher_type: str) ->
                 (data.get("contact_phone") or "").strip() or None,
                 (data.get("contact_email") or "").strip().lower() or None,
                 (data.get("image_url") or "").strip() or None,
+                _images_json(data),
                 (data.get("agent_id") or "").strip() or None,
                 (data.get("agent_name") or "").strip() or None,
                 data.get("source_lead_id"),
@@ -406,6 +440,7 @@ def update_listing(listing_id: str, agency_id: str, data: dict) -> dict | None:
     published_at = existing.get("published_at")
     if fields["status"] == "published" and not published_at:
         published_at = now
+    images_json = _images_json(data, existing)
     with get_connection() as conn:
         ensure_portal_tables(conn)
         conn.execute(
@@ -413,7 +448,7 @@ def update_listing(listing_id: str, agency_id: str, data: dict) -> dict | None:
                title=?, description=?, transaction_type=?, property_type=?,
                price=?, surface=?, rooms=?, city=?, postcode=?, address=?,
                contact_name=?, contact_phone=?, contact_email=?, image_url=?,
-               status=?, updated_at=?, published_at=?
+               images_json=?, status=?, updated_at=?, published_at=?
                WHERE id=? AND agency_id=?""",
             (
                 fields["title"],
@@ -430,6 +465,7 @@ def update_listing(listing_id: str, agency_id: str, data: dict) -> dict | None:
                 fields["contact_phone"],
                 fields["contact_email"],
                 fields["image_url"],
+                images_json,
                 fields["status"],
                 now,
                 published_at,
@@ -453,7 +489,15 @@ def delete_listing(listing_id: str, agency_id: str) -> bool:
             (listing_id, agency_id),
         )
         conn.commit()
-        return cur.rowcount > 0
+    deleted = cur.rowcount > 0
+    if deleted:
+        try:
+            from crm.portal.images import delete_portal_images
+
+            delete_portal_images(listing_id)
+        except Exception:
+            pass
+    return deleted
 
 
 def public_listing_payload(item: dict) -> dict:
@@ -462,6 +506,16 @@ def public_listing_payload(item: dict) -> dict:
     if not slug and item.get("status") == "published" and item.get("id"):
         slug = ensure_listing_public_slug(item["id"])
     path = f"/annonces/{slug}" if slug else None
+    # Images servies par l'app (WebP, marquages retirés) — 1 URL par image source.
+    lid = item.get("id")
+    source_images = item.get("source_images") or (
+        [item["image_url"]] if item.get("image_url") else []
+    )
+    images = [
+        f"/api/public/portal/listings/{lid}/image/{i}"
+        for i in range(len(source_images))
+    ] if lid else []
+    image_url = images[0] if images else item.get("image_url")
     return {
         "id": item.get("id"),
         "slug": slug,
@@ -477,7 +531,8 @@ def public_listing_payload(item: dict) -> dict:
         "city": item.get("city"),
         "postcode": item.get("postcode"),
         "address": item.get("address"),
-        "image_url": item.get("image_url"),
+        "image_url": image_url,
+        "images": images,
         "agency_name": item.get("agency_name"),
         "published_at": item.get("published_at"),
         "created_at": item.get("created_at"),

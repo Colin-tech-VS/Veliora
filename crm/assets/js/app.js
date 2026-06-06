@@ -3151,6 +3151,24 @@ function setupDrawer() {
       return;
     }
 
+    const galleryNav = e.target.closest(".drawer-gallery-nav");
+    if (galleryNav) {
+      e.preventDefault();
+      const wrap = galleryNav.closest("[data-drawer-gallery]");
+      const track = wrap?.querySelector(".drawer-gallery-track");
+      const slides = track?.querySelectorAll(".drawer-gallery-slide") || [];
+      if (slides.length > 1) {
+        let index = Number(track.dataset.index || 0);
+        const dir = galleryNav.classList.contains("drawer-gallery-next") ? 1 : -1;
+        index = (index + dir + slides.length) % slides.length;
+        track.dataset.index = String(index);
+        track.style.transform = `translateX(-${index * 100}%)`;
+        const cur = wrap.querySelector(".drawer-gallery-cur");
+        if (cur) cur.textContent = String(index + 1);
+      }
+      return;
+    }
+
     if (e.target.closest("#drawer-dvf-compare-btn")) {
       e.preventDefault();
       compareLeadDvf(lead.id).catch((err) => showToast(err.message, "error"));
@@ -5330,6 +5348,20 @@ function leadImageUrl(lead) {
   if (!token) return base;
   const sep = base.includes("?") ? "&" : "?";
   return `${base}${sep}access_token=${encodeURIComponent(token)}`;
+}
+
+function leadGalleryUrls(lead) {
+  const imgs = Array.isArray(lead?.images) ? lead.images : [];
+  if (!imgs.length) {
+    const single = leadImageUrl(lead);
+    return single ? [single] : [];
+  }
+  const token = getStoredAuthToken();
+  return imgs.map((base) => {
+    if (!token) return base;
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}access_token=${encodeURIComponent(token)}`;
+  });
 }
 
 function leadThumbHtml(lead, className = "lead-thumb") {
@@ -7710,10 +7742,27 @@ function buildDrawerDvfHtml(lead) {
 }
 
 function buildDrawerLeadImageHtml(lead) {
-  const url = leadImageUrl(lead);
-  const imgBlock = url
-    ? `<img class="drawer-lead-image-img" id="drawer-lead-img" src="${escapeHtml(url)}" alt="Photo du bien" decoding="async" fetchpriority="high">`
-    : `<div class="drawer-lead-image-placeholder" id="drawer-lead-img-placeholder">Aucune photo — recrawlez l’annonce ou importez une image</div>`;
+  const gallery = leadGalleryUrls(lead);
+  let imgBlock;
+  if (gallery.length > 1) {
+    const slides = gallery
+      .map(
+        (u, i) =>
+          `<div class="drawer-gallery-slide"><img class="drawer-lead-image-img" src="${escapeHtml(u)}" alt="Photo ${i + 1} du bien" decoding="async"${i === 0 ? ' fetchpriority="high"' : ' loading="lazy"'}></div>`,
+      )
+      .join("");
+    imgBlock = `
+      <div class="drawer-gallery" data-drawer-gallery>
+        <div class="drawer-gallery-track">${slides}</div>
+        <button type="button" class="drawer-gallery-nav drawer-gallery-prev" aria-label="Photo précédente">‹</button>
+        <button type="button" class="drawer-gallery-nav drawer-gallery-next" aria-label="Photo suivante">›</button>
+        <span class="drawer-gallery-count"><span class="drawer-gallery-cur">1</span>/${gallery.length}</span>
+      </div>`;
+  } else if (gallery.length === 1) {
+    imgBlock = `<img class="drawer-lead-image-img" id="drawer-lead-img" src="${escapeHtml(gallery[0])}" alt="Photo du bien" decoding="async" fetchpriority="high">`;
+  } else {
+    imgBlock = `<div class="drawer-lead-image-placeholder" id="drawer-lead-img-placeholder">Aucune photo — recrawlez l’annonce ou importez une image</div>`;
+  }
   const revertDisabled = !lead.image_custom && !lead.has_image ? " disabled" : "";
   return `
     <div class="drawer-lead-image" id="drawer-lead-image-block">
@@ -7726,7 +7775,7 @@ function buildDrawerLeadImageHtml(lead) {
         <button type="button" class="btn btn-ghost btn-sm" id="drawer-image-revert"${revertDisabled}>Photo du crawl</button>
         <button type="button" class="btn btn-ghost btn-sm" id="drawer-image-sync" title="Re-télécharger depuis le portail">↻ Portail</button>
       </div>
-      <p class="form-hint drawer-lead-image-hint">${lead.image_custom ? "Image personnalisée active" : "Image issue du crawl (WebP)"}</p>
+      <p class="form-hint drawer-lead-image-hint">${lead.image_custom ? "Image personnalisée active" : lead.image_count > 1 ? `${lead.image_count} photos issues du crawl (WebP, marquages retirés)` : "Image issue du crawl (WebP)"}</p>
     </div>`;
 }
 

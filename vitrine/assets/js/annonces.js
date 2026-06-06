@@ -22,11 +22,35 @@
     return `/annonces/${l.id}`;
   }
 
+  function imgBlockHtml(l) {
+    const images =
+      Array.isArray(l.images) && l.images.length
+        ? l.images
+        : l.image_url
+          ? [l.image_url]
+          : [];
+    if (!images.length) {
+      return `<div class="v-ann-card-placeholder" aria-hidden="true"></div>`;
+    }
+    if (images.length === 1) {
+      return `<img src="${escapeHtml(images[0])}" alt="" loading="lazy" decoding="async">`;
+    }
+    const slides = images
+      .map(
+        (u) =>
+          `<div class="v-ann-card-slide"><img src="${escapeHtml(u)}" alt="" loading="lazy" decoding="async"></div>`,
+      )
+      .join("");
+    return `
+      <div class="v-ann-card-slides">${slides}</div>
+      <span class="v-ann-card-count">1/${images.length}</span>
+      <button type="button" class="v-ann-card-nav v-ann-card-prev" aria-label="Photo précédente">‹</button>
+      <button type="button" class="v-ann-card-nav v-ann-card-next" aria-label="Photo suivante">›</button>`;
+  }
+
   function cardHtml(l) {
     const href = escapeHtml(listingHref(l));
-    const img = l.image_url
-      ? `<img src="${escapeHtml(l.image_url)}" alt="" loading="lazy" decoding="async">`
-      : `<div class="v-ann-card-placeholder" aria-hidden="true"></div>`;
+    const img = imgBlockHtml(l);
     const who = escapeHtml(l.agency_name || "Agence immobilière");
     return `
       <article class="v-ann-card">
@@ -66,6 +90,25 @@
       grid.innerHTML = `<p class="v-annonces-error">Connexion impossible — lancez Veliora avec demarrer.bat.</p>`;
     }
   }
+
+  // Mini-slider des cartes : les flèches sont dans le lien → on bloque la navigation.
+  grid?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".v-ann-card-nav");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = btn.closest(".v-ann-card-img");
+    const track = wrap?.querySelector(".v-ann-card-slides");
+    if (!track) return;
+    const slides = track.querySelectorAll(".v-ann-card-slide");
+    if (slides.length <= 1) return;
+    let index = Number(track.dataset.index || 0);
+    index = (index + (btn.classList.contains("v-ann-card-next") ? 1 : -1) + slides.length) % slides.length;
+    track.dataset.index = String(index);
+    track.style.transform = `translateX(-${index * 100}%)`;
+    const counter = wrap.querySelector(".v-ann-card-count");
+    if (counter) counter.textContent = `${index + 1}/${slides.length}`;
+  });
 
   document.getElementById("btn-filter")?.addEventListener("click", loadListings);
 

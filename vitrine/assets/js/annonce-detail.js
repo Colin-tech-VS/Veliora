@@ -83,3 +83,57 @@
     }
   });
 })();
+
+/* Slider galerie photos — navigation flèches / points / clavier / swipe */
+(function () {
+  function initSlider(root) {
+    const track = root.querySelector(".v-ann-slides");
+    const slides = Array.from(root.querySelectorAll(".v-ann-slide"));
+    if (!track || slides.length <= 1) return;
+    const dots = Array.from(root.querySelectorAll(".v-ann-dot"));
+    const counter = root.querySelector(".v-ann-counter-cur");
+    let index = 0;
+
+    function go(to) {
+      index = (to + slides.length) % slides.length;
+      track.style.transform = `translateX(-${index * 100}%)`;
+      dots.forEach((d, i) => d.classList.toggle("is-active", i === index));
+      if (counter) counter.textContent = String(index + 1);
+    }
+
+    root.querySelector(".v-ann-prev")?.addEventListener("click", () => go(index - 1));
+    root.querySelector(".v-ann-next")?.addEventListener("click", () => go(index + 1));
+    dots.forEach((d) =>
+      d.addEventListener("click", () => go(Number(d.dataset.slideTo) || 0)),
+    );
+
+    root.tabIndex = 0;
+    root.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") go(index - 1);
+      else if (e.key === "ArrowRight") go(index + 1);
+    });
+
+    let startX = null;
+    root.addEventListener(
+      "touchstart",
+      (e) => {
+        startX = e.touches[0].clientX;
+      },
+      { passive: true },
+    );
+    root.addEventListener(
+      "touchend",
+      (e) => {
+        if (startX == null) return;
+        const dx = e.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) > 40) go(dx < 0 ? index + 1 : index - 1);
+        startX = null;
+      },
+      { passive: true },
+    );
+
+    go(0);
+  }
+
+  document.querySelectorAll("[data-slider]").forEach(initSlider);
+})();

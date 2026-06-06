@@ -146,8 +146,12 @@ def _json_ld_images(data: object, page_url: str) -> list[str]:
     return found
 
 
-def extract_primary_listing_image(soup: BeautifulSoup, page_url: str) -> str | None:
-    """Retourne l'URL de la meilleure image annonce trouvée."""
+#: Plafond par défaut d'images conservées par annonce (galerie).
+MAX_LISTING_IMAGES = 10
+
+
+def _collect_image_candidates(soup: BeautifulSoup, page_url: str) -> list[str]:
+    """Toutes les URLs d'images annonce trouvées, dédupliquées dans l'ordre."""
     candidates: list[str] = []
 
     for prop in (
@@ -228,9 +232,30 @@ def extract_primary_listing_image(soup: BeautifulSoup, page_url: str) -> str | N
                 candidates.append(u)
 
     seen: set[str] = set()
+    ordered: list[str] = []
     for u in candidates:
         if u in seen:
             continue
         seen.add(u)
-        return u
-    return None
+        ordered.append(u)
+    return ordered
+
+
+def extract_primary_listing_image(soup: BeautifulSoup, page_url: str) -> str | None:
+    """Retourne l'URL de la meilleure image annonce trouvée."""
+    candidates = _collect_image_candidates(soup, page_url)
+    return candidates[0] if candidates else None
+
+
+def extract_listing_images(
+    soup: BeautifulSoup, page_url: str, limit: int = MAX_LISTING_IMAGES
+) -> list[str]:
+    """Toutes les images de l'annonce (galerie), image principale en premier.
+
+    Les logos/icônes/bannières sont déjà écartés par ``_SKIP_IMG_RE`` lors de la
+    normalisation. La liste est plafonnée à ``limit`` pour limiter le stockage.
+    """
+    images = _collect_image_candidates(soup, page_url)
+    if limit and limit > 0:
+        images = images[:limit]
+    return images
