@@ -58,7 +58,7 @@
           <label class="form-field"><span>Pièces</span>
             <input type="number" id="${idPrefix}-rooms" min="1" max="20" value="${d.rooms != null ? d.rooms : ""}"></label>
           <label class="form-field"><span>Ville *</span>
-            <input type="text" id="${idPrefix}-city" required value="${escapeAttr(d.city || "")}"></label>
+            <input type="text" id="${idPrefix}-city" required value="${escapeAttr(d.city || "")}" data-city-autocomplete></label>
           <label class="form-field"><span>Code postal</span>
             <input type="text" id="${idPrefix}-postcode" maxlength="5" value="${escapeAttr(d.postcode || "")}"></label>
           <label class="form-field form-field-wide"><span>Adresse</span>

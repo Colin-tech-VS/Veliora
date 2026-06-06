@@ -107,7 +107,7 @@
     <form id="form-register" class="auth-panel">
       <div class="auth-register-grid">
         <label class="form-field auth-field-full"><span>Nom de l'agence</span><input type="text" id="reg-agency" required autocomplete="organization"></label>
-        <label class="form-field auth-field-full"><span>Ville</span><input type="text" id="reg-city" placeholder="Ex. Lorient, Lyon…" autocomplete="off" required></label>
+        <label class="form-field auth-field-full"><span>Ville</span><input type="text" id="reg-city" placeholder="Ex. Lorient, Lyon…" autocomplete="off" required data-city-autocomplete></label>
         <label class="form-field auth-field-wide"><span>Email admin</span><input type="email" id="reg-email" required autocomplete="email"></label>
         <label class="form-field"><span>Mot de passe</span><input type="password" id="reg-password" required minlength="8" autocomplete="new-password"></label>
         <label class="form-field"><span>Prénom</span><input type="text" id="reg-first" autocomplete="given-name"></label>
@@ -120,7 +120,7 @@
     <div id="auth-toast" class="auth-toast" hidden></div>
     <p class="auth-back-link"><a href="/">← Retour au site</a></p>
   </div>
-  <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
+  <script src="/crm/assets/js/city-autocomplete.js?v=2"></script>
   <script>
     const API = "/api";
     const AUTH_TOKEN_KEY = "veliora_token";

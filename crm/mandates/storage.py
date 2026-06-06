@@ -137,11 +137,15 @@ def upsert_agency_legal_profile(agency_id: str, data: dict) -> dict:
 
         ag = get_agency_settings(agency_id)
         cities = list(ag.get("target_cities") or [])
-        rest = [
-            c
-            for c in cities
-            if c.strip().lower() not in (city.lower(), prev_city.lower())
-        ]
+        # La nouvelle ville devient la ville principale (1ʳᵉ du territoire) et
+        # remplace l'ancienne. On retire : la nouvelle ville (évite un doublon),
+        # l'ancienne ville de la fiche, ET l'ancienne ville principale du territoire
+        # — sinon, si la fiche était désynchronisée du territoire, l'ancienne ville
+        # (ex. « Paris ») resterait dans le secteur et ses annonces continueraient
+        # de s'afficher malgré le changement vers « Cabourg ».
+        old_primary = cities[0].strip().lower() if cities else ""
+        drop = {city.lower(), prev_city.lower(), old_primary}
+        rest = [c for c in cities if c.strip().lower() not in drop]
         upsert_agency_settings(agency_id, {"target_cities": [city] + rest})
     return get_agency_legal_profile(agency_id)
 

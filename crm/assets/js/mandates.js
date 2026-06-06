@@ -628,7 +628,8 @@ async function openAgencyProfileModal(prefill) {
     const val = profile[f.key] ?? f.default ?? "";
     const type = f.type || "text";
     const req = f.required ? " required" : "";
-    return `<label class="form-field"><span>${esc(f.label)}</span><input type="${type}" name="${esc(f.key)}" value="${esc(String(val))}"${req}></label>`;
+    const cityAttr = f.key === "city" ? " data-city-autocomplete" : "";
+    return `<label class="form-field"><span>${esc(f.label)}</span><input type="${type}" name="${esc(f.key)}" value="${esc(String(val))}"${req}${cityAttr}></label>`;
   }).join("");
   modal?.classList.add("open");
 }
@@ -788,7 +789,7 @@ async function renderDossierDetail() {
     </div>
     <div class="mandate-dossier-fields">
       <label class="form-field"><span>Adresse</span><input type="text" id="dossier-address" value="${esc(d.property_address || "")}"></label>
-      <label class="form-field"><span>Ville</span><input type="text" id="dossier-city" value="${esc(d.city || "")}"></label>
+      <label class="form-field"><span>Ville</span><input type="text" id="dossier-city" value="${esc(d.city || "")}" data-city-autocomplete></label>
       <label class="form-field"><span>Surface (m²)</span><input type="number" id="dossier-surface" value="${d.surface ?? ""}"></label>
       <label class="form-field"><span>Prix (€)</span><input type="number" id="dossier-price" value="${d.price ?? ""}"></label>
     </div>
