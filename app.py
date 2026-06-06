@@ -3025,6 +3025,73 @@ def api_mandate_send(mandate_id):
     })
 
 
+@app.route("/api/mandates/<mandate_id>/esign", methods=["POST"])
+def api_mandate_esign(mandate_id):
+    """Lance la signature électronique du mandat (Yousign, opt-in)."""
+    from crm.mandates.esign import esign_enabled, send_for_signature
+    from crm.mandates.storage import get_seller_mandate, set_mandate_esign
+
+    agency_id = _aid()
+    if not esign_enabled():
+        return jsonify({
+            "ok": False,
+            "error": "Signature électronique non activée — configurez ESIGN_PROVIDER/YOUSIGN_API_KEY.",
+            "code": "esign_disabled",
+        }), 400
+    mandate = get_seller_mandate(mandate_id, agency_id)
+    if not mandate:
+        return jsonify({"ok": False, "error": "Mandat introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    fields = mandate.get("fields") or {}
+    signer_email = (
+        data.get("email") or mandate.get("recipient_email")
+        or fields.get("owner_email") or ""
+    ).strip()
+    signer_name = (
+        data.get("name")
+        or " ".join(p for p in (fields.get("owner_first_name"), fields.get("owner_last_name")) if p)
+    ).strip()
+    out = send_for_signature(mandate, signer_name, signer_email)
+    if not out.get("ok"):
+        return jsonify(out), 400
+    set_mandate_esign(
+        mandate_id,
+        agency_id,
+        esign_provider=out.get("provider"),
+        esign_request_id=out.get("request_id"),
+        esign_status=out.get("status") or "pending",
+        esign_url=out.get("signer_url"),
+        esign_signer_email=signer_email,
+    )
+    return jsonify({"ok": True, "mandate": get_seller_mandate(mandate_id, agency_id), "esign": out})
+
+
+@app.route("/api/webhooks/esign/yousign", methods=["POST"])
+def api_webhook_esign_yousign():
+    """Webhook Yousign — marque le mandat signé à la complétion (public, opt-in)."""
+    from crm.mandates.esign import parse_completion_webhook
+    from crm.mandates.storage import (
+        find_mandate_by_esign_request,
+        set_mandate_esign,
+        update_seller_mandate,
+    )
+
+    payload = request.get_json(silent=True) or {}
+    parsed = parse_completion_webhook(payload)
+    if not parsed:
+        return jsonify({"ok": True, "ignored": True})
+    found = find_mandate_by_esign_request(parsed["request_id"])
+    if not found:
+        return jsonify({"ok": True, "ignored": True})
+    mandate_id, agency_id = found
+    if parsed["completed"]:
+        set_mandate_esign(mandate_id, agency_id, esign_status="signed")
+        update_seller_mandate(mandate_id, agency_id, {"mark_signed": True})
+    else:
+        set_mandate_esign(mandate_id, agency_id, esign_status=parsed.get("status") or "pending")
+    return jsonify({"ok": True})
+
+
 @app.route("/api/mandates/<mandate_id>/dossiers", methods=["GET", "POST"])
 def api_mandate_dossiers(mandate_id):
     from crm.mandates.dossiers import (
