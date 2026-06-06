@@ -707,6 +707,87 @@ def _split_sql_script(script: str) -> list[str]:
     return [c.strip().rstrip(";").strip() for c in chunks if c.strip()]
 
 
+def secure_public_schema_rls() -> int:
+    """Active RLS + révoque l'accès API sur toutes les tables ``public``.
+
+    Pourquoi : Supabase expose le schéma ``public`` via l'API PostgREST aux
+    rôles ``anon`` / ``authenticated``. Une table sans RLS y est lisible /
+    modifiable par quiconque possède la clé anon → fuite de données. Le
+    dashboard les signale « Unrestricted » / « RLS Disabled in Public ».
+
+    Veliora se connecte en Postgres avec le rôle **propriétaire** (``postgres``)
+    qui *contourne* RLS (ownership ⇒ BYPASSRLS) : activer RLS n'a donc AUCUN
+    impact sur l'app, mais ferme la porte à l'API publique.
+
+    Idempotent, appelé à l'init : toute table — y compris créée plus tard par un
+    module (transactions, portail, IA…) — est verrouillée automatiquement, ce
+    qui évite la réapparition de tables « Critical ». Renvoie le nombre de
+    tables traitées.
+    """
+    if not is_postgres():
+        return 0
+    import psycopg
+    from psycopg import sql as _sql
+
+    url = database_url()
+    if not url:
+        return 0
+
+    secured = 0
+    try:
+        with psycopg.connect(url, **_postgres_driver_kwargs(url)) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+                )
+                rows = cur.fetchall()
+                tables = [
+                    (r["tablename"] if isinstance(r, dict) else r[0]) for r in rows
+                ]
+                for table in tables:
+                    cur.execute(
+                        _sql.SQL("ALTER TABLE public.{} ENABLE ROW LEVEL SECURITY").format(
+                            _sql.Identifier(table)
+                        )
+                    )
+                    secured += 1
+
+                # Révoque l'accès API (présent ET futur) pour les rôles Supabase.
+                # Sur un Postgres générique ces rôles peuvent ne pas exister.
+                for role in ("anon", "authenticated"):
+                    cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
+                    if cur.fetchone() is None:
+                        continue
+                    rid = _sql.Identifier(role)
+                    cur.execute(
+                        _sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {}").format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+                            "REVOKE ALL ON TABLES FROM {}"
+                        ).format(rid)
+                    )
+                    cur.execute(
+                        _sql.SQL(
+                            "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+                            "REVOKE ALL ON SEQUENCES FROM {}"
+                        ).format(rid)
+                    )
+            conn.commit()
+        logger.info("RLS Supabase appliqué — %d table(s) public verrouillée(s)", secured)
+    except Exception:
+        logger.warning(
+            "secure_public_schema_rls ignoré (droits insuffisants ?) — "
+            "appliquez scripts/supabase_enable_rls.sql manuellement",
+            exc_info=True,
+        )
+    return secured
+
+
 def init_postgres_schema() -> None:
     schema_path = Path(__file__).resolve().parent / "postgres_schema.sql"
     sql = schema_path.read_text(encoding="utf-8")

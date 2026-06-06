@@ -1,5 +1,5 @@
 /* Veliora CRM — PWA shell + données hors connexion + surveillance crawl */
-const CACHE = "veliora-crm-v9";
+const CACHE = "veliora-crm-v10";
 const API_CACHE = "veliora-crm-api-v3";
 const KEEP_CACHES = [CACHE, API_CACHE];
 const SHELL = [

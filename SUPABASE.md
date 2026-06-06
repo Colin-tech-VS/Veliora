@@ -59,6 +59,10 @@ Vérifier : `GET /api/health` → `"database": { "backend": "supabase", ... }`
 
 **L’app Veliora n’est pas impactée** : elle passe par le pooler avec le rôle propriétaire (`postgres`), qui contourne la RLS.
 
+**Auto-réparation (depuis cette version)** : au démarrage, l’app active RLS + verrouille l’API (`anon`/`authenticated`) sur **toutes** les tables `public`, y compris celles créées plus tard par un module (transactions, portail, IA…). Une table « RLS Disabled in Public » (Critical) qui réapparaît est donc re-sécurisée au prochain déploiement. Pilotable par `VELIORA_AUTO_RLS` (défaut activé). Pour corriger **immédiatement** sans redéployer, exécutez `scripts/supabase_enable_rls.sql` dans le SQL Editor.
+
+**« RLS Enabled No Policy »** (entrées sans badge *Critical*) = état **sain** ici, pas une faille : RLS activée + aucune policy ⇒ la table est fermée à l’API publique et n’est accessible qu’à l’app (rôle propriétaire). N’ajoutez **pas** de policy permissive `authenticated`/`anon` : cela ré-ouvrirait l’API. Seules les entrées **Critical** (RLS Disabled) doivent disparaître — ce que fait le script / l’auto-réparation.
+
 **Ne pas** mettre `SUPABASE_ANON_KEY` dans le front-end Veliora tant que vous n’avez pas de politiques RLS métier par agence.
 
 ---

@@ -23,10 +23,22 @@ BEGIN
   END LOOP;
 END $$;
 
--- 2) Retirer les droits par défaut sur les tables (anon / authenticated)
+-- 2) Retirer les droits sur les tables EXISTANTES (anon / authenticated)
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
 REVOKE ALL ON ALL ROUTINES IN SCHEMA public FROM anon, authenticated;
+
+-- 2 bis) Verrouiller aussi les FUTURES tables/séquences créées par l'app
+--        (rôle postgres) : plus aucune nouvelle table ne ré-ouvre l'API.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  REVOKE ALL ON TABLES FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+
+-- Note « RLS Enabled No Policy » (entrées sans badge Critical) : c'est l'état
+-- VOULU et sûr ici. Veliora n'utilise pas l'API PostgREST ; RLS activé + aucun
+-- policy = table fermée à anon/authenticated, accessible seulement à l'app
+-- (rôle propriétaire). N'AJOUTEZ PAS de policy permissive (ré-ouvrirait l'API).
 
 -- 3) Storage : si vous utilisez des buckets Supabase, activer RLS côté Storage
 --    (Dashboard → Storage → chaque bucket → Policies, ou laisser buckets vides).

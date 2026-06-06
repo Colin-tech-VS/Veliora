@@ -19,27 +19,59 @@
   <meta property="og:image" content="https://veliora.fr/vitrine/assets/img/veliora-og.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=66">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=67">
   <link rel="stylesheet" href="/crm/assets/css/transactions.css?v=2">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=41">
 </head>
 <body>
-  <!-- Écran de chargement : logo Veliora animé pendant l'amorçage de la webapp -->
+  <!-- Écran de chargement Veliora : logo animé, fond immobilier et messages
+       rassurants qui tournent pendant l'amorçage de la webapp. -->
   <div class="app-splash" id="app-splash" role="status" aria-label="Chargement de Veliora">
+    <div class="app-splash-bg" aria-hidden="true"></div>
+    <div class="app-splash-veil" aria-hidden="true"></div>
     <div class="app-splash-inner">
-      <img class="app-splash-logo" src="/crm/assets/img/veliora-logo.svg?v=1" alt="" width="84" height="84" decoding="async">
+      <img class="app-splash-logo" src="/crm/assets/img/veliora-logo.svg?v=1" alt="" width="92" height="92" decoding="async">
       <p class="app-splash-name">Veliora</p>
       <p class="app-splash-tag">La boîte à outils immobilière</p>
-      <span class="app-splash-bar" aria-hidden="true"></span>
+      <p class="app-splash-msg" id="app-splash-msg" aria-live="polite">Préparation de votre espace…</p>
+      <span class="app-splash-bar" aria-hidden="true"><i></i></span>
     </div>
   </div>
   <script>
-    /* Filet de sécurité : si l'app n'a pas masqué l'écran de chargement
-       (erreur réseau, etc.), on le retire après quelques secondes. */
-    setTimeout(function () {
-      var s = document.getElementById("app-splash");
-      if (s) s.classList.add("is-hidden");
-    }, 9000);
+    /* Messages tournants — rassurent l'utilisateur (ce que fait Veliora) et
+       tournent indépendamment de l'app, dès l'ouverture. */
+    (function () {
+      var splash = document.getElementById("app-splash");
+      var el = document.getElementById("app-splash-msg");
+      if (!splash || !el) return;
+      var MESSAGES = [
+        "Analyse du marché immobilier en cours…",
+        "On repère les mandats à signer en priorité",
+        "Veille des portails : leboncoin, SeLoger, PAP…",
+        "Score Mandat™ — qui appeler en premier",
+        "Vos prospects vendeurs, centralisés et priorisés",
+        "Estimation & données DVF prêtes à l'emploi",
+        "Préparation de votre CRM mandats…"
+      ];
+      var i = 0;
+      var timer = setInterval(function () {
+        if (splash.classList.contains("is-hidden")) {
+          clearInterval(timer);
+          return;
+        }
+        i = (i + 1) % MESSAGES.length;
+        el.classList.add("is-out");
+        setTimeout(function () {
+          el.textContent = MESSAGES[i];
+          el.classList.remove("is-out");
+        }, 320);
+      }, 2400);
+      /* Filet de sécurité : retire l'écran si l'app ne l'a pas masqué. */
+      setTimeout(function () {
+        splash.classList.add("is-hidden");
+        clearInterval(timer);
+      }, 12000);
+    })();
   </script>
   <div class="sidebar-overlay" id="sidebar-overlay"></div>
   <div class="app">
