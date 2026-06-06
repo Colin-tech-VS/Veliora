@@ -27,8 +27,12 @@ def lead_visible_to_agency(lead: dict, agency_id: str) -> bool:
     Le filtre territoire s'applique à TOUS les leads — pool partagé comme fiches
     rattachées à l'agence (claimées après crawl d'un portail national). Sans ce
     filtre, une annonce hors secteur (ex. Lorient) crawlée via un portail national
-    resterait visible pour une agence de Chaville. Si aucun secteur n'est encore
-    configuré, tout reste visible (onboarding).
+    resterait visible pour une agence de Chaville.
+
+    - Aucun secteur configuré ⇒ tout reste visible (onboarding, vue nationale).
+    - Secteur configuré ⇒ filtre STRICT : seules les fiches du secteur s'affichent.
+      Une fiche sans localisation connue (ni ville, ni CP, ni secteur) est masquée
+      tant qu'une ville est définie — on n'affiche QUE le secteur de l'agence.
     """
     if not lead:
         return False
@@ -38,16 +42,6 @@ def lead_visible_to_agency(lead: dict, agency_id: str) -> bool:
         return False
     cities = territory_cities_for_agency(agency_id)
     if not cities:
-        return True
-    # Tolérant : un lead dont la localisation est inconnue (ni ville, ni CP, ni
-    # adresse exploitable) reste visible — on ne masque que les fiches d'une ville
-    # CONNUE hors secteur (ex. Lorient pour une agence de Chaville).
-    has_location = bool(
-        (lead.get("city") or "").strip()
-        or (lead.get("postcode") or "").strip()
-        or (lead.get("sector") or "").strip()
-    )
-    if not has_location:
         return True
     return _lead_matches_cities(lead, cities)
 
