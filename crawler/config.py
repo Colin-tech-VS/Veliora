@@ -21,10 +21,14 @@ CITY_DISCOVERY_STOP_LINKS = int(os.getenv("CITY_DISCOVERY_STOP_LINKS", "35"))
 # Plafond annonces traitées par source quand une ville est ciblée (0 = illimité)
 CITY_CRAWL_MAX_LISTINGS = int(os.getenv("CITY_CRAWL_MAX_LISTINGS", "75"))
 
-# Scalingo / PaaS : pas de Chrome embarqué par défaut
+# Scalingo / PaaS : le navigateur Chromium de Playwright voyage désormais avec le
+# slug (cf. bin/post_compile + libs système dans Aptfile), donc on l'active par
+# défaut — sans quoi les portails anti-bot (LBC, PAP, SeLoger, Logic-Immo,
+# Bien'ici) resteraient classés « Bientôt disponible » et hors crawl. Forçable via
+# CRAWL_PLAYWRIGHT_ENABLED / CRAWL_ANTIBOT_PORTALS_ENABLED si besoin.
 IS_SCALINGO = bool(os.getenv("SCALINGO_APP", "").strip())
 if IS_SCALINGO:
-    os.environ.setdefault("CRAWL_PLAYWRIGHT_ENABLED", "false")
+    os.environ.setdefault("CRAWL_PLAYWRIGHT_ENABLED", "true")
     os.environ.setdefault("AUTO_WARMUP_ANTIBOT", "false")
     os.environ.setdefault("DOMAIN_WARMUP", "false")
 
