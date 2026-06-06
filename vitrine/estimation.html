@@ -2,6 +2,21 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
+  <script>
+    /* Affiche la vitrine immédiatement et garantit qu'aucune section ne reste
+       masquée : on active le mode animé (.js) puis, si le script de révélation
+       n'a pas tourné peu après le chargement, on rend tout visible de force. */
+    (function () {
+      document.documentElement.classList.add("js");
+      window.addEventListener("load", function () {
+        setTimeout(function () {
+          if (window.__vitrineRevealReady) return;
+          document.querySelectorAll(".v-reveal, .v-reveal-group, [data-reveal-delay]")
+            .forEach(function (el) { el.classList.add("is-visible"); });
+        }, 1000);
+      });
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Estimez gratuitement la valeur de votre bien en vente — données DVF officielles, fourchette indicative en quelques minutes. Veliora.">
   <meta name="robots" content="index, follow">
@@ -20,7 +35,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap"></noscript>
   <link rel="stylesheet" href="/crm/assets/css/veliora-brand.css?v=3">
-  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=41">
+  <link rel="stylesheet" href="/vitrine/assets/css/vitrine.css?v=50">
   <link rel="stylesheet" href="/vitrine/assets/css/estimation-lp.css?v=4">
 </head>
 <body class="vitrine vitrine-estimation">
@@ -250,7 +265,7 @@
 
   <script src="/vitrine/assets/js/vitrine-ui.js?v=1" defer></script>
   <script src="/vitrine/assets/js/vitrine-nav.js?v=1" defer></script>
-  <script src="/vitrine/assets/js/vitrine.js?v=35" defer></script>
+  <script src="/vitrine/assets/js/vitrine.js?v=40" defer></script>
   <script src="/vitrine/assets/js/estimator-public.js?v=3" defer></script>
   <script src="/vitrine/assets/js/estimation-lp.js?v=5" defer></script>
 </body>
