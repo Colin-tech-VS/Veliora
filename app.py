@@ -1750,6 +1750,42 @@ def api_roi_stats():
     })
 
 
+@app.route("/api/notifications/prefs", methods=["GET", "POST"])
+def api_notification_prefs():
+    """Préférences d'email : briefing quotidien + alertes opportunités."""
+    from crm.notifications.service import get_notification_prefs, set_notification_prefs
+
+    agency_id = _aid()
+    if request.method == "GET":
+        return jsonify({"ok": True, "prefs": get_notification_prefs(agency_id)})
+    data = request.get_json(silent=True) or {}
+    prefs = set_notification_prefs(
+        agency_id,
+        **{k: data[k] for k in ("daily_briefing", "alerts", "min_score") if k in data},
+    )
+    return jsonify({"ok": True, "prefs": prefs})
+
+
+@app.route("/api/notifications/test", methods=["POST"])
+def api_notification_test():
+    """Envoie immédiatement un briefing (et/ou des alertes) pour vérifier l'email."""
+    from crm.email.service import email_enabled
+    from crm.notifications.service import send_alert_digest, send_daily_briefing
+
+    agency_id = _aid()
+    if not email_enabled():
+        return jsonify({
+            "ok": False,
+            "error": "SMTP non configuré — renseignez SMTP_HOST/SMTP_FROM pour activer l'envoi.",
+        }), 400
+    kind = ((request.get_json(silent=True) or {}).get("kind") or "briefing").strip().lower()
+    if kind == "alerts":
+        n = send_alert_digest(agency_id, force=True)
+        return jsonify({"ok": True, "sent": "alerts", "opportunities": n})
+    sent = send_daily_briefing(agency_id, force=True)
+    return jsonify({"ok": sent, "sent": "briefing"})
+
+
 @app.route("/api/sources", methods=["GET", "POST"])
 def api_sources():
     if request.method == "POST":
