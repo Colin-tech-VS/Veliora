@@ -3071,6 +3071,107 @@ def api_mandate_dossier_clients(dossier_id):
     return jsonify({"ok": True, "dossier": dossier})
 
 
+def _dossier_mandate(dossier_id, agency_id):
+    """Retourne (dossier, mandate) ou (None, None) si le dossier est introuvable."""
+    from crm.mandates.dossiers import get_mandate_dossier
+    from crm.mandates.storage import get_seller_mandate
+
+    dossier = get_mandate_dossier(dossier_id, agency_id)
+    if not dossier:
+        return None, None
+    mandate = get_seller_mandate(dossier.get("mandate_id"), agency_id)
+    return dossier, mandate
+
+
+@app.route("/api/mandates/dossiers/<dossier_id>/documents", methods=["GET", "POST"])
+def api_mandate_dossier_documents(dossier_id):
+    from crm.mandates.dossiers import add_dossier_document, get_dossier_documents
+
+    agency_id = _aid()
+    dossier, mandate = _dossier_mandate(dossier_id, agency_id)
+    if not dossier:
+        return jsonify({"error": "Dossier introuvable"}), 404
+
+    if request.method == "GET":
+        return jsonify({"ok": True, "documents": get_dossier_documents(dossier_id, agency_id, mandate)})
+
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"error": "Fichier requis"}), 400
+    raw = upload.read()
+    if not raw:
+        return jsonify({"error": "Fichier vide"}), 400
+    folder_key = (request.form.get("folder_key") or "").strip()
+    folder_name = (request.form.get("folder_name") or "").strip()
+    try:
+        add_dossier_document(
+            dossier_id, agency_id, folder_key, upload.filename, raw, folder_name=folder_name
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "documents": get_dossier_documents(dossier_id, agency_id, mandate)})
+
+
+@app.route(
+    "/api/mandates/dossiers/<dossier_id>/documents/<folder_key>/<file_id>",
+    methods=["DELETE"],
+)
+def api_mandate_dossier_document_delete(dossier_id, folder_key, file_id):
+    from crm.mandates.dossiers import remove_dossier_document
+
+    agency_id = _aid()
+    dossier, mandate = _dossier_mandate(dossier_id, agency_id)
+    if not dossier:
+        return jsonify({"error": "Dossier introuvable"}), 404
+    documents = remove_dossier_document(dossier_id, agency_id, folder_key, file_id)
+    return jsonify({"ok": True, "documents": documents})
+
+
+@app.route("/api/mandates/dossiers/<dossier_id>/folders", methods=["POST"])
+def api_mandate_dossier_folder_create(dossier_id):
+    from crm.mandates.dossiers import create_dossier_folder
+
+    agency_id = _aid()
+    dossier, mandate = _dossier_mandate(dossier_id, agency_id)
+    if not dossier:
+        return jsonify({"error": "Dossier introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        documents = create_dossier_folder(dossier_id, agency_id, data.get("name") or "")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "documents": documents})
+
+
+@app.route("/api/mandates/dossiers/<dossier_id>/folders/<folder_key>", methods=["DELETE"])
+def api_mandate_dossier_folder_delete(dossier_id, folder_key):
+    from crm.mandates.dossiers import delete_dossier_folder
+
+    agency_id = _aid()
+    dossier, mandate = _dossier_mandate(dossier_id, agency_id)
+    if not dossier:
+        return jsonify({"error": "Dossier introuvable"}), 404
+    documents = delete_dossier_folder(dossier_id, agency_id, folder_key)
+    return jsonify({"ok": True, "documents": documents})
+
+
+@app.route("/api/mandates/dossier-docs/<agency_id>/<dossier_id>/<filename>")
+def api_mandate_dossier_document_file(agency_id, dossier_id, filename):
+    from crm.mandates.dossiers import (
+        document_original_name,
+        resolve_dossier_document_path,
+    )
+
+    if agency_id != _aid():
+        return jsonify({"error": "Accès refusé"}), 403
+    path = resolve_dossier_document_path(agency_id, dossier_id, filename)
+    if not path:
+        abort(404)
+    download_name = document_original_name(agency_id, dossier_id, filename)
+    as_attachment = request.args.get("download") == "1"
+    return send_file(path, as_attachment=as_attachment, download_name=download_name)
+
+
 @app.route("/api/mandates/dossier-files/<agency_id>/<dossier_id>/<filename>")
 def api_mandate_dossier_file(agency_id, dossier_id, filename):
     from crm.mandates.dossiers import resolve_dossier_photo_path
