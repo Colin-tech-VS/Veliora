@@ -2182,6 +2182,55 @@ def api_public_vitrine_estimate_contact():
     return jsonify(out), status
 
 
+@app.route("/embed/estimation")
+def embed_estimation_page():
+    """Page d'estimation intégrable en iframe (widget marque blanche agence)."""
+    if VITRINE_ESTIMATION_HTML.is_file():
+        resp = _serve_html_file(VITRINE_ESTIMATION_HTML)
+        try:
+            resp.headers.pop("X-Frame-Options", None)
+            resp.headers["Content-Security-Policy"] = "frame-ancestors *"
+        except Exception:
+            pass
+        return resp
+    return redirect("/estimation")
+
+
+@app.route("/embed/estimation.js")
+def embed_estimation_loader():
+    """Snippet JS à coller sur le site de l'agence : injecte l'iframe d'estimation.
+
+    Usage : <script src="https://veliora.fr/embed/estimation.js" data-agency="slug"></script>
+    """
+    from crm.config import SITE_URL
+
+    base = (SITE_URL or request.host_url).rstrip("/")
+    js = """(function(){
+  var s = document.currentScript;
+  if (!s) return;
+  var agency = s.getAttribute('data-agency') || '';
+  var height = s.getAttribute('data-height') || '780';
+  var src = '__BASE__/embed/estimation' + (agency ? ('?agency=' + encodeURIComponent(agency)) : '');
+  var iframe = document.createElement('iframe');
+  iframe.src = src;
+  iframe.title = 'Estimation immobilière';
+  iframe.loading = 'lazy';
+  iframe.style.width = '100%';
+  iframe.style.maxWidth = '720px';
+  iframe.style.border = '0';
+  iframe.style.height = height + 'px';
+  s.parentNode.insertBefore(iframe, s);
+  window.addEventListener('message', function(e){
+    if (e && e.data && e.data.veliora_embed_height) {
+      iframe.style.height = e.data.veliora_embed_height + 'px';
+    }
+  });
+})();""".replace("__BASE__", base)
+    resp = Response(js, mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/api/public/portal/listings", methods=["GET", "POST"])
 def api_public_portal_listings():
     if request.method == "POST":
