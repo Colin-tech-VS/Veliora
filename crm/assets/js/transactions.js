@@ -438,7 +438,7 @@
             <label class="form-field"><span>Prix €</span><input id="dz-price" type="number" value="${escAttr(p.price ?? "")}"></label>
             <label class="form-field form-field-wide"><span>Adresse</span><input id="dz-address" value="${escAttr(p.address)}"></label>
             <label class="form-field"><span>Code postal</span><input id="dz-postcode" value="${escAttr(p.postcode)}"></label>
-            <label class="form-field"><span>Ville</span><input id="dz-city" value="${escAttr(p.city)}"></label>
+            <label class="form-field"><span>Ville</span><input id="dz-city" value="${escAttr(p.city)}" data-city-autocomplete></label>
           </div>
         </fieldset>
         <div class="tx-dossier-cols">

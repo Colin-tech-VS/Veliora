@@ -7186,7 +7186,7 @@ function estimatorCriteriaGridHtml(lead, prefix, cached) {
         </label>
         <label class="drawer-estimator-field">
           <span>Ville</span>
-          <input type="text" id="${prefix}-city" value="${escapeAttr(lead.city || "")}">
+          <input type="text" id="${prefix}-city" value="${escapeAttr(lead.city || "")}" data-city-autocomplete>
         </label>
         <label class="drawer-estimator-field">
           <span>CP</span>

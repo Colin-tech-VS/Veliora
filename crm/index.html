@@ -1326,7 +1326,7 @@
       <form id="radar-settings-form">
         <label class="form-field">
           <span>Villes</span>
-          <input type="text" id="radar-target-cities" placeholder="Lorient, Lyon, Villeurbanne…" autocomplete="off">
+          <input type="text" id="radar-target-cities" placeholder="Lorient, Lyon, Villeurbanne…" autocomplete="off" data-city-autocomplete data-city-multi="1">
         </label>
         <label class="form-field">
           <span>Objectif mandats / mois</span>
@@ -1484,7 +1484,7 @@
 
           <label class="form-field"><span>Budget min (€)</span><input type="number" id="client-budget-min" min="0"></label>
           <label class="form-field"><span>Budget max (€)</span><input type="number" id="client-budget-max" min="0"></label>
-          <label class="form-field client-editor-cities"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Lyon, 69003 ou 69 (département)"></label>
+          <label class="form-field client-editor-cities"><span>Villes recherchées</span><input type="text" id="client-cities" placeholder="Lyon, 69003 ou 69 (département)" data-city-autocomplete data-city-multi="1"></label>
         </div>
         <label class="form-field"><span>Détails / contraintes</span><textarea id="client-notes" rows="2" placeholder="Ex: proche gare, balcon, étage élevé, cave..."></textarea></label>
         <div class="client-editor-actions">
@@ -1562,7 +1562,7 @@
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
-  <script src="/crm/assets/js/city-autocomplete.js?v=1"></script>
+  <script src="/crm/assets/js/city-autocomplete.js?v=2"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
   <script src="/crm/assets/js/portal.js?v=1"></script>
   <script src="/crm/assets/js/transactions.js?v=3"></script>

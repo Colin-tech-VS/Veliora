@@ -4136,4 +4136,10 @@ def upsert_agency_settings(agency_id: str, data: dict) -> dict:
     if primary and data.get("target_cities") is not None:
         _sync_legal_profile_city(agency_id, primary)
     invalidate_agency_settings_cache(agency_id)
+    # Le territoire (villes cibles) filtre les leads visibles : on purge l'instantané
+    # pour que le briefing radar et toute vue en cache reflètent la nouvelle ville
+    # immédiatement (sinon d'anciennes annonces hors secteur restent affichées le
+    # temps du TTL).
+    if data.get("target_cities") is not None:
+        invalidate_leads_snapshot(agency_id)
     return get_agency_settings(agency_id)
