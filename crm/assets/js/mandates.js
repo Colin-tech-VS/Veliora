@@ -794,6 +794,14 @@ async function renderDossierDetail() {
       <div class="mandate-photo-grid">${photosHtml || '<p class="form-hint">Aucune photo</p>'}</div>
     </div>
     <div class="mandate-dossier-section">
+      <div class="dossier-docs-head">
+        <h3>Pièces &amp; documents du dossier</h3>
+        <button type="button" class="btn btn-secondary btn-sm" id="dossier-folder-new">+ Nouveau dossier</button>
+      </div>
+      <p class="form-hint">Espace type Drive : les pièces obligatoires sont créées automatiquement selon le profil du vendeur. Importez chaque document par glisser-déposer.</p>
+      <div id="dossier-documents" class="dossier-docs"><p class="form-hint">Chargement des pièces…</p></div>
+    </div>
+    <div class="mandate-dossier-section">
       <h3>Clients à qui présenter le bien</h3>
       <div class="mandate-client-link-row">
         <select id="dossier-client-pick" class="mandate-select">
@@ -839,6 +847,208 @@ async function renderDossierDetail() {
     dropzone.classList.remove("dragover");
     uploadDossierPhotos(d.id, e.dataTransfer?.files);
   });
+
+  panel.querySelector("#dossier-folder-new")?.addEventListener("click", () => createDossierFolder(d.id));
+  loadDossierDocuments(d.id);
+}
+
+// ── Pièces & documents (espace Drive automatisé) ────────────────────────────
+
+async function loadDossierDocuments(dossierId) {
+  const root = document.getElementById("dossier-documents");
+  if (!root) return;
+  try {
+    const data = await mandateDeps.api(`/mandates/dossiers/${dossierId}/documents`);
+    renderDossierDocuments(dossierId, data.documents || {});
+  } catch (err) {
+    root.innerHTML = `<p class="form-hint">${mandateDeps.escapeHtml(err.message)}</p>`;
+  }
+}
+
+function fileIcon(ext) {
+  const e = (ext || "").toLowerCase();
+  if (["pdf"].includes(e)) return "📕";
+  if (["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"].includes(e)) return "🖼️";
+  if (["doc", "docx", "odt", "rtf", "txt"].includes(e)) return "📄";
+  if (["xls", "xlsx", "ods", "csv"].includes(e)) return "📊";
+  if (["zip"].includes(e)) return "🗜️";
+  return "📎";
+}
+
+function fmtBytes(n) {
+  if (!n) return "";
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+  return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+function renderDossierDocuments(dossierId, docs) {
+  const root = document.getElementById("dossier-documents");
+  if (!root) return;
+  const esc = mandateDeps.escapeHtml;
+  const folders = docs.folders || [];
+  const total = docs.required_total || 0;
+  const done = docs.required_done || 0;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+
+  const profileHtml = docs.profile
+    ? `<div class="dossier-docs-profile">
+         <span class="dossier-docs-profile-label">Profil détecté</span>
+         <strong>${esc(docs.profile.label || "")}</strong>
+       </div>`
+    : "";
+
+  const progressHtml = total
+    ? `<div class="dossier-docs-progress">
+         <div class="dossier-docs-progress-bar"><span style="width:${pct}%"></span></div>
+         <span class="dossier-docs-progress-label">${done}/${total} pièces obligatoires fournies</span>
+       </div>`
+    : "";
+
+  const foldersHtml = folders
+    .map((f) => {
+      const filesHtml = (f.files || [])
+        .map(
+          (file) => `<li class="dossier-doc-file">
+            <a href="${esc(file.url)}" target="_blank" rel="noopener" class="dossier-doc-file-link">
+              <span class="dossier-doc-file-icon">${fileIcon(file.ext)}</span>
+              <span class="dossier-doc-file-name">${esc(file.original_name || "Document")}</span>
+              <span class="dossier-doc-file-size">${esc(fmtBytes(file.size))}</span>
+            </a>
+            <button type="button" class="dossier-doc-file-del" title="Supprimer"
+              data-doc-del data-folder="${esc(f.key)}" data-file="${esc(file.id)}">×</button>
+          </li>`,
+        )
+        .join("");
+      const badge = f.required
+        ? (f.complete
+            ? `<span class="dossier-doc-badge ok">✓ Fournie</span>`
+            : `<span class="dossier-doc-badge req">Obligatoire</span>`)
+        : (f.custom
+            ? `<span class="dossier-doc-badge custom">Perso</span>`
+            : `<span class="dossier-doc-badge opt">Facultative</span>`);
+      const delFolder = f.custom
+        ? `<button type="button" class="dossier-doc-folder-del" title="Supprimer le dossier" data-folder-del data-folder="${esc(f.key)}">🗑</button>`
+        : "";
+      return `<article class="dossier-doc-folder${f.complete ? " complete" : ""}" data-folder-card="${esc(f.key)}">
+        <header class="dossier-doc-folder-head">
+          <div class="dossier-doc-folder-title">
+            <span class="dossier-doc-folder-icon">📁</span>
+            <div>
+              <strong>${esc(f.name)}</strong>
+              ${f.description ? `<p class="dossier-doc-folder-desc">${esc(f.description)}</p>` : ""}
+            </div>
+          </div>
+          <div class="dossier-doc-folder-actions">${badge}${delFolder}</div>
+        </header>
+        <ul class="dossier-doc-files">${filesHtml || '<li class="dossier-doc-empty">Aucune pièce</li>'}</ul>
+        <label class="dossier-doc-drop" data-folder-drop="${esc(f.key)}" data-folder-name="${esc(f.name)}">
+          <input type="file" hidden multiple data-folder-input="${esc(f.key)}">
+          <span>+ Importer un document</span>
+        </label>
+      </article>`;
+    })
+    .join("");
+
+  root.innerHTML = `
+    <div class="dossier-docs-bar">${profileHtml}${progressHtml}</div>
+    <div class="dossier-docs-grid">${foldersHtml}</div>
+    <details class="dossier-docs-mentions">
+      <summary>Mentions obligatoires du mandat écrit</summary>
+      <ul>${(docs.mandate_mentions || []).map((m) => `<li>${esc(m)}</li>`).join("")}</ul>
+    </details>`;
+
+  root.querySelectorAll("[data-folder-input]").forEach((input) => {
+    input.addEventListener("change", () =>
+      uploadDossierDocuments(dossierId, input.dataset.folderInput,
+        input.closest("[data-folder-drop]")?.dataset.folderName || "", input.files),
+    );
+  });
+  root.querySelectorAll("[data-folder-drop]").forEach((drop) => {
+    const input = drop.querySelector("input[type=file]");
+    drop.addEventListener("click", (e) => {
+      if (e.target.tagName !== "INPUT") input?.click();
+    });
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("dragover");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("dragover");
+      uploadDossierDocuments(dossierId, drop.dataset.folderDrop, drop.dataset.folderName, e.dataTransfer?.files);
+    });
+  });
+  root.querySelectorAll("[data-doc-del]").forEach((btn) => {
+    btn.addEventListener("click", () =>
+      removeDossierDocument(dossierId, btn.dataset.folder, btn.dataset.file),
+    );
+  });
+  root.querySelectorAll("[data-folder-del]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteDossierFolder(dossierId, btn.dataset.folder));
+  });
+}
+
+async function uploadDossierDocuments(dossierId, folderKey, folderName, fileList) {
+  if (!fileList?.length) return;
+  let ok = 0;
+  for (const file of fileList) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("folder_key", folderKey);
+    fd.append("folder_name", folderName || "");
+    try {
+      await apiUpload(`/mandates/dossiers/${dossierId}/documents`, fd);
+      ok += 1;
+    } catch (err) {
+      mandateDeps.showToast(`${file.name} : ${err.message}`, "error");
+    }
+  }
+  if (ok) {
+    await loadDossierDocuments(dossierId);
+    mandateDeps.showToast(`${ok} document(s) importé(s)`, "success");
+  }
+}
+
+async function removeDossierDocument(dossierId, folderKey, fileId) {
+  try {
+    await mandateDeps.api(
+      `/mandates/dossiers/${dossierId}/documents/${encodeURIComponent(folderKey)}/${fileId}`,
+      { method: "DELETE" },
+    );
+    await loadDossierDocuments(dossierId);
+  } catch (err) {
+    mandateDeps.showToast(err.message, "error");
+  }
+}
+
+async function createDossierFolder(dossierId) {
+  const name = prompt("Nom du nouveau dossier (ex. : Servitudes, Travaux…)");
+  if (!name?.trim()) return;
+  try {
+    await mandateDeps.api(`/mandates/dossiers/${dossierId}/folders`, {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    await loadDossierDocuments(dossierId);
+    mandateDeps.showToast("Dossier créé", "success");
+  } catch (err) {
+    mandateDeps.showToast(err.message, "error");
+  }
+}
+
+async function deleteDossierFolder(dossierId, folderKey) {
+  if (!confirm("Supprimer ce dossier et les pièces qu'il contient ?")) return;
+  try {
+    await mandateDeps.api(
+      `/mandates/dossiers/${dossierId}/folders/${encodeURIComponent(folderKey)}`,
+      { method: "DELETE" },
+    );
+    await loadDossierDocuments(dossierId);
+  } catch (err) {
+    mandateDeps.showToast(err.message, "error");
+  }
 }
 
 async function createMandateDossier(fromMandate) {

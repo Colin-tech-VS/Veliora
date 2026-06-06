@@ -6903,6 +6903,222 @@ body:has(.crawl-dock.open) .script-dock.open {
   font-size: 0.88rem;
 }
 
+/* Pièces & documents du dossier (espace type Drive automatisé) */
+.dossier-docs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dossier-docs-head h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.dossier-docs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin: 0.5rem 0 0.85rem;
+}
+.dossier-docs-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+}
+.dossier-docs-profile-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.dossier-docs-progress {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.dossier-docs-progress-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.dossier-docs-progress-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent, var(--v-navy));
+  transition: width 0.25s;
+}
+.dossier-docs-progress-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.dossier-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+.dossier-doc-folder {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.75rem;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dossier-doc-folder.complete {
+  border-color: var(--accent, var(--v-navy));
+}
+.dossier-doc-folder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dossier-doc-folder-title {
+  display: flex;
+  gap: 0.45rem;
+  font-size: 0.88rem;
+}
+.dossier-doc-folder-icon {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+.dossier-doc-folder-desc {
+  margin: 0.15rem 0 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+.dossier-doc-folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+.dossier-doc-badge {
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.dossier-doc-badge.req {
+  background: rgba(190, 110, 40, 0.14);
+  color: #b4621f;
+}
+.dossier-doc-badge.ok {
+  background: rgba(45, 140, 90, 0.16);
+  color: #1f7a4d;
+}
+.dossier-doc-badge.opt,
+.dossier-doc-badge.custom {
+  background: var(--border);
+  color: var(--text-muted);
+}
+.dossier-doc-folder-del {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+.dossier-doc-folder-del:hover {
+  opacity: 1;
+}
+.dossier-doc-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.dossier-doc-file {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.dossier-doc-file-link {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.8rem;
+}
+.dossier-doc-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.dossier-doc-file-size {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.dossier-doc-file-del {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+.dossier-doc-file-del:hover {
+  color: #c0392b;
+}
+.dossier-doc-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.dossier-doc-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dossier-doc-drop.dragover,
+.dossier-doc-drop:hover {
+  border-color: var(--accent, var(--v-navy));
+  background: var(--accent-soft, rgba(154, 115, 73, 0.06));
+}
+.dossier-docs-mentions {
+  margin-top: 0.85rem;
+  font-size: 0.82rem;
+}
+.dossier-docs-mentions summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.dossier-docs-mentions ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 .agency-profile-form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
