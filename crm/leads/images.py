@@ -332,9 +332,16 @@ def sync_lead_gallery_from_urls(
     saved = 0
     rows: list[tuple] = []
     _clear_gallery_files(agency_id, lead_id)
+    try:
+        from crm.leads.watermark import is_probably_logo
+    except Exception:
+        is_probably_logo = lambda _b: False  # noqa: E731
     for url in urls:
         raw = _download_bytes(url, referer=referer or url)
         if not raw:
+            continue
+        # Écarte les logos/bannières évidents (jamais une vraie photo de bien).
+        if is_probably_logo(raw):
             continue
         try:
             webp, removed = process_image_for_storage(raw)

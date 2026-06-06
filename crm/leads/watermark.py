@@ -5,6 +5,9 @@ Le retrait passe par un service d'inpainting externe, choisi via la variable
 
 - ``""`` / ``none``  → désactivé, l'image est renvoyée telle quelle (la galerie
   fonctionne quand même, simplement sans nettoyage).
+- ``heuristic``      → 100% local & gratuit (Pillow) : rogne la bande où se
+  trouvent la plupart des marquages portails (bas / haut), sans IA ni réseau.
+  Imparfait (ne retire pas un logo posé au centre) mais immédiat et sans clé.
 - ``http``           → POST multipart générique vers ``WATERMARK_AI_URL`` ; la
   réponse doit être l'image nettoyée (``Content-Type: image/*``).
 - ``replicate``      → API Replicate (``WATERMARK_AI_MODEL`` = version du modèle),
@@ -17,6 +20,7 @@ l'image d'origine pour ne jamais bloquer le crawl ni l'affichage.
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import os
 import time
@@ -47,6 +51,74 @@ def _looks_like_image(content_type: str | None, body: bytes) -> bool:
         b"RIFF",
         b"GIF8",
     )
+
+
+def _env_fraction(name: str, default: float) -> float:
+    try:
+        v = float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return min(max(v, 0.0), 0.4)
+
+
+def is_probably_logo(raw: bytes) -> bool:
+    """Heuristique conservatrice : True si l'image est vraisemblablement un logo
+    ou une bannière (à exclure de la galerie). Volontairement stricte pour ne
+    jamais écarter une vraie photo de bien."""
+    if not raw:
+        return True
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    try:
+        img = Image.open(io.BytesIO(raw))
+        w, h = img.size
+        # Très petite image → pictogramme.
+        if max(w, h) < 150:
+            return True
+        # Format extrême (bannière / barre).
+        ratio = max(w, h) / max(1, min(w, h))
+        if ratio > 4:
+            return True
+        # PNG très majoritairement transparent → logo détouré.
+        if img.mode in ("RGBA", "LA"):
+            alpha = img.getchannel("A")
+            hist = alpha.histogram()
+            transparent = sum(hist[:16])
+            total = w * h
+            if total and transparent / total > 0.5:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _remove_heuristic(raw: bytes) -> bytes | None:
+    """Rogne la bande haute/basse où vivent la plupart des marquages portails."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    bottom = _env_fraction("WATERMARK_CROP_BOTTOM", 0.07)
+    top = _env_fraction("WATERMARK_CROP_TOP", 0.0)
+    if bottom <= 0 and top <= 0:
+        return None
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = img.convert("RGB")
+        w, h = img.size
+        top_px = int(h * top)
+        bottom_px = int(h * bottom)
+        if h - top_px - bottom_px < h * 0.5:
+            return None  # garde-fou : ne jamais retirer plus de la moitié
+        cropped = img.crop((0, top_px, w, h - bottom_px))
+        out = io.BytesIO()
+        cropped.save(out, format="JPEG", quality=92)
+        return out.getvalue()
+    except Exception:
+        logger.exception("heuristic crop")
+        return None
 
 
 def _remove_http(raw: bytes) -> bytes | None:
@@ -131,7 +203,9 @@ def remove_watermark(raw: bytes) -> tuple[bytes, bool]:
     if provider in ("", "none", "off", "0", "false"):
         return raw, False
     try:
-        if provider == "http":
+        if provider == "heuristic":
+            cleaned = _remove_heuristic(raw)
+        elif provider == "http":
             cleaned = _remove_http(raw)
         elif provider == "replicate":
             cleaned = _remove_replicate(raw)
