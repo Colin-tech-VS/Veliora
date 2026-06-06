@@ -1750,6 +1750,42 @@ def api_roi_stats():
     })
 
 
+@app.route("/api/notifications/prefs", methods=["GET", "POST"])
+def api_notification_prefs():
+    """Préférences d'email : briefing quotidien + alertes opportunités."""
+    from crm.notifications.service import get_notification_prefs, set_notification_prefs
+
+    agency_id = _aid()
+    if request.method == "GET":
+        return jsonify({"ok": True, "prefs": get_notification_prefs(agency_id)})
+    data = request.get_json(silent=True) or {}
+    prefs = set_notification_prefs(
+        agency_id,
+        **{k: data[k] for k in ("daily_briefing", "alerts", "min_score") if k in data},
+    )
+    return jsonify({"ok": True, "prefs": prefs})
+
+
+@app.route("/api/notifications/test", methods=["POST"])
+def api_notification_test():
+    """Envoie immédiatement un briefing (et/ou des alertes) pour vérifier l'email."""
+    from crm.email.service import email_enabled
+    from crm.notifications.service import send_alert_digest, send_daily_briefing
+
+    agency_id = _aid()
+    if not email_enabled():
+        return jsonify({
+            "ok": False,
+            "error": "SMTP non configuré — renseignez SMTP_HOST/SMTP_FROM pour activer l'envoi.",
+        }), 400
+    kind = ((request.get_json(silent=True) or {}).get("kind") or "briefing").strip().lower()
+    if kind == "alerts":
+        n = send_alert_digest(agency_id, force=True)
+        return jsonify({"ok": True, "sent": "alerts", "opportunities": n})
+    sent = send_daily_briefing(agency_id, force=True)
+    return jsonify({"ok": sent, "sent": "briefing"})
+
+
 @app.route("/api/sources", methods=["GET", "POST"])
 def api_sources():
     if request.method == "POST":
@@ -2144,6 +2180,55 @@ def api_public_vitrine_estimate_contact():
 
     status = 200 if out.get("ok") else 400
     return jsonify(out), status
+
+
+@app.route("/embed/estimation")
+def embed_estimation_page():
+    """Page d'estimation intégrable en iframe (widget marque blanche agence)."""
+    if VITRINE_ESTIMATION_HTML.is_file():
+        resp = _serve_html_file(VITRINE_ESTIMATION_HTML)
+        try:
+            resp.headers.pop("X-Frame-Options", None)
+            resp.headers["Content-Security-Policy"] = "frame-ancestors *"
+        except Exception:
+            pass
+        return resp
+    return redirect("/estimation")
+
+
+@app.route("/embed/estimation.js")
+def embed_estimation_loader():
+    """Snippet JS à coller sur le site de l'agence : injecte l'iframe d'estimation.
+
+    Usage : <script src="https://veliora.fr/embed/estimation.js" data-agency="slug"></script>
+    """
+    from crm.config import SITE_URL
+
+    base = (SITE_URL or request.host_url).rstrip("/")
+    js = """(function(){
+  var s = document.currentScript;
+  if (!s) return;
+  var agency = s.getAttribute('data-agency') || '';
+  var height = s.getAttribute('data-height') || '780';
+  var src = '__BASE__/embed/estimation' + (agency ? ('?agency=' + encodeURIComponent(agency)) : '');
+  var iframe = document.createElement('iframe');
+  iframe.src = src;
+  iframe.title = 'Estimation immobilière';
+  iframe.loading = 'lazy';
+  iframe.style.width = '100%';
+  iframe.style.maxWidth = '720px';
+  iframe.style.border = '0';
+  iframe.style.height = height + 'px';
+  s.parentNode.insertBefore(iframe, s);
+  window.addEventListener('message', function(e){
+    if (e && e.data && e.data.veliora_embed_height) {
+      iframe.style.height = e.data.veliora_embed_height + 'px';
+    }
+  });
+})();""".replace("__BASE__", base)
+    resp = Response(js, mimetype="application/javascript")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @app.route("/api/public/portal/listings", methods=["GET", "POST"])
@@ -2987,6 +3072,73 @@ def api_mandate_send(mandate_id):
         "email_configured": email_enabled(),
         "mailto": mailto,
     })
+
+
+@app.route("/api/mandates/<mandate_id>/esign", methods=["POST"])
+def api_mandate_esign(mandate_id):
+    """Lance la signature électronique du mandat (Yousign, opt-in)."""
+    from crm.mandates.esign import esign_enabled, send_for_signature
+    from crm.mandates.storage import get_seller_mandate, set_mandate_esign
+
+    agency_id = _aid()
+    if not esign_enabled():
+        return jsonify({
+            "ok": False,
+            "error": "Signature électronique non activée — configurez ESIGN_PROVIDER/YOUSIGN_API_KEY.",
+            "code": "esign_disabled",
+        }), 400
+    mandate = get_seller_mandate(mandate_id, agency_id)
+    if not mandate:
+        return jsonify({"ok": False, "error": "Mandat introuvable"}), 404
+    data = request.get_json(silent=True) or {}
+    fields = mandate.get("fields") or {}
+    signer_email = (
+        data.get("email") or mandate.get("recipient_email")
+        or fields.get("owner_email") or ""
+    ).strip()
+    signer_name = (
+        data.get("name")
+        or " ".join(p for p in (fields.get("owner_first_name"), fields.get("owner_last_name")) if p)
+    ).strip()
+    out = send_for_signature(mandate, signer_name, signer_email)
+    if not out.get("ok"):
+        return jsonify(out), 400
+    set_mandate_esign(
+        mandate_id,
+        agency_id,
+        esign_provider=out.get("provider"),
+        esign_request_id=out.get("request_id"),
+        esign_status=out.get("status") or "pending",
+        esign_url=out.get("signer_url"),
+        esign_signer_email=signer_email,
+    )
+    return jsonify({"ok": True, "mandate": get_seller_mandate(mandate_id, agency_id), "esign": out})
+
+
+@app.route("/api/webhooks/esign/yousign", methods=["POST"])
+def api_webhook_esign_yousign():
+    """Webhook Yousign — marque le mandat signé à la complétion (public, opt-in)."""
+    from crm.mandates.esign import parse_completion_webhook
+    from crm.mandates.storage import (
+        find_mandate_by_esign_request,
+        set_mandate_esign,
+        update_seller_mandate,
+    )
+
+    payload = request.get_json(silent=True) or {}
+    parsed = parse_completion_webhook(payload)
+    if not parsed:
+        return jsonify({"ok": True, "ignored": True})
+    found = find_mandate_by_esign_request(parsed["request_id"])
+    if not found:
+        return jsonify({"ok": True, "ignored": True})
+    mandate_id, agency_id = found
+    if parsed["completed"]:
+        set_mandate_esign(mandate_id, agency_id, esign_status="signed")
+        update_seller_mandate(mandate_id, agency_id, {"mark_signed": True})
+    else:
+        set_mandate_esign(mandate_id, agency_id, esign_status=parsed.get("status") or "pending")
+    return jsonify({"ok": True})
 
 
 @app.route("/api/mandates/<mandate_id>/dossiers", methods=["GET", "POST"])

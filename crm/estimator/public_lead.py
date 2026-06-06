@@ -149,7 +149,13 @@ def agencies_for_vitrine_lead(lead: dict) -> list[str]:
     from crm.billing.access import agency_has_active_subscription
 
     matched: list[str] = []
+    # Widget marque blanche : l'agence émettrice est toujours destinataire (si abonnée).
+    embed_aid = (lead.get("vitrine_meta") or {}).get("embed_agency_id")
+    if embed_aid and agency_has_active_subscription(embed_aid):
+        matched.append(embed_aid)
     for aid in list_agency_ids():
+        if aid in matched:
+            continue
         if not agency_has_active_subscription(aid):
             continue
         if lead_visible_to_agency(lead, aid):
@@ -197,6 +203,7 @@ def create_prospect_from_estimate_form(
     require_owner: bool = False,
     require_consent: bool = False,
     discovering_agency_id: str | None = None,
+    embed_agency_id: str | None = None,
 ) -> dict:
     has_owner_hint = any(
         (data.get(k) or "").strip()
@@ -293,6 +300,9 @@ def create_prospect_from_estimate_form(
         "wants_agency_contact": None,
         "estimator_origin": origin,
     }
+    if embed_agency_id:
+        # Widget marque blanche : l'agence émettrice reçoit toujours le lead.
+        vitrine_meta["embed_agency_id"] = embed_agency_id
     _write_vitrine_notes(lead_id, vitrine_meta)
 
     from crawler.storage import _row_to_lead
@@ -425,12 +435,20 @@ def public_estimate_response_payload(result: dict) -> dict:
 
 
 def handle_public_vitrine_estimate(data: dict) -> dict:
+    # Widget marque blanche : ?agency=<slug> attribue le lead à l'agence émettrice.
+    embed_agency_id = None
+    slug = (data.get("agency") or data.get("agency_slug") or "").strip()
+    if slug:
+        from crawler.storage import get_agency_id_by_slug
+
+        embed_agency_id = get_agency_id_by_slug(slug)
     result = create_prospect_from_estimate_form(
         data,
-        source_label="Estimation vitrine",
+        source_label="Estimation (site agence)" if embed_agency_id else "Estimation vitrine",
         origin="vitrine",
         require_owner=True,
         require_consent=True,
+        embed_agency_id=embed_agency_id,
     )
     return public_estimate_response_payload(result)
 

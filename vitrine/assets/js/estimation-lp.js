@@ -310,6 +310,11 @@
       consent: !!document.getElementById("lp-consent")?.checked,
       website: val("lp-est-website"),
     };
+    // Widget marque blanche : agence émettrice transmise via ?agency=<slug>.
+    const embedAgency =
+      window.VELIORA_EMBED_AGENCY ||
+      new URLSearchParams(location.search).get("agency");
+    if (embedAgency) payload.agency = embedAgency;
     Object.assign(payload, featureState);
     return payload;
   }

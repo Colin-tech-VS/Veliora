@@ -26,6 +26,7 @@ NATIONAL_DEFAULT_WEIGHTS: dict[str, float] = {
     "motivation_texte": 1.0,
     "baisse_recente": 1.0,
     "sureval_opportunite": 1.0,
+    "republie": 1.0,
     "malus_agence": 1.0,
     "malus_sur_marche": 1.0,
 }

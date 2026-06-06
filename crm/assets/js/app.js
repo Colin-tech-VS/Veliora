@@ -3229,8 +3229,22 @@ function setupDrawer() {
     if (e.target.closest("#drawer-journey-call")) {
       e.preventDefault();
       const tel = (lead.phone || "").replace(/\s/g, "");
-      if (tel && tel !== "—") window.location.href = `tel:${tel}`;
-      else showToast("Pas de numéro de téléphone sur cette fiche", "warning");
+      if (tel && tel !== "—") {
+        logLeadOutcome(lead.id, "call");
+        window.location.href = `tel:${tel}`;
+      } else {
+        showToast("Pas de numéro de téléphone sur cette fiche", "warning");
+      }
+      return;
+    }
+    const outcomeBtn = e.target.closest(".lead-outcome-btn");
+    if (outcomeBtn) {
+      e.preventDefault();
+      const type = outcomeBtn.dataset.outcome;
+      const labels = { rdv: "RDV enregistré", mandat_signe: "Mandat signé enregistré", refuse: "Refus enregistré" };
+      logLeadOutcome(lead.id, type)
+        .then((ok) => { if (ok) showToast(labels[type] || "Issue enregistrée", "success"); })
+        .catch(() => showToast("Enregistrement impossible", "error"));
       return;
     }
     if (e.target.closest("#drawer-journey-script")) {
@@ -5350,6 +5364,22 @@ function leadImageUrl(lead) {
   return `${base}${sep}access_token=${encodeURIComponent(token)}`;
 }
 
+async function logLeadOutcome(leadId, outcomeType) {
+  // Journalise une issue terrain (appel, RDV, mandat, refus) → alimente le ROI.
+  if (!leadId || !outcomeType) return false;
+  try {
+    const res = await fetch(`/api/leads/${leadId}/outcome`, {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome_type: outcomeType }),
+      credentials: "same-origin",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function leadGalleryUrls(lead) {
   const imgs = Array.isArray(lead?.images) ? lead.images : [];
   if (!imgs.length) {
@@ -6857,8 +6887,14 @@ function renderLeadJourneyHtml(lead) {
         <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-mandat">Créer mandat</button>
         <button type="button" class="btn btn-secondary btn-sm" id="drawer-journey-livret">Livret PDF</button>
       </div>
+      <div class="lead-outcome-bar" id="drawer-outcome-bar" data-lead-id="${lead.id}">
+        <span class="lead-outcome-label">Issue de l'appel :</span>
+        <button type="button" class="btn btn-ghost btn-sm lead-outcome-btn" data-outcome="rdv">RDV obtenu</button>
+        <button type="button" class="btn btn-ghost btn-sm lead-outcome-btn" data-outcome="mandat_signe">Mandat signé</button>
+        <button type="button" class="btn btn-ghost btn-sm lead-outcome-btn" data-outcome="refuse">Refus</button>
+      </div>
       <div class="lead-journey-notes"><strong>Suivi :</strong> ${notesPreview}</div>
-      <p class="form-hint" style="margin:0.5rem 0 0;font-size:0.75rem">Le suivi pas-à-pas (mandat ${txLabel} → client → visite → vente) se pilote dans l'onglet <strong>Affaires</strong> : une carte, une action.</p>
+      <p class="form-hint" style="margin:0.5rem 0 0;font-size:0.75rem">Le suivi pas-à-pas (mandat ${txLabel} → client → visite → vente) se pilote dans l'onglet <strong>Affaires</strong> : une carte, une action. Les issues alimentent votre <strong>ROI</strong>.</p>
     </div>`;
 }
 

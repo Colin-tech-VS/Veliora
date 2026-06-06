@@ -81,6 +81,11 @@ def ensure_mandate_tables(conn) -> None:
             "agent_validated_at": "TEXT",
             "agent_id": "TEXT",
             "agent_name": "TEXT",
+            "esign_provider": "TEXT",
+            "esign_request_id": "TEXT",
+            "esign_status": "TEXT",
+            "esign_url": "TEXT",
+            "esign_signer_email": "TEXT",
         },
     )
     conn.execute(
@@ -306,6 +311,42 @@ def get_seller_mandate(mandate_id: str, agency_id: str) -> dict | None:
             (mandate_id, agency_id),
         ).fetchone()
     return _row_mandate(row) if row else None
+
+
+def set_mandate_esign(mandate_id: str, agency_id: str, **fields) -> None:
+    """Met à jour les métadonnées de signature électronique d'un mandat."""
+    allowed = {
+        "esign_provider", "esign_request_id", "esign_status",
+        "esign_url", "esign_signer_email",
+    }
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+    sets = ", ".join(f"{k} = ?" for k in updates)
+    vals = list(updates.values()) + [_now(), mandate_id, agency_id]
+    with get_connection() as conn:
+        ensure_mandate_tables(conn)
+        conn.execute(
+            f"UPDATE seller_mandates SET {sets}, updated_at = ? "
+            f"WHERE id = ? AND agency_id = ?",
+            vals,
+        )
+        conn.commit()
+
+
+def find_mandate_by_esign_request(request_id: str) -> tuple[str, str] | None:
+    """(mandate_id, agency_id) à partir d'un identifiant de demande de signature."""
+    if not request_id:
+        return None
+    with get_connection() as conn:
+        ensure_mandate_tables(conn)
+        row = conn.execute(
+            "SELECT id, agency_id FROM seller_mandates WHERE esign_request_id = ?",
+            (request_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return row["id"], row["agency_id"]
 
 
 def create_seller_mandate(

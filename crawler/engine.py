@@ -3054,6 +3054,15 @@ def bootstrap_background_services() -> None:
 
     warm_proxy_pool_async()
 
+    # Notifications (briefing email + alertes) : indépendant de la veille auto
+    # (le crawl peut tourner sur un worker Decodo distinct).
+    try:
+        from crm.notifications.service import start_notifications_scheduler
+
+        start_notifications_scheduler()
+    except Exception:
+        logger.exception("Notifications — échec démarrage scheduler")
+
     if not CRAWL_AUTO_START:
         logger.info("Veille auto au boot désactivée (CRAWL_AUTO_START=false)")
         return

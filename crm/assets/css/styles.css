@@ -8604,6 +8604,21 @@ body:has(.crawl-dock.open) .script-dock.open {
   border-radius: 999px;
 }
 
+/* Barre d'issue d'appel (alimente le ROI) */
+.lead-outcome-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.2rem;
+}
+
+.lead-outcome-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-right: 0.2rem;
+}
+
 .drawer-lead-image-actions {
   display: flex;
   flex-wrap: wrap;
