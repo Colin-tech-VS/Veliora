@@ -1660,6 +1660,10 @@ async function logout() {
   window.location.href = "/";
 }
 
+function hideAppSplash() {
+  document.getElementById("app-splash")?.classList.add("is-hidden");
+}
+
 async function init() {
   setupNavigation();
   setupMobileNav();
@@ -1699,7 +1703,10 @@ async function init() {
     renderLeads();
   });
 
-  if (!(await ensureAuth())) return;
+  if (!(await ensureAuth())) {
+    hideAppSplash();
+    return;
+  }
 
   try {
     const health = await api("/health").catch(() => null);
@@ -1773,6 +1780,7 @@ async function init() {
     await loadData();
     await checkServerLeadRefreshCapability();
     renderAll();
+    hideAppSplash();
     syncCrawlerUI();
     fetchRoiStats();
     await syncAccountBillingButton();
@@ -1791,6 +1799,7 @@ async function init() {
     if (err?.message === "SUBSCRIPTION_REDIRECT") return;
     showToast(err.message || "Impossible de charger les données — lancez python app.py", "error");
     renderAll();
+    hideAppSplash();
   }
 }
 

@@ -1,11 +1,13 @@
 /* Veliora CRM — PWA shell + données hors connexion + surveillance crawl */
-const CACHE = "veliora-crm-v8";
+const CACHE = "veliora-crm-v9";
 const API_CACHE = "veliora-crm-api-v3";
 const KEEP_CACHES = [CACHE, API_CACHE];
 const SHELL = [
   "/crm",
   "/crm/manifest.webmanifest",
   "/vitrine/favicon.svg",
+  "/crm/assets/img/veliora-logo.svg",
+  "/vitrine/assets/img/veliora-icon-180.png",
 ];
 
 const WATCH_INTERVAL_MS = 2500;
@@ -54,7 +56,7 @@ async function showDoneNotification(job, label) {
   try {
     await self.registration.showNotification(title, {
       body,
-      icon: "/vitrine/favicon.svg",
+      icon: "/vitrine/assets/img/veliora-icon-180.png",
       badge: "/vitrine/favicon.svg",
       tag: "veliora-crawl",
       renotify: true,

@@ -303,6 +303,13 @@ def _postgres_driver_kwargs(url: str | None = None) -> dict:
     Le pooler Supabase en mode *transaction* (port 6543 / PgBouncer) ne gère pas
     les prepared statements nommés (_pg3_0, …) réutilisés entre transactions :
     sans ``prepare_threshold=None`` → DuplicatePreparedStatement.
+
+    On active aussi les *keepalives* TCP et un ``connect_timeout`` court : sans
+    eux, une connexion silencieusement coupée (Supabase/PgBouncer ferme les
+    connexions inactives, NAT/box qui expire le flux) n'est détectée qu'au
+    moment où l'on s'en sert → « base de données indisponible ». Les keepalives
+    sondent la connexion en continu et la déclarent morte tôt, pour qu'elle soit
+    recyclée plutôt que servie à une requête web.
     """
     from psycopg.rows import dict_row
 
@@ -310,6 +317,12 @@ def _postgres_driver_kwargs(url: str | None = None) -> dict:
     return {
         "row_factory": dict_row,
         "prepare_threshold": None,
+        "connect_timeout": int(os.getenv("DATABASE_CONNECT_TIMEOUT", "10")),
+        # Keepalives TCP (paramètres libpq) — sondent la connexion au repos.
+        "keepalives": 1,
+        "keepalives_idle": int(os.getenv("DATABASE_KEEPALIVES_IDLE", "30")),
+        "keepalives_interval": int(os.getenv("DATABASE_KEEPALIVES_INTERVAL", "10")),
+        "keepalives_count": int(os.getenv("DATABASE_KEEPALIVES_COUNT", "5")),
         **_resolve_ipv4_hostaddr(u),
     }
 
@@ -435,19 +448,37 @@ def _get_postgres_pool():
         pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "10"))
         # File courte : 503 + retry client plutôt que 20 requêtes bloquées.
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "8"))
+        # Recyclage : on ne garde pas une connexion éternellement (PgBouncer en
+        # mode transaction peut la couper côté serveur) ni au repos trop
+        # longtemps. Au-delà, le pool la referme et en rouvre une saine.
+        max_lifetime = float(os.getenv("DATABASE_POOL_MAX_LIFETIME", "1800"))
+        max_idle = float(os.getenv("DATABASE_POOL_MAX_IDLE", "300"))
+        # check : valide chaque connexion (SELECT 1) AVANT de la prêter. Une
+        # connexion morte est alors recyclée de façon transparente au lieu de
+        # faire échouer la requête en « base de données indisponible ». C'est le
+        # garde-fou central contre les connexions zombies du pooler Supabase.
+        use_check = os.getenv("DATABASE_POOL_CHECK", "1").strip() not in ("0", "false", "")
+        pool_check = ConnectionPool.check_connection if use_check else None
         _pg_pool = ConnectionPool(
             url,
             min_size=0,
             max_size=pool_max,
             timeout=pool_timeout,
             max_waiting=pool_waiting,
+            max_lifetime=max_lifetime,
+            max_idle=max_idle,
+            check=pool_check,
             kwargs=_postgres_driver_kwargs(url),
             open=True,
         )
         logger.info(
-            "Pool PostgreSQL Veliora actif (max=%s, timeout=%ss)",
+            "Pool PostgreSQL Veliora actif (max=%s, timeout=%ss, check=%s, "
+            "max_lifetime=%ss, max_idle=%ss)",
             pool_max,
             pool_timeout,
+            "on" if use_check else "off",
+            max_lifetime,
+            max_idle,
         )
         return _pg_pool
     except ImportError as exc:

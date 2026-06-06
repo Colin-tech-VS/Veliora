@@ -142,6 +142,81 @@ body {
   color: var(--v-brass);
 }
 
+.brand-icon img {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+/* ─── Écran de chargement de la webapp (logo Veliora animé) ─── */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--v-cream, #f8f6f2);
+  opacity: 1;
+  transition: opacity 0.45s var(--v-ease, ease), visibility 0.45s;
+}
+
+.app-splash.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-splash-logo {
+  width: 84px;
+  height: 84px;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(154, 123, 79, 0.22));
+}
+
+.app-splash-name {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--v-ink, #1e3340);
+}
+
+.app-splash-tag {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--v-brass, #9a7b4f);
+  letter-spacing: 0.02em;
+}
+
+.app-splash-bar {
+  margin-top: 0.9rem;
+  width: 120px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--v-brass-light, #c4a574), transparent);
+  background-size: 200% 100%;
+  animation: app-splash-sweep 1.2s linear infinite;
+}
+
+@keyframes app-splash-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-splash-bar { animation: none; }
+}
+
 /* Le bloc texte doit pouvoir rétrécir (min-width:0) pour ne jamais
    déborder du drawer mobile quel que soit le libellé/locale. */
 .brand-text {

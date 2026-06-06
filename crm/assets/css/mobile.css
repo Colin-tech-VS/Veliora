@@ -1517,9 +1517,28 @@
   margin-bottom: 1.25rem;
 }
 
+.auth-brand-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.auth-brand-logo img {
+  width: 64px;
+  height: 64px;
+  display: block;
+  filter: drop-shadow(0 4px 14px rgba(154, 123, 79, 0.2));
+}
+
 .auth-brand-title {
   font-family: var(--font-serif);
   letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* Sous-titre centré sous le logo (cohérent avec le bloc de marque) */
+.auth-card > .auth-sub {
+  text-align: center;
 }
 
 .auth-panel {

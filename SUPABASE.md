@@ -171,6 +171,7 @@ python scripts/migrate_sqlite_to_supabase.py
 | Quota Storage / « image » | Vider buckets Storage ; pas SQL seul |
 | DB > 500 Mo | `supabase_maintenance.sql` + Pro ou purge |
 | `connection refused` | URI pooler 6543, mot de passe |
+| « base de données indisponible » à la connexion / par intermittence | Connexions zombies servies par le pool (PgBouncer coupe l'inactif). Corrigé : `check` valide chaque connexion avant de la prêter + recyclage (`max_lifetime`/`max_idle`) + keepalives TCP. Réglages : voir `.env.example` (`DATABASE_POOL_CHECK`, `DATABASE_POOL_MAX_LIFETIME`, `DATABASE_KEEPALIVES_*`). |
 | `DuplicatePreparedStatement` / `_pg3_0` | Pooler 6543 + code récent (`prepare_threshold=None` dans `velora_db/connection.py`) |
 | `relation does not exist` | `postgres_schema.sql` |
 | Retour SQLite | Retirer `DATABASE_URL` |

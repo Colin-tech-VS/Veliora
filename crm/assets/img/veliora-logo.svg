@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Veliora">
+  <title>Veliora — la boîte à outils immobilière</title>
+  <defs>
+    <linearGradient id="vlGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EBD08A"/>
+      <stop offset="0.5" stop-color="#CDA458"/>
+      <stop offset="1" stop-color="#9A7B4F"/>
+    </linearGradient>
+    <linearGradient id="vlGoldLid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0D89C"/>
+      <stop offset="1" stop-color="#C49A4C"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    /* Couvercle « boîte à outils » : s'ouvre puis se referme, en douceur. */
+    .vl-lid {
+      transform-box: view-box;
+      transform-origin: 11px 31px;
+      animation: vl-open 4.2s var(--vl-ease, cubic-bezier(0.22, 1, 0.36, 1)) infinite;
+    }
+    @keyframes vl-open {
+      0%, 22%   { transform: rotate(0deg); }
+      48%, 66%  { transform: rotate(-15deg) translateY(-0.6px); }
+      90%, 100% { transform: rotate(0deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .vl-lid { animation: none; }
+    }
+  </style>
+
+  <!-- Corps de la boîte / maison -->
+  <rect x="13" y="30.5" width="38" height="21.5" rx="3.6" fill="url(#vlGold)"/>
+  <!-- Porte verte (la touche de vert) -->
+  <path d="M28.4 52V42.8a3.6 3.6 0 0 1 7.2 0V52z" fill="#5A7D6A"/>
+  <circle cx="34.4" cy="47" r="1.05" fill="#EBD08A"/>
+
+  <!-- Couvercle = toit + poignée, articulé : s'ouvre et se referme -->
+  <g class="vl-lid">
+    <path d="M9.5 31.2 32 14.5 54.5 31.2Z" fill="url(#vlGoldLid)"/>
+    <!-- Poignée de boîte à outils -->
+    <path d="M25.5 15.2c0-3.7 3-5.8 6.5-5.8s6.5 2.1 6.5 5.8"
+          fill="none" stroke="#8A6E45" stroke-width="3.1" stroke-linecap="round"/>
+    <!-- Loquet / clip central -->
+    <rect x="28.5" y="28.2" width="7" height="4.4" rx="1.2" fill="#8A6E45"/>
+  </g>
+</svg>

@@ -5,15 +5,33 @@
   "start_url": "/crm",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F7F5F1",
-  "theme_color": "#2563eb",
+  "background_color": "#f8f6f2",
+  "theme_color": "#1e3340",
   "orientation": "any",
   "icons": [
     {
-      "src": "/vitrine/favicon.svg",
+      "src": "/vitrine/favicon.svg?v=2",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    },
+    {
+      "src": "/vitrine/assets/img/veliora-icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/vitrine/assets/img/veliora-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/vitrine/assets/img/veliora-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
