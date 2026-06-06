@@ -239,9 +239,48 @@ def compress_response(response):
     return response
 
 
+def _request_needs_db() -> bool:
+    """Vraie uniquement pour les routes qui lisent/écrivent la base.
+
+    La vitrine et tous les assets statiques sont du HTML/CSS/JS pur (les données
+    sont chargées ensuite via /api/*) : les servir ne doit JAMAIS attendre
+    l'initialisation de SQLite. Au cold start, la page d'accueil s'affiche donc
+    instantanément au lieu de bloquer le temps de l'init/backup de la base.
+    """
+    p = request.path
+    return p.startswith("/api/") or p == "/sitemap.xml"
+
+
+def _run_db_housekeeping() -> None:
+    """Tâches d'entretien non bloquantes — exécutées en arrière-plan.
+
+    backup SQLite, normalisation des logos sources et expiration des crawl jobs
+    ne sont pas nécessaires pour répondre à la première requête : les déporter
+    hors du chemin requête supprime plusieurs secondes de latence au démarrage.
+    """
+    try:
+        backup_database()
+    except OSError as exc:
+        logging.warning("Sauvegarde SQLite ignorée : %s", exc)
+    except Exception:
+        logging.exception("Sauvegarde SQLite (arrière-plan)")
+    try:
+        refresh_source_names_and_logos()
+    except Exception:
+        logging.warning("Mise à jour logos sources ignorée", exc_info=True)
+    try:
+        expire_stale_crawl_jobs()
+    except Exception:
+        logging.exception("Expiration crawl jobs (arrière-plan)")
+
+
 @app.before_request
 def ensure_db():
     if getattr(app, "_db_ready", False):
+        return
+    # Les pages/assets statiques (vitrine, CRM shell, favicon…) n'attendent pas
+    # la base : chargement immédiat même pendant l'init ou au réveil du dyno.
+    if not _request_needs_db():
         return
     with _db_init_lock:
         if getattr(app, "_db_ready", False):
@@ -259,20 +298,15 @@ def ensure_db():
                     }
                 ), 503
             raise
-        try:
-            backup_database()
-        except OSError as exc:
-            logging.warning("Sauvegarde SQLite ignorée : %s", exc)
-        try:
-            refresh_source_names_and_logos()
-        except Exception as exc:
-            logging.warning("Mise à jour logos sources ignorée : %s", exc)
         from crawler.storage import mark_crawl_jobs_interrupted_on_startup
 
         mark_crawl_jobs_interrupted_on_startup()
-        expire_stale_crawl_jobs()
         app._db_ready = True
         logging.info("Base Veliora : %s", db_status())
+        # Entretien lourd hors du chemin requête : la réponse part sans l'attendre.
+        threading.Thread(
+            target=_run_db_housekeeping, name="db-housekeeping", daemon=True
+        ).start()
 
 
 def _register_database_busy_handler(flask_app: Flask) -> None:
