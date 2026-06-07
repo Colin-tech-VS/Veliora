@@ -132,7 +132,10 @@
       s.id = "veliora-gmaps-script";
       s.async = true;
       s.defer = true;
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=fr&region=FR&callback=${cb}`;
+      // loading=async : mode de chargement désormais requis par l'API Maps JS.
+      // Sans lui, Google logue un avertissement et peut refuser d'invoquer le
+      // callback sur les versions récentes → la carte « ne charge plus ».
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&language=fr&region=FR&loading=async&callback=${cb}`;
       s.onerror = () => {
         clearTimeout(timer);
         reject(new Error("Google Maps indisponible — bascule OpenStreetMap"));

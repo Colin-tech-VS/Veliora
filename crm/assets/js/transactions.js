@@ -187,6 +187,7 @@
         <div class="tx-card-actions">
           ${primaryActionHtml(deal)}
           <button type="button" class="btn btn-ghost btn-sm" data-tx-action="lead" data-id="${deal.lead_id}">Fiche prospect</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-tx-action="docs" data-id="${deal.lead_id}">📁 Pièces &amp; documents</button>
           <button type="button" class="btn btn-ghost btn-sm" data-tx-action="dossier" data-id="${deal.lead_id}">Dossier complet</button>
         </div>
       </article>`;
@@ -295,7 +296,7 @@
         const agentId = sel?.value;
         if (!agentId) return showToast("Choisissez un agent", "error");
         await api(`/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ agent_id: agentId }) });
-        showToast("Prise en charge enregistrée — étape suivante : appeler le vendeur", "success");
+        showToast("Prise en charge enregistrée · dossier de pièces créé — appelez le vendeur", "success");
       } else if (action === "call") {
         await api(`/leads/${id}/outcome`, { method: "POST", body: JSON.stringify({ outcome_type: "call" }) });
         showToast("Contact enregistré — vous pouvez créer le mandat", "success");
@@ -326,6 +327,9 @@
         showToast("Compromis enregistré — saisissez la commission", "success");
       } else if (action === "finalize") {
         await finalizeDeal(id);
+      } else if (action === "docs") {
+        await openLeadDocuments(id);
+        return;
       } else if (action === "dossier") {
         await openDossier(id);
         return;
@@ -411,6 +415,194 @@
         /* ignore */
       }
     }
+  }
+
+  // ── Pièces & documents du prospect (dossier auto-créé à la prise en charge) ──
+
+  function txFileIcon(ext) {
+    const e = (ext || "").toLowerCase();
+    if (e === "pdf") return "📕";
+    if (["jpg", "jpeg", "png", "webp", "gif", "heic", "heif"].includes(e)) return "🖼️";
+    if (["doc", "docx", "odt", "rtf", "txt"].includes(e)) return "📄";
+    if (["xls", "xlsx", "ods", "csv"].includes(e)) return "📊";
+    if (e === "zip") return "🗜️";
+    return "📎";
+  }
+
+  function txFmtBytes(n) {
+    if (!n) return "";
+    if (n < 1024) return `${n} o`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+    return `${(n / (1024 * 1024)).toFixed(1)} Mo`;
+  }
+
+  async function txUploadFiles(dossierId, folderKey, folderName, fileList) {
+    if (!fileList?.length) return;
+    const authHeaders = typeof getAuthHeaders === "function" ? getAuthHeaders() : {};
+    let ok = 0;
+    for (const file of fileList) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder_key", folderKey);
+      fd.append("folder_name", folderName || "");
+      try {
+        const res = await fetch(`${API}/mandates/dossiers/${dossierId}/documents`, {
+          method: "POST",
+          headers: { ...authHeaders },
+          body: fd,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || `Erreur ${res.status}`);
+        ok += 1;
+      } catch (err) {
+        showToast(`${file.name} : ${err.message}`, "error");
+      }
+    }
+    if (ok) {
+      showToast(`${ok} document(s) importé(s)`, "success");
+      await reloadLeadDocuments(dossierId);
+    }
+  }
+
+  async function reloadLeadDocuments(dossierId) {
+    try {
+      const d = await api(`/mandates/dossiers/${dossierId}/documents`);
+      renderLeadDocuments(dossierId, d.documents || {});
+    } catch (err) {
+      showToast(err.message || "Pièces indisponibles", "error");
+    }
+  }
+
+  function renderLeadDocuments(dossierId, docs) {
+    const root = document.getElementById("tx-docs-root");
+    if (!root) return;
+    const folders = docs.folders || [];
+    const total = docs.required_total || 0;
+    const done = docs.required_done || 0;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const profile = docs.profile?.label || "";
+
+    const foldersHtml = folders
+      .map((f) => {
+        const files = (f.files || [])
+          .map(
+            (file) => `<li class="tx-doc-file">
+              <a href="${escAttr(file.url)}" target="_blank" rel="noopener" class="tx-doc-file-link">
+                <span>${txFileIcon(file.ext)}</span>
+                <span class="tx-doc-file-name">${esc(file.original_name || "Document")}</span>
+                <span class="tx-doc-file-size">${esc(txFmtBytes(file.size))}</span>
+              </a>
+              <button type="button" class="tx-doc-del" data-doc-del data-folder="${escAttr(f.key)}" data-file="${escAttr(file.id)}" title="Supprimer">×</button>
+            </li>`,
+          )
+          .join("");
+        const badge = f.required
+          ? f.complete
+            ? `<span class="tx-doc-badge ok">✓ Fournie</span>`
+            : `<span class="tx-doc-badge req">Obligatoire</span>`
+          : f.custom
+            ? `<span class="tx-doc-badge custom">Perso</span>`
+            : `<span class="tx-doc-badge opt">Facultative</span>`;
+        const delFolder = f.custom
+          ? `<button type="button" class="tx-doc-folder-del" data-folder-del data-folder="${escAttr(f.key)}" title="Supprimer le dossier">🗑</button>`
+          : "";
+        return `<article class="tx-doc-folder${f.complete ? " complete" : ""}">
+          <header class="tx-doc-folder-head">
+            <div class="tx-doc-folder-title"><strong>📁 ${esc(f.name)}</strong>${f.description ? `<p class="tx-doc-folder-desc">${esc(f.description)}</p>` : ""}</div>
+            <div class="tx-doc-folder-actions">${badge}${delFolder}</div>
+          </header>
+          <ul class="tx-doc-files">${files || '<li class="tx-doc-empty">Aucune pièce</li>'}</ul>
+          <label class="tx-doc-drop" data-folder-name="${escAttr(f.name)}">
+            <input type="file" hidden multiple data-folder-input="${escAttr(f.key)}">
+            <span>+ Importer un document</span>
+          </label>
+        </article>`;
+      })
+      .join("");
+
+    root.innerHTML = `
+      <p class="tx-docs-intro">Espace ouvert automatiquement à la prise en charge. Rassemblez ici les pièces du vendeur (identité, diagnostics, titre de propriété…) — glissez-déposez ou cliquez « Importer ».${profile ? ` <strong>Profil détecté : ${esc(profile)}</strong>.` : ""}</p>
+      ${total ? `<div class="tx-docs-progress"><div class="tx-docs-progress-bar"><span style="width:${pct}%"></span></div><span class="tx-docs-progress-label">${done}/${total} pièces obligatoires fournies</span></div>` : ""}
+      <div class="tx-docs-toolbar"><button type="button" class="btn btn-secondary btn-sm" id="tx-docs-new-folder">+ Nouveau dossier</button></div>
+      <div class="tx-docs-grid">${foldersHtml}</div>`;
+
+    root.querySelectorAll("[data-folder-input]").forEach((input) => {
+      input.addEventListener("change", () =>
+        txUploadFiles(
+          dossierId,
+          input.dataset.folderInput,
+          input.closest(".tx-doc-drop")?.dataset.folderName || "",
+          input.files,
+        ),
+      );
+    });
+    root.querySelectorAll(".tx-doc-drop").forEach((drop) => {
+      const input = drop.querySelector("input[type=file]");
+      drop.addEventListener("click", (e) => {
+        if (e.target.tagName !== "INPUT") input?.click();
+      });
+      drop.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        drop.classList.add("dragover");
+      });
+      drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+      drop.addEventListener("drop", (e) => {
+        e.preventDefault();
+        drop.classList.remove("dragover");
+        txUploadFiles(dossierId, input?.dataset.folderInput, drop.dataset.folderName, e.dataTransfer?.files);
+      });
+    });
+    root.querySelectorAll("[data-doc-del]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        try {
+          await api(
+            `/mandates/dossiers/${dossierId}/documents/${encodeURIComponent(btn.dataset.folder)}/${btn.dataset.file}`,
+            { method: "DELETE" },
+          );
+          await reloadLeadDocuments(dossierId);
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      });
+    });
+    root.querySelectorAll("[data-folder-del]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Supprimer ce dossier et les pièces qu'il contient ?")) return;
+        try {
+          await api(`/mandates/dossiers/${dossierId}/folders/${encodeURIComponent(btn.dataset.folder)}`, {
+            method: "DELETE",
+          });
+          await reloadLeadDocuments(dossierId);
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      });
+    });
+    root.querySelector("#tx-docs-new-folder")?.addEventListener("click", async () => {
+      const name = prompt("Nom du nouveau dossier (ex. : Servitudes, Travaux…)");
+      if (!name?.trim()) return;
+      try {
+        await api(`/mandates/dossiers/${dossierId}/folders`, {
+          method: "POST",
+          body: JSON.stringify({ name: name.trim() }),
+        });
+        await reloadLeadDocuments(dossierId);
+      } catch (err) {
+        showToast(err.message, "error");
+      }
+    });
+  }
+
+  async function openLeadDocuments(leadId) {
+    let data;
+    try {
+      data = await api(`/leads/${leadId}/document-folder`);
+    } catch (err) {
+      return showToast(err.message || "Dossier indisponible", "error");
+    }
+    const title = data.title ? ` — ${data.title}` : "";
+    modal(`Pièces & documents${title}`, `<div id="tx-docs-root" class="tx-docs"></div>`, false);
+    renderLeadDocuments(data.dossier_id, data.documents || {});
   }
 
   async function openDossier(leadId) {
@@ -571,41 +763,109 @@
     }
   }
 
+  function commInitials(name) {
+    return String(name || "—")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0].toUpperCase())
+      .join("") || "—";
+  }
+
+  function commDate(iso) {
+    const s = (iso || "").slice(0, 10);
+    if (!s) return "—";
+    const [y, m, d] = s.split("-");
+    return d && m && y ? `${d}/${m}/${y}` : s;
+  }
+
   async function renderCommissionsView() {
     const root = document.getElementById("commissions-root");
     if (!root) return;
-    root.innerHTML = `<p class="tx-loading">Chargement…</p>`;
+    root.innerHTML = `<p class="tx-loading">Chargement des commissions…</p>`;
+    let r;
     try {
-      const r = await api(`/commissions`);
-      const byAgent = (r.by_agent || [])
-        .map(
-          (a) =>
-            `<tr><td>${esc(a.agent_name)}</td><td class="num">${a.deals}</td><td class="num">${fmtEuro(a.agent_amount)}</td></tr>`,
-        )
-        .join("");
-      const rows = (r.commissions || [])
-        .map(
-          (c) =>
-            `<tr><td>${esc(c.agent_name || "—")}</td><td class="num">${fmtEuro(c.total_amount)}</td><td class="num">${fmtEuro(c.agency_amount)}</td><td class="num">${fmtEuro(c.agent_amount)}</td><td>${esc((c.created_at || "").slice(0, 10))}</td></tr>`,
-        )
-        .join("");
-      root.innerHTML = `
-        <p class="tx-intro">Commissions des affaires <strong>clôturées</strong> dans l'onglet Affaires.</p>
-        <div class="tx-comm-summary">
-          <div class="tx-comm-kpi"><span>Total encaissé</span><strong>${fmtEuro(r.total_amount)}</strong></div>
-          <div class="tx-comm-kpi"><span>Part agence</span><strong>${fmtEuro(r.agency_amount)}</strong></div>
-          <div class="tx-comm-kpi"><span>Part agents</span><strong>${fmtEuro(r.agent_amount)}</strong></div>
-          <div class="tx-comm-kpi"><span>Ventes clôturées</span><strong>${r.deals_count || 0}</strong></div>
-        </div>
-        <h3 class="tx-comm-h">Par agent</h3>
-        <table class="portal-table"><thead><tr><th>Agent</th><th>Ventes</th><th>Commission</th></tr></thead>
-          <tbody>${byAgent || '<tr><td colspan="3">Aucune vente.</td></tr>'}</tbody></table>
-        <h3 class="tx-comm-h">Détail</h3>
-        <table class="portal-table"><thead><tr><th>Agent</th><th>Total</th><th>Agence</th><th>Agent</th><th>Date</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="5">Aucune commission.</td></tr>'}</tbody></table>`;
+      r = await api(`/commissions`);
     } catch (err) {
       root.innerHTML = `<p class="tx-error">${esc(err.message)}</p>`;
+      return;
     }
+
+    const header = `<header class="tx-comm-header">
+      <h2 class="tx-comm-title">Commissions</h2>
+      <p class="tx-comm-sub">Honoraires des affaires <strong>clôturées</strong> depuis l'onglet Affaires — répartition agence / agents.</p>
+    </header>`;
+
+    if (!r.deals_count) {
+      root.innerHTML = `${header}<div class="tx-comm-empty">
+        <div class="tx-comm-empty-icon">💶</div>
+        <strong>Aucune commission pour l'instant</strong>
+        <p>Clôturez une vente dans <strong>Affaires</strong> (« Clôturer la vente ») pour enregistrer la première commission ici.</p>
+      </div>`;
+      return;
+    }
+
+    const kpi = (label, value, accent) =>
+      `<div class="tx-comm-kpi${accent ? ` tx-comm-kpi--${accent}` : ""}">
+        <span class="tx-comm-kpi-label">${label}</span>
+        <strong class="tx-comm-kpi-value">${value}</strong>
+      </div>`;
+    const kpis = `<div class="tx-comm-kpis">
+      ${kpi("Total encaissé", fmtEuro(r.total_amount), "total")}
+      ${kpi("Part agence", fmtEuro(r.agency_amount), "agency")}
+      ${kpi("Part agents", fmtEuro(r.agent_amount), "agent")}
+      ${kpi("Ventes clôturées", r.deals_count || 0)}
+    </div>`;
+
+    const agents = [...(r.by_agent || [])].sort((a, b) => (b.agent_amount || 0) - (a.agent_amount || 0));
+    const topAmount = agents.reduce((m, a) => Math.max(m, a.agent_amount || 0), 0) || 1;
+    const leaderboard = agents
+      .map((a, i) => {
+        const width = Math.max(4, Math.round(((a.agent_amount || 0) / topAmount) * 100));
+        return `<li class="tx-comm-agent">
+          <span class="tx-comm-agent-rank">${i + 1}</span>
+          <span class="tx-comm-agent-avatar">${esc(commInitials(a.agent_name))}</span>
+          <div class="tx-comm-agent-main">
+            <div class="tx-comm-agent-line">
+              <strong class="tx-comm-agent-name">${esc(a.agent_name || "—")}</strong>
+              <span class="tx-comm-agent-amount">${fmtEuro(a.agent_amount)}</span>
+            </div>
+            <div class="tx-comm-agent-bar"><span style="width:${width}%"></span></div>
+            <span class="tx-comm-agent-meta">${a.deals} vente${a.deals > 1 ? "s" : ""} conclue${a.deals > 1 ? "s" : ""}</span>
+          </div>
+        </li>`;
+      })
+      .join("");
+
+    const rows = (r.commissions || [])
+      .map(
+        (c) => `<tr>
+          <td>${commDate(c.created_at)}</td>
+          <td><span class="tx-comm-cell-agent"><span class="tx-comm-agent-avatar tx-comm-agent-avatar--sm">${esc(commInitials(c.agent_name))}</span>${esc(c.agent_name || "—")}</span></td>
+          <td class="num">${fmtEuro(c.total_amount)}</td>
+          <td class="num">${fmtEuro(c.agency_amount)}</td>
+          <td class="num"><strong>${fmtEuro(c.agent_amount)}</strong></td>
+          <td class="num"><span class="tx-comm-pct">${Math.round(c.agent_pct || 0)} %</span></td>
+        </tr>`,
+      )
+      .join("");
+
+    root.innerHTML = `
+      ${header}
+      ${kpis}
+      <section class="tx-comm-section">
+        <h3 class="tx-comm-h">Classement des agents</h3>
+        <ul class="tx-comm-leaderboard">${leaderboard}</ul>
+      </section>
+      <section class="tx-comm-section">
+        <h3 class="tx-comm-h">Historique des commissions</h3>
+        <div class="tx-comm-table-wrap">
+          <table class="portal-table tx-comm-table">
+            <thead><tr><th>Date</th><th>Agent</th><th class="num">Commission</th><th class="num">Part agence</th><th class="num">Part agent</th><th class="num">%</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>`;
   }
 
   window.renderTransactionsView = renderTransactionsView;
