@@ -325,7 +325,6 @@ def update_mandate_dossier(dossier_id: str, agency_id: str, data: dict) -> dict 
         "status": data.get("status", row["status"]),
     }
     linked = data.get("linked_clients")
-    photos_json = json.dumps(row["photos"], ensure_ascii=False)
     linked_json = (
         json.dumps(linked, ensure_ascii=False)
         if linked is not None

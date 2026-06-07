@@ -2262,6 +2262,12 @@ function syncProductModeTabs(view) {
   if (bar) {
     bar.hidden = view !== "dashboard" && view !== "analyze";
   }
+  // La légende de parcours (1. Briefing → 2. Affaires → 3. Portails) n'a de sens
+  // que sur le Briefing : ailleurs c'est du bruit qui repousse le contenu utile.
+  const workflow = document.getElementById("ux-workflow");
+  if (workflow) {
+    workflow.hidden = view !== "dashboard";
+  }
 }
 
 function setAnalyzeUiState(phase) {

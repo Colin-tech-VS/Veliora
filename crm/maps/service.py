@@ -532,6 +532,14 @@ def build_map_payload(agency_id: str) -> dict:
         if (not address or str(address).strip() in _ADDRESS_BAD) and street:
             _save_lead_street_address(int(row["id"]), agency_id, street)
 
+        # Adresse approximative quand l'adresse exacte manque : rue reverse-géocodée,
+        # sinon « CP Ville », sinon la ligne de localisation complète.
+        approx_address = (
+            street
+            or " ".join(p for p in ((postcode or "").strip(), (city or "").strip()) if p)
+            or line
+        )
+
         from crawler.hub_detection import parse_property_label
 
         raw_title = row["listing_title"] if "listing_title" in keys else None

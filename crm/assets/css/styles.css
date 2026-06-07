@@ -9479,6 +9479,10 @@ body:has(.crawl-dock.open) .script-dock.open {
   background: var(--brand-surface);
   box-shadow: var(--shadow-sm);
 }
+/* Sans cette règle, `display: grid` plus haut écrase l'attribut [hidden] et la
+   bande de modes reste visible sur toutes les vues (Prospects, Clients, Carte…)
+   alors que le JS ne la veut que sur Briefing / Analyse. */
+.product-modes[hidden] { display: none; }
 .product-mode.active {
   border-color: var(--brand-accent);
   background: linear-gradient(180deg, #fff 0%, #faf7f2 100%);
