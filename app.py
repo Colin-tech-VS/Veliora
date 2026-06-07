@@ -2393,7 +2393,43 @@ def api_assign_lead(lead_id: int):
     if not agent_id:
         return jsonify({"ok": False, "error": "agent_id requis"}), 400
     out = assign_lead(aid, lead_id, agent_id)
+    if out.get("ok"):
+        # Prise en charge = ouverture automatique d'un dossier pour rassembler les
+        # pièces (identité, diagnostics, titre de propriété…) que l'agent importera.
+        try:
+            from crm.mandates.dossiers import ensure_lead_dossier
+
+            dossier = ensure_lead_dossier(aid, lead_id, lead)
+            if dossier:
+                out["dossier_id"] = dossier["id"]
+        except Exception:
+            logging.exception("ensure_lead_dossier after assign lead=%s", lead_id)
     return jsonify(out), 200 if out.get("ok") else 400
+
+
+@app.route("/api/leads/<int:lead_id>/document-folder", methods=["GET"])
+def api_lead_document_folder(lead_id: int):
+    """Dossier de pièces du prospect (créé à la prise en charge) + checklist fusionnée."""
+    from crm.mandates.dossiers import ensure_lead_dossier, get_dossier_documents
+
+    aid = _aid()
+    lead = get_lead(lead_id, aid)
+    if not lead:
+        return jsonify({"ok": False, "error": "Prospect introuvable"}), 404
+    dossier = ensure_lead_dossier(aid, lead_id, lead)
+    if not dossier:
+        return jsonify({"ok": False, "error": "Dossier indisponible"}), 500
+    mandate = None
+    if dossier.get("mandate_id") and not str(dossier["mandate_id"]).startswith("lead:"):
+        from crm.mandates.storage import get_seller_mandate
+
+        mandate = get_seller_mandate(dossier["mandate_id"], aid)
+    return jsonify({
+        "ok": True,
+        "dossier_id": dossier["id"],
+        "title": dossier.get("title"),
+        "documents": get_dossier_documents(dossier["id"], aid, mandate),
+    })
 
 
 @app.route("/api/leads/<int:lead_id>/unassign", methods=["POST"])
@@ -2982,6 +3018,15 @@ def api_mandates_list():
             fields=data.get("fields"),
             title=data.get("title"),
         )
+        # Raccroche le dossier de pièces ouvert dès la prise en charge au vrai mandat,
+        # pour qu'il reste accessible (et profite de la checklist adaptée au profil).
+        if data.get("lead_id") and mandate:
+            try:
+                from crm.mandates.dossiers import link_lead_dossier_to_mandate
+
+                link_lead_dossier_to_mandate(agency_id, int(data["lead_id"]), mandate["id"])
+            except Exception:
+                logging.exception("link_lead_dossier_to_mandate lead=%s", data.get("lead_id"))
         return jsonify({"ok": True, "mandate": mandate}), 201
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

@@ -1033,13 +1033,44 @@ def is_antibot_source(src: dict) -> bool:
     return is_protected_portal_source(src)
 
 
+# Gros portails à crawler EN PRIORITÉ avec Decodo (proxies résidentiels), dans cet
+# ordre. Quand le crawl anti-bot est actif (navigateur Playwright + Decodo), ils
+# passent DEVANT les portails « gratuits » : ce sont les plus riches en annonces de
+# particuliers, donc on veut leurs résultats en premier. Tant que Decodo/Playwright
+# est inactif, `is_antibot_source` les classe « Bientôt » et ils retombent plus bas.
+PRIORITY_PORTAL_ORDER = ("seloger", "pap", "bienici", "leboncoin", "logicimmo")
+
+
+def _priority_portal_rank(src: dict) -> int | None:
+    """Rang du portail dans PRIORITY_PORTAL_ORDER (0 = crawlé en premier), sinon None."""
+    from crawler.portals import resolve_base_portal_id
+
+    base = resolve_base_portal_id(src.get("id") or "")
+    if base and base in PRIORITY_PORTAL_ORDER:
+        return PRIORITY_PORTAL_ORDER.index(base)
+    return None
+
+
 def _source_sort_key(src: dict) -> tuple:
-    """Recommandés d'abord, anti-bot ensuite, sites perso en dernier."""
+    """Ordre de crawl : gros portails (Decodo) → recommandés → anti-bot off → perso.
+
+    Tier 0 : gros portail anti-bot crawlable maintenant (navigateur + Decodo actifs),
+    placé en tête dans l'ordre de PRIORITY_PORTAL_ORDER (SeLoger, PAP, Bien'ici…).
+    Tier 1 : autres portails recommandés (ParuVendu, Ouest-France Immo…).
+    Tier 2 : anti-bot pas encore activé (« Bientôt disponible »).
+    Tier 3 : sites personnalisés ajoutés par l'agence.
+    """
+    name = src.get("name") or ""
     if src.get("is_custom"):
-        return (2, src.get("name") or "")
+        return (3, 99, name)
     if is_antibot_source(src):
-        return (1, src.get("name") or "")
-    return (0, src.get("name") or "")
+        # Anti-bot mais crawl navigateur/Decodo inactif → après les portails actifs.
+        return (2, 99, name)
+    rank = _priority_portal_rank(src)
+    if rank is not None:
+        # Gros portail désormais crawlable (Decodo) → tout en haut, ordre prioritaire.
+        return (0, rank, name)
+    return (1, 99, name)
 
 
 # Portails payants — pas de préchauffage navigateur en crawl gratuit.

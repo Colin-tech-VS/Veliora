@@ -164,6 +164,7 @@ def ensure_dossier_tables(conn) -> None:
             id TEXT PRIMARY KEY,
             agency_id TEXT NOT NULL,
             mandate_id TEXT NOT NULL,
+            lead_id INTEGER,
             title TEXT NOT NULL,
             description TEXT,
             property_address TEXT,
@@ -192,6 +193,12 @@ def ensure_dossier_tables(conn) -> None:
         conn.execute(
             "ALTER TABLE mandate_dossiers ADD COLUMN documents_json TEXT NOT NULL DEFAULT '{}'"
         )
+    if "lead_id" not in cols:
+        conn.execute("ALTER TABLE mandate_dossiers ADD COLUMN lead_id INTEGER")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mandate_dossiers_lead "
+        "ON mandate_dossiers(agency_id, lead_id)"
+    )
 
 
 def _dossier_dir(agency_id: str, dossier_id: str) -> Path:
@@ -203,6 +210,7 @@ def _row_dossier(row) -> dict:
         "id": row["id"],
         "agency_id": row["agency_id"],
         "mandate_id": row["mandate_id"],
+        "lead_id": _row_get(row, "lead_id"),
         "title": row["title"],
         "description": row["description"] or "",
         "property_address": row["property_address"] or "",
@@ -268,9 +276,10 @@ def create_mandate_dossier(agency_id: str, mandate_id: str, data: dict) -> dict:
     now = _now()
     with get_connection() as conn:
         ensure_dossier_tables(conn)
+        lead_id = data.get("lead_id")
         conn.execute(
             """INSERT INTO mandate_dossiers
-               (id, agency_id, mandate_id, title, description,
+               (id, agency_id, mandate_id, lead_id, title, description,
                 property_address, postal_code, city, surface, rooms, price,
                 property_type, photos_json, linked_clients_json, status,
                 created_at, updated_at)
@@ -279,6 +288,7 @@ def create_mandate_dossier(agency_id: str, mandate_id: str, data: dict) -> dict:
                 did,
                 agency_id,
                 mandate_id,
+                int(lead_id) if lead_id not in (None, "") else None,
                 (data.get("title") or "Dossier bien").strip(),
                 (data.get("description") or "").strip(),
                 (data.get("property_address") or "").strip(),
@@ -369,6 +379,92 @@ def delete_mandate_dossier(dossier_id: str, agency_id: str) -> bool:
 def delete_dossiers_for_mandate(mandate_id: str, agency_id: str) -> None:
     for d in list_mandate_dossiers(mandate_id, agency_id):
         delete_mandate_dossier(d["id"], agency_id)
+
+
+# ── Dossier auto-créé dès la prise en charge d'une annonce par un agent ──────
+#
+# Quand un agent « prend en charge » un prospect (avant même le mandat), on crée
+# automatiquement un dossier de commercialisation lié au lead, pour qu'il dispose
+# tout de suite d'un espace clair où importer les pièces (identité, diagnostics,
+# titre de propriété…). Tant qu'aucun mandat n'existe, le dossier porte une clé
+# mandat factice `lead:<id>` ; à la création du mandat vente/location, on le
+# raccroche au vrai mandat (link_lead_dossier_to_mandate) pour garder l'historique.
+
+
+def lead_dossier_mandate_key(lead_id: int) -> str:
+    return f"lead:{int(lead_id)}"
+
+
+def dossier_from_lead(lead: dict) -> dict:
+    """Préremplit un dossier depuis une fiche prospect (annonce)."""
+    surface = lead.get("surface")
+    price = lead.get("price")
+    title = (
+        lead.get("property_title")
+        or lead.get("listing_title")
+        or lead.get("address")
+        or "Annonce prise en charge"
+    )
+    return {
+        "title": str(title)[:120],
+        "description": "",
+        "property_address": (lead.get("address") or "").strip() if lead.get("address") not in (None, "—") else "",
+        "postal_code": (lead.get("postcode") or "").strip(),
+        "city": (lead.get("city") or "").strip(),
+        "surface": float(surface) if surface not in (None, "", 0) else None,
+        "rooms": "",
+        "price": int(float(price)) if price not in (None, "", 0) else None,
+        "property_type": (lead.get("property_type") or "").strip(),
+    }
+
+
+def get_lead_dossier(agency_id: str, lead_id: int) -> dict | None:
+    """Dossier rattaché à un prospect (par lead_id ou clé mandat factice)."""
+    key = lead_dossier_mandate_key(lead_id)
+    with get_connection() as conn:
+        ensure_dossier_tables(conn)
+        row = conn.execute(
+            """SELECT * FROM mandate_dossiers
+               WHERE agency_id = ? AND (lead_id = ? OR mandate_id = ?)
+               ORDER BY created_at ASC LIMIT 1""",
+            (agency_id, int(lead_id), key),
+        ).fetchone()
+    return _row_dossier(row) if row else None
+
+
+def ensure_lead_dossier(agency_id: str, lead_id: int, lead: dict | None = None) -> dict | None:
+    """Renvoie le dossier du prospect, en le créant s'il n'existe pas encore (idempotent)."""
+    if not agency_id or not lead_id:
+        return None
+    existing = get_lead_dossier(agency_id, lead_id)
+    if existing:
+        return existing
+    data = dossier_from_lead(lead or {})
+    data["lead_id"] = int(lead_id)
+    data["status"] = "actif"
+    return create_mandate_dossier(agency_id, lead_dossier_mandate_key(lead_id), data)
+
+
+def link_lead_dossier_to_mandate(agency_id: str, lead_id: int, mandate_id: str) -> dict | None:
+    """Raccroche le dossier auto du prospect au vrai mandat une fois celui-ci créé."""
+    if not agency_id or not lead_id or not mandate_id:
+        return None
+    dossier = get_lead_dossier(agency_id, lead_id)
+    if not dossier:
+        return None
+    # Ne réécrit que si le dossier est encore sur la clé factice (pas déjà lié).
+    if dossier.get("mandate_id") not in (None, "", lead_dossier_mandate_key(lead_id)):
+        return dossier
+    now = _now()
+    with get_connection() as conn:
+        ensure_dossier_tables(conn)
+        conn.execute(
+            """UPDATE mandate_dossiers SET mandate_id = ?, updated_at = ?
+               WHERE id = ? AND agency_id = ?""",
+            (mandate_id, now, dossier["id"], agency_id),
+        )
+        conn.commit()
+    return get_mandate_dossier(dossier["id"], agency_id)
 
 
 def photo_public_url(agency_id: str, dossier_id: str, filename: str) -> str:
