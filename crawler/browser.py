@@ -126,25 +126,39 @@ def _profile_path() -> Path:
 
 
 def _playwright_proxy() -> dict | None:
-    """Proxy au format Playwright depuis CRAWL_PROXIES (rotation), ou None."""
-    from urllib.parse import unquote, urlparse
+    """Proxy au format Playwright depuis CRAWL_PROXIES (rotation), ou None.
+
+    Parsing robuste « scheme://user:pass@host:port » : on découpe à la DERNIÈRE '@'
+    pour tolérer les caractères spéciaux dans le mot de passe (fréquent chez Decodo),
+    là où urlparse échouait silencieusement → proxy sans auth → tout bloqué.
+    """
+    import re
+    from urllib.parse import unquote
 
     from crawler.config import pick_proxy
 
-    raw = pick_proxy()
+    raw = (pick_proxy() or "").strip()
     if not raw:
         return None
-    u = urlparse(raw)
-    if not u.hostname:
+    m = re.match(r"^(\w+)://(.+)$", raw)
+    if not m:
         return None
-    server = f"{u.scheme or 'http'}://{u.hostname}"
-    if u.port:
-        server += f":{u.port}"
-    proxy: dict[str, str] = {"server": server}
-    if u.username:
-        proxy["username"] = unquote(u.username)
-    if u.password:
-        proxy["password"] = unquote(u.password)
+    scheme, rest = m.group(1), m.group(2)
+    creds = None
+    if "@" in rest:
+        creds, hostport = rest.rsplit("@", 1)
+    else:
+        hostport = rest
+    hostport = hostport.strip("/")
+    if not hostport:
+        return None
+    proxy: dict[str, str] = {"server": f"{scheme}://{hostport}"}
+    if creds:
+        user, _, pw = creds.partition(":")
+        if user:
+            proxy["username"] = unquote(user)
+        if pw:
+            proxy["password"] = unquote(pw)
     return proxy
 
 

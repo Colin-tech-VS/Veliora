@@ -2073,6 +2073,18 @@ class CrawlerEngine:
                 prefer_browser=True,
                 scroll_lazy=True,
             )
+        # Gros portail anti-bot (SeLoger, LBC…) : curl_cffi est voué au blocage
+        # DataDome et déclencherait une rotation d'IP Decodo en pure perte (quota
+        # gaspillé) avant même d'essayer le navigateur. On va donc droit au
+        # navigateur + proxy résidentiel, qui est le seul chemin qui passe.
+        if url_needs_browser(url):
+            return fetch_page(
+                url,
+                click_contacts=True,
+                referer=referer,
+                prefer_browser=True,
+                scroll_lazy=scroll_lazy,
+            )
         quick = fetch_page(url, referer=referer, prefer_browser=False, fast_mode=True)
         if quick.ok:
             html = quick.html or ""
