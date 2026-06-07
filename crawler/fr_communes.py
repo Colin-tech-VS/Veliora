@@ -11,10 +11,29 @@ from pathlib import Path
 _DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "fr_communes.json"
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _DEPT_TAIL_RE = re.compile(r"-((?:\d{2,3}|2[ab]))$", re.I)
+# Code postal entre parenthèses ajouté par l'autocomplete : « Lorient (56100) ».
+_EMBEDDED_PC_RE = re.compile(r"\((\d{4,5})\)")
 
 
 def slugify(name: str) -> str:
     return _SLUG_RE.sub("-", (name or "").lower().strip()).strip("-")
+
+
+def split_city_postcode(value: str | None) -> tuple[str, str | None]:
+    """« Lorient (56100) » → ('Lorient', '56100') ; « Lorient » → ('Lorient', None).
+
+    L'autocomplete ville stocke « Nom (CP) » pour lever l'ambiguïté des homonymes.
+    Tout le crawler passe par ici (ou par resolve_commune) pour récupérer le nom
+    propre et le code postal, sans casser les slugs d'URL.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return "", None
+    m = _EMBEDDED_PC_RE.search(raw)
+    if not m:
+        return raw, None
+    name = _EMBEDDED_PC_RE.sub("", raw).strip().strip(",").strip()
+    return name, m.group(1)
 
 
 def _fold(text: str) -> str:
@@ -82,10 +101,15 @@ def _pick_best(candidates: list[dict], postcode: str | None = None) -> dict | No
 
 
 def resolve_commune(city: str, postcode: str | None = None) -> dict | None:
-    """Résout une commune par nom (et optionnellement code postal)."""
-    city = (city or "").strip()
+    """Résout une commune par nom (et optionnellement code postal).
+
+    Tolère un code postal embarqué dans le nom (« Lorient (56100) ») : il sert de
+    repli quand aucun `postcode` explicite n'est fourni.
+    """
+    city, embedded_pc = split_city_postcode(city)
     if not city:
         return None
+    postcode = (postcode or "").strip() or embedded_pc
     _, by_slug, by_name, by_postcode = _indexes()
 
     if postcode:
@@ -111,6 +135,8 @@ def resolve_commune(city: str, postcode: str | None = None) -> dict | None:
 
 def path_slug_for_city(city: str, postcode: str | None = None) -> str:
     """Slug URL type SeLoger : lorient-56, ajaccio-2a, basse-terre-971."""
+    city, embedded_pc = split_city_postcode(city)
+    postcode = (postcode or "").strip() or embedded_pc
     row = resolve_commune(city, postcode)
     if row:
         return row["path_slug"]

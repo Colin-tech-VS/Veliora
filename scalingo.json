@@ -4,7 +4,7 @@
   "formation": {
     "web": {
       "amount": 1,
-      "size": "M"
+      "size": "L"
     }
   },
   "env": {
@@ -43,13 +43,15 @@
     "SAVE_ACTIONABLE_LEADS": "true",
     "SAVE_MINIMAL_LEADS": "false",
     "SAVE_CRAWL_SNAPSHOT": "false",
-    "CRAWL_PLAYWRIGHT_ENABLED": "false",
+    "CRAWL_PLAYWRIGHT_ENABLED": "true",
     "AUTO_WARMUP_ANTIBOT": "false",
     "DOMAIN_WARMUP": "false",
     "CRAWL_SKIP_CITY_PROBE": "true",
     "CRAWL_HEADED_FALLBACK": "false",
     "CRAWL_HEADFUL": "false",
-    "CRAWL_ANTIBOT_PORTALS_ENABLED": "false",
+    "CRAWL_HEADLESS_MODE": "new",
+    "CRAWL_XVFB": "false",
+    "CRAWL_ANTIBOT_PORTALS_ENABLED": "1",
     "CRAWL_SPEED_PROFILE": "fast",
     "CITY_CRAWL_MAX_LISTINGS": "90",
     "CITY_DISCOVERY_STOP_LINKS": "28",

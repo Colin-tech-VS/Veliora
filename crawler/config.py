@@ -262,6 +262,23 @@ AUTO_WARMUP_ANTIBOT = os.getenv("AUTO_WARMUP_ANTIBOT", "false").strip().lower() 
     "yes",
 )
 
+# Mode headless du navigateur sur serveur :
+#   "new" → Chrome Headless « nouvelle génération » (--headless=new) : empreinte
+#           quasi identique au navigateur visible → bien meilleur face à DataDome,
+#           sans écran. C'est le défaut sur Scalingo (pas de display).
+#   "old" → ancien headless (plus détectable) — repli si "new" pose souci.
+CRAWL_HEADLESS_MODE = (os.getenv("CRAWL_HEADLESS_MODE", "new") or "new").strip().lower()
+
+# Écran virtuel Xvfb (Linux) : lance Chrome en mode VISIBLE (headful) sous un display
+# virtuel — l'évasion anti-bot la plus robuste sur serveur sans écran. OFF par défaut
+# (nécessite le paquet apt `xvfb` + `pyvirtualdisplay`). À activer si "new headless"
+# se fait encore bloquer par DataDome : CRAWL_XVFB=1.
+CRAWL_XVFB = os.getenv("CRAWL_XVFB", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Profil navigateur persistant (cookies entre pages)
 PLAYWRIGHT_PROFILE_DIR = "data/playwright_profile"
 
@@ -450,7 +467,10 @@ def antibot_portals_crawl_enabled() -> bool:
 def antibot_portals_readiness() -> dict:
     """État de préparation au crawl des portails anti-bot (pour diagnostic / UI)."""
     has_browser = CRAWL_PLAYWRIGHT_ENABLED
-    has_residential = proxies_enabled()  # CRAWL_PROXIES (idéalement résidentiels)
+    # Résidentiel = STRICTEMENT CRAWL_PROXIES (Decodo). Les proxies publics gratuits
+    # ne passent PAS DataDome : on ne les compte pas comme « prêt » pour l'anti-bot,
+    # sinon on lancerait Chrome pour rien sur SeLoger & co.
+    has_residential = bool(CRAWL_PROXIES)
     has_any_rotation = has_residential or CRAWL_AUTO_FREE_PROXIES
     if has_browser and has_residential:
         level = "ready"  # navigateur + proxies dédiés : configuration fiable
@@ -467,6 +487,31 @@ def antibot_portals_readiness() -> dict:
         "has_residential_proxies": has_residential,
         "has_ip_rotation": has_any_rotation,
     }
+
+
+def antibot_setup_hint(portal_name: str = "Ce portail", readiness: dict | None = None) -> str:
+    """Message clair sur ce qu'il manque pour crawler un portail anti-bot.
+
+    Évite le « 0 annonce » silencieux : on dit explicitement ce qu'il reste à
+    configurer (navigateur, proxies résidentiels, activation).
+    """
+    r = readiness or antibot_portals_readiness()
+    missing: list[str] = []
+    if not r.get("has_browser"):
+        missing.append(
+            "un navigateur (CRAWL_PLAYWRIGHT_ENABLED=true + playwright install chromium)"
+        )
+    if not r.get("has_residential_proxies"):
+        missing.append("des proxies résidentiels (CRAWL_PROXIES=…Decodo…)")
+    if not r.get("enabled"):
+        missing.append("l'activation (CRAWL_ANTIBOT_PORTALS_ENABLED=1)")
+    if not missing:
+        return f"{portal_name} : portail anti-bot prêt (navigateur + proxies résidentiels)."
+    return (
+        f"{portal_name} est un portail anti-bot (DataDome) : 0 annonce tant qu'il manque "
+        + " ; ".join(missing)
+        + ". Voir DECODO.md."
+    )
 
 
 def background_crawl_config() -> dict:

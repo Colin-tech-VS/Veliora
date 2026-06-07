@@ -20,3 +20,4 @@ libcairo2
 libasound2t64
 libfontconfig1
 fonts-liberation
+xvfb

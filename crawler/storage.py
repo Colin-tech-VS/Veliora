@@ -1191,11 +1191,16 @@ def get_leads_stale_for_refresh(
     """Prospects actifs avec URL, non rafraîchis depuis stale_hours (les plus anciens d'abord)."""
     limit = max(1, int(limit))
     hours = max(1, int(stale_hours))
+    # On sur-échantillonne les candidats puis on applique le MÊME filtre de
+    # visibilité que get_lead (territoire / villes de l'agence). Sans ça, des fiches
+    # hors secteur encore rattachées à l'agence (ex. après changement de villes
+    # cibles) étaient renvoyées en boucle puis jugées « Prospect introuvable » au
+    # refresh → logs bruyants + créneaux de rafraîchissement gaspillés.
+    candidate_limit = max(limit * 5, 50)
     # Intervalle en littéral pour sql_adapt Postgres (datetime('now', ?) non traduit).
     with get_connection() as conn:
         rows = conn.execute(
-            f"""SELECT id, source_url, updated_at, created_at, status
-               FROM leads
+            f"""SELECT * FROM leads
                WHERE agency_id = ?
                  AND COALESCE(status, 'nouveau') != 'retire'
                  AND TRIM(COALESCE(source_url, '')) != ''
@@ -1203,9 +1208,18 @@ def get_leads_stale_for_refresh(
                      < datetime('now', '-{hours} hours')
                ORDER BY COALESCE(updated_at, created_at) ASC
                LIMIT ?""",
-            (agency_id, limit),
+            (agency_id, candidate_limit),
         ).fetchall()
-    return [dict(r) for r in rows]
+    from crm.leads.shared_pool import lead_visible_to_agency
+
+    out: list[dict] = []
+    for r in rows:
+        d = dict(r)
+        if lead_visible_to_agency(d, agency_id):
+            out.append(d)
+            if len(out) >= limit:
+                break
+    return out
 
 
 # ─── Crawl jobs ───

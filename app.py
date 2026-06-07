@@ -1602,11 +1602,18 @@ def api_refresh_all_leads():
                 _append_refresh_log(batch, f"Recrawl prospect #{lead_id}…")
                 try:
                     job = engine.refresh_lead(lead_id, agency_id=agency_id)
-                except Exception:
+                except Exception as exc:
+                    is_gone = "introuvable" in str(exc).lower()
                     with _refresh_all_lock:
                         batch["failed"] += 1
-                    _append_refresh_log(batch, f"Prospect #{lead_id} : échec lancement")
-                    logging.exception("refresh_all launch failed for lead %s", lead_id)
+                    if is_gone:
+                        # Fiche supprimée / passée hors secteur entre-temps : skip discret.
+                        _append_refresh_log(
+                            batch, f"Prospect #{lead_id} : ignoré (hors secteur ou supprimé)"
+                        )
+                    else:
+                        _append_refresh_log(batch, f"Prospect #{lead_id} : échec lancement")
+                        logging.exception("refresh_all launch failed for lead %s", lead_id)
                     continue
                 job_id = (job or {}).get("id")
                 with _refresh_all_lock:
@@ -1932,6 +1939,13 @@ def api_crawler_status():
     from crawler.storage import get_veille_feed
 
     veille = crawl_veille_readiness(agency_id)
+    from crawler.config import (
+        CRAWL_PROXIES,
+        antibot_portals_readiness,
+        antibot_setup_hint,
+    )
+
+    readiness = antibot_portals_readiness()
     return jsonify({
         **status,
         "found_today": sum(s.get("leads_updated_today", s.get("today", 0)) for s in sources),
@@ -1940,7 +1954,74 @@ def api_crawler_status():
         "prospects_in_db": stats["total"],
         "veille": veille,
         "veille_feed": get_veille_feed(agency_id, limit=30),
+        "antibot_readiness": readiness,
+        "antibot_hint": antibot_setup_hint("Les portails protégés (SeLoger, LBC, PAP…)", readiness),
+        "proxy_count": len(CRAWL_PROXIES),
+        "proxy_host": (CRAWL_PROXIES[0].split("@")[-1] if CRAWL_PROXIES else None),
     })
+
+
+@app.route("/api/crawler/proxy-test", methods=["POST"])
+def api_crawler_proxy_test():
+    """Teste le proxy Decodo configuré (ou un proxy collé) — renvoie IP, pays, latence.
+
+    Ne renvoie JAMAIS le mot de passe du proxy au client. Permet de vérifier depuis
+    le CRM que Decodo répond et sort bien sur une IP française, sans toucher au .env.
+    """
+    _aid()
+    import json as _json
+    import time as _time
+
+    import requests as _rq
+
+    from crawler.config import CRAWL_PROXIES
+
+    data = request.get_json(silent=True) or {}
+    proxy_url = (data.get("proxy_url") or "").strip()
+    if not proxy_url:
+        if not CRAWL_PROXIES:
+            return jsonify({
+                "ok": False,
+                "configured": False,
+                "error": "Aucun proxy configuré (CRAWL_PROXIES vide). Renseignez vos identifiants Decodo.",
+            })
+        proxy_url = CRAWL_PROXIES[0]
+
+    host = proxy_url.split("@")[-1] if "@" in proxy_url else proxy_url
+    proxies = {"http": proxy_url, "https": proxy_url}
+    endpoints = ("https://ip.decodo.com/json", "https://api.ipify.org?format=json")
+    t0 = _time.monotonic()
+    last_err = ""
+    for endpoint in endpoints:
+        try:
+            resp = _rq.get(endpoint, proxies=proxies, timeout=15)
+            body = (resp.text or "").strip()
+            if "FortiGate" in body or "Application Control Violation" in body:
+                return jsonify({
+                    "ok": False,
+                    "host": host,
+                    "error": "Bloqué par un pare-feu réseau (FortiGate) — testez en 4G ou ouvrez les ports Decodo.",
+                })
+            if resp.ok and body:
+                ip = country = None
+                try:
+                    parsed = _json.loads(body)
+                    ip = parsed.get("ip") or (parsed.get("proxy") or {}).get("ip")
+                    raw_country = parsed.get("country")
+                    country = raw_country.get("code") if isinstance(raw_country, dict) else raw_country
+                except Exception:
+                    ip = body[:40]
+                return jsonify({
+                    "ok": True,
+                    "host": host,
+                    "ip": ip,
+                    "country": country,
+                    "latency_ms": int((_time.monotonic() - t0) * 1000),
+                })
+            last_err = f"HTTP {resp.status_code}"
+        except Exception as exc:
+            last_err = str(exc)[:160]
+    return jsonify({"ok": False, "host": host, "error": last_err or "échec du test"})
 
 
 @app.route("/api/crawler/veille-feed")

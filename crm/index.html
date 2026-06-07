@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://veliora.fr/vitrine/assets/img/veliora-og.png">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="manifest" href="/crm/manifest.webmanifest">
-  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=67">
+  <link rel="stylesheet" href="/crm/assets/css/styles.css?v=68">
   <link rel="stylesheet" href="/crm/assets/css/transactions.css?v=2">
   <link rel="stylesheet" href="/crm/assets/css/mobile.css?v=41">
 </head>
@@ -814,8 +814,25 @@
           <h4 class="sources-subsection-title">Portails recommandés</h4>
           <div class="sources-grid" id="sources-grid-reliable"></div>
           <div id="sources-antibot-wrap">
-            <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (bientôt disponibles)</h4>
-            <p class="form-hint sources-subsection-hint" id="sources-antibot-hint">PAP, Leboncoin, SeLoger, Bien’ici, Logic-Immo — portails à accès restreint. Activez Chrome + proxies sur le serveur pour les inclure dans les portails recommandés.</p>
+            <h4 class="sources-subsection-title sources-subsection-title--muted">Sites protégés (DataDome) — SeLoger, Leboncoin, PAP, Bien’ici, Logic-Immo</h4>
+            <p class="form-hint sources-subsection-hint" id="sources-antibot-hint">Ces portails exigent un navigateur réel + des proxies résidentiels Decodo. État ci-dessous.</p>
+            <div class="decodo-panel" id="decodo-panel">
+              <div class="decodo-panel-head">
+                <span class="decodo-dot" id="decodo-dot" aria-hidden="true"></span>
+                <strong id="decodo-level-label">Vérification de la configuration…</strong>
+              </div>
+              <ul class="decodo-checks" id="decodo-checks">
+                <li id="decodo-check-browser" data-state="pending"><span class="decodo-check-icon"></span>Navigateur (Chrome/Playwright)</li>
+                <li id="decodo-check-proxy" data-state="pending"><span class="decodo-check-icon"></span>Proxies résidentiels Decodo</li>
+                <li id="decodo-check-enabled" data-state="pending"><span class="decodo-check-icon"></span>Crawl anti-bot activé</li>
+              </ul>
+              <p class="form-hint decodo-hint" id="decodo-hint"></p>
+              <div class="decodo-actions">
+                <button type="button" class="btn btn-secondary btn-small" id="decodo-test-btn">Tester le proxy Decodo</button>
+                <span class="decodo-test-result" id="decodo-test-result" role="status"></span>
+              </div>
+              <p class="decodo-doc-hint form-hint">Configurer : renseignez <code>CRAWL_PROXIES</code> (Decodo) sur le serveur — voir <strong>DECODO.md</strong>.</p>
+            </div>
             <div class="sources-grid sources-grid--antibot" id="sources-grid-antibot"></div>
           </div>
           <div id="sources-custom-wrap" hidden>
@@ -1562,11 +1579,11 @@
   <script src="/crm/assets/js/mandate-render.js?v=30"></script>
   <script src="/crm/assets/js/mandates.js?v=30"></script>
   <script src="/crm/assets/js/crawl-watch.js?v=1"></script>
-  <script src="/crm/assets/js/city-autocomplete.js?v=2"></script>
+  <script src="/crm/assets/js/city-autocomplete.js?v=3"></script>
   <script src="/crm/assets/js/map.js?v=12"></script>
   <script src="/crm/assets/js/portal.js?v=1"></script>
   <script src="/crm/assets/js/transactions.js?v=3"></script>
-  <script src="/crm/assets/js/app.js?v=90"></script>
+  <script src="/crm/assets/js/app.js?v=91"></script>
   <script src="/crm/assets/js/ai.js?v=6"></script>
   <script>
     if ("serviceWorker" in navigator) {

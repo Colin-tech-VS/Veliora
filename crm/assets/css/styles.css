@@ -509,6 +509,75 @@ body {
   50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(196, 165, 116, 0); }
 }
 
+/* ── Panneau état Decodo / anti-bot (Portails) ── */
+.decodo-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin: 0.5rem 0 0.9rem;
+  background: var(--card, #fff);
+}
+.decodo-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.95rem;
+}
+.decodo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--slate-300, #cbd5e1);
+  flex: 0 0 auto;
+}
+.decodo-dot.is-ready { background: var(--emerald-500); }
+.decodo-dot.is-partial { background: var(--amber-500); }
+.decodo-dot.is-blocked { background: var(--rose-500); }
+.decodo-checks {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+.decodo-checks li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #475569);
+}
+.decodo-check-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--slate-300, #cbd5e1);
+}
+.decodo-checks li[data-state="ok"] .decodo-check-icon { background: var(--emerald-500); }
+.decodo-checks li[data-state="ok"] .decodo-check-icon::after { content: "✓"; }
+.decodo-checks li[data-state="ko"] .decodo-check-icon { background: var(--rose-500); }
+.decodo-checks li[data-state="ko"] .decodo-check-icon::after { content: "✕"; }
+.decodo-checks li[data-state="pending"] .decodo-check-icon::after { content: "…"; }
+.decodo-hint { margin: 0 0 0.6rem; }
+.decodo-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+.decodo-test-result { font-size: 0.82rem; }
+.decodo-test-result.ok { color: var(--emerald-500); }
+.decodo-test-result.ko { color: var(--rose-500); }
+.decodo-doc-hint { margin: 0.6rem 0 0; font-size: 0.78rem; opacity: 0.85; }
+
 .crawler-status-mini p {
   font-size: 0.75rem;
   color: var(--text-sidebar);

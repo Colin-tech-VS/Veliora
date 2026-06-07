@@ -423,7 +423,19 @@ class CrawlerEngine:
             if not antibot_portals_crawl_enabled():
                 from crawler.storage import is_antibot_source
 
+                skipped_antibot = [s["name"] for s in sources if is_antibot_source(s)]
                 sources = [s for s in sources if not is_antibot_source(s)]
+                if skipped_antibot:
+                    from crawler.config import antibot_setup_hint
+
+                    add_crawl_log(
+                        None,
+                        "",
+                        "skip_source",
+                        f"Veille — portails anti-bot ignorés ({', '.join(skipped_antibot)}) : "
+                        + antibot_setup_hint("ces portails"),
+                        job_id,
+                    )
         if not sources:
             update_crawl_job(
                 job_id,
@@ -740,6 +752,27 @@ class CrawlerEngine:
             return self._crawl_streamestate_source(
                 source_id, adapter, job_id, city=city, veille_mode=veille_mode
             )
+
+        # Portail anti-bot (SeLoger, LBC, PAP…) : DataDome exige un navigateur + des
+        # proxies résidentiels (Decodo). On ne lance Chrome QUE si les deux sont là
+        # (niveau « ready ») — sinon message clair, sans griller du budget pour finir
+        # à « 0 annonce » (les proxies publics gratuits ne passent pas DataDome).
+        from crawler.portals import COMING_SOON_PORTAL_IDS
+
+        base_pid = resolve_base_portal_id(source_id)
+        if base_pid and base_pid in COMING_SOON_PORTAL_IDS:
+            from crawler.config import antibot_portals_readiness, antibot_setup_hint
+
+            readiness = antibot_portals_readiness()
+            if readiness["level"] != "ready":
+                hint = antibot_setup_hint(adapter.source_name, readiness)
+                if job_id:
+                    add_crawl_log(
+                        source_id, adapter.config.search_url or "", "error", hint, job_id
+                    )
+                return CrawlResult(
+                    errors=[CrawlError.issue(CrawlError.SITE_BLOCKED, hint)]
+                )
 
         prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)
         crawl_city = self._bind_crawl_city_context(city)
@@ -2040,6 +2073,18 @@ class CrawlerEngine:
                 prefer_browser=True,
                 scroll_lazy=True,
             )
+        # Gros portail anti-bot (SeLoger, LBC…) : curl_cffi est voué au blocage
+        # DataDome et déclencherait une rotation d'IP Decodo en pure perte (quota
+        # gaspillé) avant même d'essayer le navigateur. On va donc droit au
+        # navigateur + proxy résidentiel, qui est le seul chemin qui passe.
+        if url_needs_browser(url):
+            return fetch_page(
+                url,
+                click_contacts=True,
+                referer=referer,
+                prefer_browser=True,
+                scroll_lazy=scroll_lazy,
+            )
         quick = fetch_page(url, referer=referer, prefer_browser=False, fast_mode=True)
         if quick.ok:
             html = quick.html or ""
@@ -3010,7 +3055,11 @@ class CrawlerEngine:
                 try:
                     job = self.refresh_lead(int(lead_id), agency_id=agency_id)
                 except Exception as exc:
-                    logger.warning("refresh_lead %s: %s", lead_id, exc)
+                    # Fiche disparue/hors secteur entre la sélection et le refresh : normal.
+                    if "introuvable" in str(exc).lower():
+                        logger.debug("refresh_lead %s ignoré : %s", lead_id, exc)
+                    else:
+                        logger.warning("refresh_lead %s: %s", lead_id, exc)
                     continue
                 job_id = (job or {}).get("id")
                 if not job_id:
