@@ -1602,11 +1602,18 @@ def api_refresh_all_leads():
                 _append_refresh_log(batch, f"Recrawl prospect #{lead_id}…")
                 try:
                     job = engine.refresh_lead(lead_id, agency_id=agency_id)
-                except Exception:
+                except Exception as exc:
+                    is_gone = "introuvable" in str(exc).lower()
                     with _refresh_all_lock:
                         batch["failed"] += 1
-                    _append_refresh_log(batch, f"Prospect #{lead_id} : échec lancement")
-                    logging.exception("refresh_all launch failed for lead %s", lead_id)
+                    if is_gone:
+                        # Fiche supprimée / passée hors secteur entre-temps : skip discret.
+                        _append_refresh_log(
+                            batch, f"Prospect #{lead_id} : ignoré (hors secteur ou supprimé)"
+                        )
+                    else:
+                        _append_refresh_log(batch, f"Prospect #{lead_id} : échec lancement")
+                        logging.exception("refresh_all launch failed for lead %s", lead_id)
                     continue
                 job_id = (job or {}).get("id")
                 with _refresh_all_lock:

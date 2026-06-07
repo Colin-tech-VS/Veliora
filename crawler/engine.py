@@ -3055,7 +3055,11 @@ class CrawlerEngine:
                 try:
                     job = self.refresh_lead(int(lead_id), agency_id=agency_id)
                 except Exception as exc:
-                    logger.warning("refresh_lead %s: %s", lead_id, exc)
+                    # Fiche disparue/hors secteur entre la sélection et le refresh : normal.
+                    if "introuvable" in str(exc).lower():
+                        logger.debug("refresh_lead %s ignoré : %s", lead_id, exc)
+                    else:
+                        logger.warning("refresh_lead %s: %s", lead_id, exc)
                     continue
                 job_id = (job or {}).get("id")
                 if not job_id:
