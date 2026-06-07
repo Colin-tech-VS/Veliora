@@ -262,6 +262,23 @@ AUTO_WARMUP_ANTIBOT = os.getenv("AUTO_WARMUP_ANTIBOT", "false").strip().lower() 
     "yes",
 )
 
+# Mode headless du navigateur sur serveur :
+#   "new" → Chrome Headless « nouvelle génération » (--headless=new) : empreinte
+#           quasi identique au navigateur visible → bien meilleur face à DataDome,
+#           sans écran. C'est le défaut sur Scalingo (pas de display).
+#   "old" → ancien headless (plus détectable) — repli si "new" pose souci.
+CRAWL_HEADLESS_MODE = (os.getenv("CRAWL_HEADLESS_MODE", "new") or "new").strip().lower()
+
+# Écran virtuel Xvfb (Linux) : lance Chrome en mode VISIBLE (headful) sous un display
+# virtuel — l'évasion anti-bot la plus robuste sur serveur sans écran. OFF par défaut
+# (nécessite le paquet apt `xvfb` + `pyvirtualdisplay`). À activer si "new headless"
+# se fait encore bloquer par DataDome : CRAWL_XVFB=1.
+CRAWL_XVFB = os.getenv("CRAWL_XVFB", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
 # Profil navigateur persistant (cookies entre pages)
 PLAYWRIGHT_PROFILE_DIR = "data/playwright_profile"
 
@@ -450,7 +467,10 @@ def antibot_portals_crawl_enabled() -> bool:
 def antibot_portals_readiness() -> dict:
     """État de préparation au crawl des portails anti-bot (pour diagnostic / UI)."""
     has_browser = CRAWL_PLAYWRIGHT_ENABLED
-    has_residential = proxies_enabled()  # CRAWL_PROXIES (idéalement résidentiels)
+    # Résidentiel = STRICTEMENT CRAWL_PROXIES (Decodo). Les proxies publics gratuits
+    # ne passent PAS DataDome : on ne les compte pas comme « prêt » pour l'anti-bot,
+    # sinon on lancerait Chrome pour rien sur SeLoger & co.
+    has_residential = bool(CRAWL_PROXIES)
     has_any_rotation = has_residential or CRAWL_AUTO_FREE_PROXIES
     if has_browser and has_residential:
         level = "ready"  # navigateur + proxies dédiés : configuration fiable

@@ -753,8 +753,10 @@ class CrawlerEngine:
                 source_id, adapter, job_id, city=city, veille_mode=veille_mode
             )
 
-        # Portail anti-bot (SeLoger, LBC, PAP…) : si navigateur/Decodo manquent, on le
-        # dit clairement au lieu de griller le budget pour finir à « 0 annonce ».
+        # Portail anti-bot (SeLoger, LBC, PAP…) : DataDome exige un navigateur + des
+        # proxies résidentiels (Decodo). On ne lance Chrome QUE si les deux sont là
+        # (niveau « ready ») — sinon message clair, sans griller du budget pour finir
+        # à « 0 annonce » (les proxies publics gratuits ne passent pas DataDome).
         from crawler.portals import COMING_SOON_PORTAL_IDS
 
         base_pid = resolve_base_portal_id(source_id)
@@ -762,7 +764,7 @@ class CrawlerEngine:
             from crawler.config import antibot_portals_readiness, antibot_setup_hint
 
             readiness = antibot_portals_readiness()
-            if not readiness["enabled"] or readiness["level"] == "blocked":
+            if readiness["level"] != "ready":
                 hint = antibot_setup_hint(adapter.source_name, readiness)
                 if job_id:
                     add_crawl_log(
@@ -770,15 +772,6 @@ class CrawlerEngine:
                     )
                 return CrawlResult(
                     errors=[CrawlError.issue(CrawlError.SITE_BLOCKED, hint)]
-                )
-            if readiness["level"] == "browser_only" and job_id:
-                add_crawl_log(
-                    source_id,
-                    "",
-                    "skip_source",
-                    f"{adapter.source_name} : navigateur OK mais aucun proxy résidentiel "
-                    "(Decodo) — DataDome bloque souvent. Ajoutez CRAWL_PROXIES pour fiabiliser.",
-                    job_id,
                 )
 
         prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)

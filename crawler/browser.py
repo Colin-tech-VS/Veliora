@@ -195,10 +195,26 @@ class _PlaywrightSession:
             "--disable-features=IsolateOrigins,site-per-process",
         ]
 
+    def _headless_launch(self) -> tuple[bool, list[str]]:
+        """Paramètres headless : (headless_passé_à_playwright, args_supplémentaires).
+
+        En « new headless » on passe headless=False à Playwright et on force le mode
+        via --headless=new : empreinte quasi identique au navigateur visible (Chrome
+        n'expose pas les marqueurs de l'ancien headless), donc bien meilleur face à
+        DataDome — et sans écran. En headful (Xvfb / poste de dev), pas d'arg headless.
+        """
+        from crawler.config import CRAWL_HEADLESS_MODE
+
+        if not self._headless:
+            return False, []  # navigateur visible (écran réel ou Xvfb)
+        if CRAWL_HEADLESS_MODE == "old":
+            return True, []
+        return False, ["--headless=new"]
+
     def _create_context(self, p):
         profile = str(_profile_path())
-        args = self._launch_args()
-        headless = self._headless
+        pw_headless, head_args = self._headless_launch()
+        args = self._launch_args() + head_args
         proxy = _playwright_proxy()
         proxy_kw = {"proxy": proxy} if proxy else {}
 
@@ -209,7 +225,7 @@ class _PlaywrightSession:
             try:
                 ctx = p.chromium.launch_persistent_context(
                     profile,
-                    headless=headless,
+                    headless=pw_headless,
                     user_agent=self._user_agent,
                     locale="fr-FR",
                     timezone_id="Europe/Paris",
@@ -231,8 +247,8 @@ class _PlaywrightSession:
                 last_exc = exc
                 try:
                     browser = p.chromium.launch(
-                        headless=headless,
-                        args=args + ([] if headless else []),
+                        headless=pw_headless,
+                        args=args,
                         **ch_kw,
                         **proxy_kw,
                     )
@@ -562,12 +578,51 @@ class _PlaywrightSession:
             self._playwright = None
 
 
+_virtual_display = None
+_virtual_display_lock = threading.Lock()
+_virtual_display_tried = False
+
+
+def _ensure_virtual_display() -> bool:
+    """Démarre un écran virtuel Xvfb (Linux serveur) une seule fois pour tout le
+    process — permet de lancer Chrome en mode VISIBLE (headful) là où il n'y a pas
+    d'écran (Scalingo), la meilleure parade contre DataDome. Repli silencieux si
+    xvfb / pyvirtualdisplay manquent."""
+    global _virtual_display, _virtual_display_tried
+    import sys
+
+    from crawler.config import CRAWL_XVFB
+
+    if not CRAWL_XVFB or sys.platform != "linux":
+        return False
+    with _virtual_display_lock:
+        if _virtual_display is not None:
+            return True
+        if _virtual_display_tried:
+            return False
+        _virtual_display_tried = True
+        try:
+            from pyvirtualdisplay import Display
+
+            disp = Display(visible=False, size=(1366, 900))
+            disp.start()
+            _virtual_display = disp
+            logger.info("Écran virtuel Xvfb démarré — crawl Chrome visible (anti-bot).")
+            return True
+        except Exception as exc:
+            logger.warning("Xvfb indisponible (%s) — repli sur le headless.", exc)
+            return False
+
+
 def _get_session() -> _PlaywrightSession:
     session = getattr(_thread_local, "pw_session", None)
     if session is None:
         from crawler.config import PLAYWRIGHT_FORCE_HEADED
 
-        session = _PlaywrightSession(headless=not PLAYWRIGHT_FORCE_HEADED)
+        # Headful réel si Xvfb dispo (anti-bot max) ou forcé ; sinon « new headless ».
+        use_display = _ensure_virtual_display()
+        headless = not (PLAYWRIGHT_FORCE_HEADED or use_display)
+        session = _PlaywrightSession(headless=headless)
         _thread_local.pw_session = session
     return session
 

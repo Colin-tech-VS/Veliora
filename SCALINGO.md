@@ -80,28 +80,44 @@ grep -v '^\s*#' scripts/scalingo-env-apply.env | xargs -I{} scalingo --app velio
 | ParuVendu, Ouest-France, LeSiteImmo, Superimmo… | OK (HTTP) |
 | Réseaux agences + catalogue (`CRAWL_INCLUDE_CATALOG_IN_AUTO`) | OK |
 | Sites perso / Netty / WordPress (`CRAWL_INCLUDE_CUSTOM_IN_AUTO`) | OK |
-| LeBonCoin, PAP, SeLoger, Bien’ici | **Désactivés** (`CRAWL_ANTIBOT_PORTALS_ENABLED=false`) — DataDome exige navigateur + proxies résidentiels |
+| LeBonCoin, PAP, SeLoger, Bien’ici | **Activables** — navigateur réel + Decodo activés par défaut ; il ne reste qu'à renseigner `CRAWL_PROXIES` (voir ci-dessous) |
 
 Activez dans le CRM les portails **sans badge « Navigateur requis »** pour votre ville.
 
-##### Activer SeLoger / LBC / PAP **sur Scalingo**
+##### Activer SeLoger / LBC / PAP **directement sur Scalingo** (sans worker PC)
 
 SeLoger & co sont protégés par DataDome : impossible en HTTP simple. Il faut un
-**navigateur headless + des proxies résidentiels (Decodo)**. L'`Aptfile` embarque
-déjà les libs Chromium, donc Scalingo peut le faire — au prix de plus de RAM (dyno
-**L** recommandé) et de la bande passante Decodo. À régler :
+**navigateur réel + des proxies résidentiels (Decodo)**. Tout est déjà en place
+sur Scalingo :
+
+- `Aptfile` : libs Chromium **+ `xvfb`** (écran virtuel) ;
+- `bin/post_compile` : installe Chromium au build (`playwright install chromium`) ;
+- `playwright-stealth` : durcissement d'empreinte (dans `requirements.txt`) ;
+- **« new headless »** (`CRAWL_HEADLESS_MODE=new`) : Chrome headless nouvelle
+  génération, empreinte quasi identique au navigateur visible → passe DataDome
+  sans écran.
+
+Réglages (déjà par défaut dans `scalingo.json`, sauf le proxy) — voir le fichier
+prêt à coller [`scripts/scalingo-env-antibot.env.example`](scripts/scalingo-env-antibot.env.example) :
 
 ```
 CRAWL_PLAYWRIGHT_ENABLED=true
 CRAWL_ANTIBOT_PORTALS_ENABLED=1
-CRAWL_PROXIES=http://spXXXX:MOTDEPASSE@fr.decodo.com:40000   # France rotatif
-AUTO_WARMUP_ANTIBOT=false   # garder false : pas de Chrome visible sur un dyno
+CRAWL_HEADLESS_MODE=new
+CRAWL_PROXIES=http://spXXXX:MOTDEPASSE@fr.decodo.com:40000   # OBLIGATOIRE (Decodo France rotatif)
+CRAWL_AUTO_FREE_PROXIES=false
 ```
 
-Au build, Chromium doit être installé : `playwright install chromium` (ajouter au
-`postdeploy`/release si absent). Sans l'un de ces réglages, le crawl renvoie
-désormais un **message explicite** (« portail anti-bot : 0 annonce tant qu'il
-manque … ») au lieu d'un silencieux « 0 annonce ». Voir [DECODO.md](DECODO.md).
+> ⚠️ **Le proxy Decodo est obligatoire** : sans lui, l'IP datacenter Scalingo est
+> bloquée par DataDome et le crawl renvoie un **message explicite** (« portail
+> anti-bot : 0 annonce tant qu'il manque des proxies résidentiels… ») au lieu de
+> lancer Chrome pour rien. On ne lance le navigateur **que** si navigateur **et**
+> Decodo sont présents.
+
+**Ressources** : Chromium consomme de la RAM → **dyno L** (déjà dans `scalingo.json`).
+Si DataDome bloque encore en « new headless », passez à l'écran virtuel :
+`CRAWL_XVFB=1` (Chrome en mode visible sous Xvfb, la parade la plus robuste).
+Voir [DECODO.md](DECODO.md).
 
 #### Qualité des données (strict)
 
@@ -129,13 +145,15 @@ manque … ») au lieu d'un silencieux « 0 annonce ». Voir [DECODO.md](DECODO.
 
 | Variable | Défaut Scalingo | Rôle |
 |----------|-----------------|------|
-| `CRAWL_PLAYWRIGHT_ENABLED` | `false` | Pas de Chrome sur le conteneur web |
-| `CRAWL_ANTIBOT_PORTALS_ENABLED` | `false` | LBC/PAP/SeLoger exclus sans navigateur |
+| `CRAWL_PLAYWRIGHT_ENABLED` | `true` | Chrome réel pour les portails DataDome (lancé à la demande) |
+| `CRAWL_ANTIBOT_PORTALS_ENABLED` | `1` | LBC/PAP/SeLoger crawlables (si `CRAWL_PROXIES` Decodo renseigné) |
+| `CRAWL_HEADLESS_MODE` | `new` | Headless nouvelle génération — empreinte quasi-visible (anti-DataDome) |
+| `CRAWL_XVFB` | `false` | Mettre `1` pour Chrome visible sous écran virtuel Xvfb (parade ultime) |
 | `AUTO_WARMUP_ANTIBOT` | `false` | Pas de warmup automatique lourd |
 | `DOMAIN_WARMUP` | `false` | Pas de navigation préalable par domaine |
 | `CRAWL_SKIP_CITY_PROBE` | `true` | Pas de test HTTP des URLs ville |
-| `CRAWL_HEADED_FALLBACK` | `false` | Pas de fenêtre Chrome visible |
-| `CRAWL_HEADFUL` | `false` | Idem |
+| `CRAWL_HEADED_FALLBACK` | `false` | Pas de repli fenêtre visible (Xvfb gère le headful) |
+| `CRAWL_HEADFUL` | `false` | Chrome visible dès le départ (auto si `CRAWL_XVFB=1`) |
 | `CITY_CRAWL_MAX_LISTINGS` | `90` | Plafond annonces par ville |
 | `CITY_DISCOVERY_STOP_LINKS` | `28` | Arrêt découverte liens |
 | `CRAWL_PROXY_ROTATE_EACH_CRAWL` | `true` | Nouvelle IP en début de job / portail |
