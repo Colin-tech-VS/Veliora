@@ -6333,7 +6333,7 @@ function renderDashboardTopLeads() {
       </td>
       <td><div class="lead-property"><div class="address">${escapeHtml(lead.property_title || lead.address)}</div><div class="details">${escapeHtml(lead.property_detail || lead.property)}</div></div></td>
       <td><span class="price-tag">${formatPrice(lead)}</span> ${getTransactionBadge(lead)}</td>
-      <td><span class="source-tag">${lead.source}</span></td>
+      <td>${getSourceTag(lead)}</td>
       <td><span class="score-pill ${getScoreClass(lead.score || 0)}">${lead.score || 0}</span></td>
       <td class="lead-actions-cell">${getLeadActionsHtml(lead)}</td>
     </tr>`).join("");
@@ -6376,7 +6376,7 @@ function renderLeadRow(lead) {
           <div class="lead-property-text">
             <div class="address">${escapeHtml(lead.property_title || lead.address)} ${freshBadge}${alsoOnBadge}${estimatedChip}</div>
             <div class="details">${escapeHtml(lead.property_detail || lead.property)} · ${formatPublishedLine(lead)}</div>
-            <div class="lead-property-meta">${getTypeBadge(lead)} <span class="source-tag">${lead.source}</span></div>
+            <div class="lead-property-meta">${getTypeBadge(lead)} ${getSourceTag(lead)}</div>
           </div>
         </div>
       </td>
@@ -6389,6 +6389,38 @@ function renderLeadRow(lead) {
       <td>${getStatusBadge(lead.status)}</td>
       <td class="lead-actions-cell">${getLeadActionsHtml(lead)} ${getLeadDeleteButtonHtml(lead)}</td>
     </tr>`;
+}
+
+/** Réinitialise les filtres prospects (chips + ville) et re-rend la liste. */
+function resetLeadsFilters() {
+  state.leadsFilter = "all";
+  state.leadsCityFilter = "";
+  document
+    .querySelectorAll(".filter-chip")
+    .forEach((c) => c.classList.toggle("active", c.dataset.filter === "all"));
+  const cityFilter = document.getElementById("leads-city-filter");
+  if (cityFilter) cityFilter.value = "";
+  renderLeads();
+}
+
+/** État vide contextuel : aucun prospect du tout vs filtre trop restrictif. */
+function leadsEmptyStateHtml() {
+  const hasAny = Array.isArray(LEADS) && LEADS.length > 0;
+  const filtered = state.leadsFilter !== "all" || !!state.leadsCityFilter;
+  if (hasAny && filtered) {
+    return `<div class="empty-state empty-state--rich">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 4h18M6 8h12M10 12h4M11 16h2"/></svg>
+      <h3>Aucun prospect pour ce filtre</h3>
+      <p>Aucune fiche ne correspond aux filtres actifs.</p>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="resetLeadsFilters()">Réinitialiser les filtres</button>
+    </div>`;
+  }
+  return `<div class="empty-state empty-state--rich">
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M11 18a7 7 0 100-14 7 7 0 000 14z"/></svg>
+    <h3>Aucun prospect pour le moment</h3>
+    <p>Lancez la veille sur vos portails : Veliora détecte les annonces de particuliers et les classe par potentiel de mandat.</p>
+    <button type="button" class="btn btn-primary" onclick="switchView('crawler')">Lancer la veille</button>
+  </div>`;
 }
 
 function renderLeads() {
@@ -6406,7 +6438,7 @@ function renderLeads() {
     gridWrapper.style.display = "none";
 
     if (!leads.length) {
-      tableContainer.innerHTML = `<tr><td colspan="6"><div class="empty-state"><p>Aucune opportunité — configurez vos sources pour analyser le marché</p></div></td></tr>`;
+      tableContainer.innerHTML = `<tr><td colspan="6">${leadsEmptyStateHtml()}</td></tr>`;
       return;
     }
 
@@ -6416,7 +6448,7 @@ function renderLeads() {
     gridWrapper.style.display = "block";
 
     if (!leads.length) {
-      gridContainer.innerHTML = `<div class="empty-state"><p>Aucun prospect</p></div>`;
+      gridContainer.innerHTML = leadsEmptyStateHtml();
       return;
     }
 
@@ -6447,7 +6479,7 @@ function renderLeads() {
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${getTypeBadge(lead)} ${getStatusBadge(lead.status)} ${txStageBadge(lead)} <span class="radar-priority-reco">${escapeHtml(mandateCallRecommendation(lead.mandate_score || 0))}</span></div>
         </div>
         <div class="lead-card-footer">
-          <span class="source-tag">${lead.source}</span>
+          ${getSourceTag(lead)}
           <span class="lead-card-footer-links">${getLeadActionsHtml(lead)}</span>
         </div>
       </div>`).join("");

@@ -3381,9 +3381,15 @@ tr.lead-row-flash td {
   color: var(--text-secondary);
 }
 
-.badge-status.nouveau { background: rgba(14, 165, 233, 0.1); color: var(--sky-500); }
+.badge-status.nouveau,
+.badge-status.a_contacter { background: rgba(14, 165, 233, 0.1); color: var(--sky-500); }
 .badge-status.contacte { background: rgba(139, 92, 246, 0.1); color: var(--violet-500); }
-.badge-status.mandat { background: var(--brand-gold-glow); color: #9a7b2e; }
+.badge-status.rdv { background: rgba(245, 158, 11, 0.12); color: #b45309; }
+.badge-status.en_discussion { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
+.badge-status.mandat,
+.badge-status.mandat_signe,
+.badge-status.signe { background: var(--brand-gold-glow); color: #9a7b2e; }
+.badge-status.gagne { background: rgba(16, 185, 129, 0.12); color: #047857; }
 .badge-status.perdu { background: rgba(244, 63, 94, 0.1); color: var(--rose-500); }
 .badge-status.retire {
   background: rgba(100, 116, 139, 0.15);
@@ -6343,6 +6349,39 @@ body:has(.crawl-dock.open) .script-dock.open {
   height: 48px;
   margin-bottom: 1rem;
   opacity: 0.4;
+}
+
+/* État vide enrichi : icône + titre + accroche + action claire. */
+.empty-state--rich {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 3.25rem 1.5rem;
+}
+.empty-state--rich svg {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 0.35rem;
+  color: var(--brand-accent, #c9a24b);
+  opacity: 0.55;
+}
+.empty-state--rich h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.empty-state--rich p {
+  margin: 0;
+  max-width: 30rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.empty-state--rich .btn {
+  margin-top: 0.65rem;
 }
 
 /* ─── Responsive ─── */

@@ -90,16 +90,37 @@ function getPublisherLabel(lead) {
   return lead.type === "agence" ? "Professionnel / agence" : "Particulier";
 }
 
+const STATUS_LABELS = {
+  nouveau: "Nouveau",
+  a_contacter: "À contacter",
+  contacte: "Contacté",
+  rdv: "RDV",
+  en_discussion: "En discussion",
+  mandat: "Mandat",
+  mandat_signe: "Mandat signé",
+  signe: "Signé",
+  gagne: "Gagné",
+  perdu: "Perdu",
+  retire: "Retiré",
+};
+
+/** « en_discussion » → « En discussion » : jamais de snake_case brut à l'écran. */
+function humanizeStatus(value) {
+  const s = String(value || "").replace(/_/g, " ").trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+}
+
 function getStatusBadge(status) {
-  const labels = {
-    nouveau: "Nouveau",
-    contacte: "Contacté",
-    rdv: "RDV",
-    mandat: "Mandat",
-    perdu: "Perdu",
-    retire: "Retiré",
-  };
-  return `<span class="badge badge-status ${status}">${labels[status] || status}</span>`;
+  const key = String(status || "nouveau").toLowerCase();
+  const label = STATUS_LABELS[key] || humanizeStatus(key) || "Nouveau";
+  return `<span class="badge badge-status ${escapeHtml(key)}">${escapeHtml(label)}</span>`;
+}
+
+/** Pastille source — vide si la source est absente (évite d'afficher « null »). */
+function getSourceTag(lead) {
+  const src = lead && lead.source != null ? String(lead.source).trim() : "";
+  if (!src || src.toLowerCase() === "null" || src === "—") return "";
+  return `<span class="source-tag">${escapeHtml(src)}</span>`;
 }
 
 function getMandateScoreClass(score) {
