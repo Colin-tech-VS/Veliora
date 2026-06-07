@@ -234,16 +234,27 @@
     if (el) el.scrollIntoView({ block: "nearest" });
   }
 
+  // « Lorient (56100) » : le code postal lève l'ambiguïté des communes homonymes
+  // (Sainte-Marie, Saint-Denis…) pour que le crawler cible le bon département.
+  function cityLabel(item) {
+    const pc = String(item.postcode || "").trim();
+    return pc ? `${item.name} (${pc})` : item.name;
+  }
+
   function applySelection(item) {
     if (!activeInput || !item) return;
     const input = activeInput;
-    const name = item.name;
+    const label = cityLabel(item);
     if (activeMulti) {
       const segs = input.value.split(",").map((s) => s.trim());
-      segs[segs.length - 1] = name;
+      segs[segs.length - 1] = label;
       input.value = segs.filter(Boolean).join(", ") + ", ";
     } else {
-      input.value = name;
+      input.value = label;
+      input.dataset.cityName = item.name || "";
+      input.dataset.cityPostcode = String(item.postcode || "");
+      input.dataset.cityDept = String(item.dept || "");
+      input.dataset.cityCode = String(item.code || "");
     }
     // « change » seulement (pas « input ») : on évite de relancer une recherche
     // qui rouvrirait le menu juste après la sélection.
@@ -265,9 +276,11 @@
     input.setAttribute("spellcheck", "false");
     let timer = null;
 
+    // Le « (56100) » déjà sélectionné ne doit pas polluer la requête de recherche.
+    const stripPc = (s) => String(s || "").replace(/\s*\(\d{4,5}\)\s*$/, "").trim();
     const queryFromInput = () => {
       const raw = input.value || "";
-      return multi ? raw.split(",").pop().trim() : raw.trim();
+      return stripPc(multi ? raw.split(",").pop() : raw);
     };
 
     const runSearch = () => {

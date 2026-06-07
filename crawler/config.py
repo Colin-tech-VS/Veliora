@@ -469,6 +469,31 @@ def antibot_portals_readiness() -> dict:
     }
 
 
+def antibot_setup_hint(portal_name: str = "Ce portail", readiness: dict | None = None) -> str:
+    """Message clair sur ce qu'il manque pour crawler un portail anti-bot.
+
+    Évite le « 0 annonce » silencieux : on dit explicitement ce qu'il reste à
+    configurer (navigateur, proxies résidentiels, activation).
+    """
+    r = readiness or antibot_portals_readiness()
+    missing: list[str] = []
+    if not r.get("has_browser"):
+        missing.append(
+            "un navigateur (CRAWL_PLAYWRIGHT_ENABLED=true + playwright install chromium)"
+        )
+    if not r.get("has_residential_proxies"):
+        missing.append("des proxies résidentiels (CRAWL_PROXIES=…Decodo…)")
+    if not r.get("enabled"):
+        missing.append("l'activation (CRAWL_ANTIBOT_PORTALS_ENABLED=1)")
+    if not missing:
+        return f"{portal_name} : portail anti-bot prêt (navigateur + proxies résidentiels)."
+    return (
+        f"{portal_name} est un portail anti-bot (DataDome) : 0 annonce tant qu'il manque "
+        + " ; ".join(missing)
+        + ". Voir DECODO.md."
+    )
+
+
 def background_crawl_config() -> dict:
     """Exposé API / health pour le CRM."""
     return {

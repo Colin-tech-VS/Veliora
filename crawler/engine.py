@@ -423,7 +423,19 @@ class CrawlerEngine:
             if not antibot_portals_crawl_enabled():
                 from crawler.storage import is_antibot_source
 
+                skipped_antibot = [s["name"] for s in sources if is_antibot_source(s)]
                 sources = [s for s in sources if not is_antibot_source(s)]
+                if skipped_antibot:
+                    from crawler.config import antibot_setup_hint
+
+                    add_crawl_log(
+                        None,
+                        "",
+                        "skip_source",
+                        f"Veille — portails anti-bot ignorés ({', '.join(skipped_antibot)}) : "
+                        + antibot_setup_hint("ces portails"),
+                        job_id,
+                    )
         if not sources:
             update_crawl_job(
                 job_id,
@@ -740,6 +752,34 @@ class CrawlerEngine:
             return self._crawl_streamestate_source(
                 source_id, adapter, job_id, city=city, veille_mode=veille_mode
             )
+
+        # Portail anti-bot (SeLoger, LBC, PAP…) : si navigateur/Decodo manquent, on le
+        # dit clairement au lieu de griller le budget pour finir à « 0 annonce ».
+        from crawler.portals import COMING_SOON_PORTAL_IDS
+
+        base_pid = resolve_base_portal_id(source_id)
+        if base_pid and base_pid in COMING_SOON_PORTAL_IDS:
+            from crawler.config import antibot_portals_readiness, antibot_setup_hint
+
+            readiness = antibot_portals_readiness()
+            if not readiness["enabled"] or readiness["level"] == "blocked":
+                hint = antibot_setup_hint(adapter.source_name, readiness)
+                if job_id:
+                    add_crawl_log(
+                        source_id, adapter.config.search_url or "", "error", hint, job_id
+                    )
+                return CrawlResult(
+                    errors=[CrawlError.issue(CrawlError.SITE_BLOCKED, hint)]
+                )
+            if readiness["level"] == "browser_only" and job_id:
+                add_crawl_log(
+                    source_id,
+                    "",
+                    "skip_source",
+                    f"{adapter.source_name} : navigateur OK mais aucun proxy résidentiel "
+                    "(Decodo) — DataDome bloque souvent. Ajoutez CRAWL_PROXIES pour fiabiliser.",
+                    job_id,
+                )
 
         prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)
         crawl_city = self._bind_crawl_city_context(city)

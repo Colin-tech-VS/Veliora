@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from urllib.parse import quote, urlencode, urlparse, parse_qs, urlunparse
 
@@ -11,6 +10,7 @@ from crawler.fr_communes import (
     path_slug_for_city,
     resolve_commune,
     slugify,
+    split_city_postcode,
 )
 from crawler.portals import resolve_base_portal_id
 
@@ -19,11 +19,14 @@ _DEPT_IN_PATH = re.compile(r"-((?:\d{2,3}|2[ab]))(?:\.html)?$", re.I)
 
 
 def _slug(city: str) -> str:
-    return slugify(city) or _CITY_SLUG.sub("-", city.lower().strip()).strip("-")
+    # Tolère « Lorient (56100) » : on slugifie le nom seul (sinon « lorient-56100 »).
+    name, _ = split_city_postcode(city)
+    return slugify(name) or _CITY_SLUG.sub("-", name.lower().strip()).strip("-")
 
 
 def _city_path_slug(city: str, postcode: str | None = None) -> str:
-    return path_slug_for_city(city, postcode)
+    name, embedded_pc = split_city_postcode(city)
+    return path_slug_for_city(name, (postcode or "").strip() or embedded_pc)
 
 
 def city_department_code(city: str, postcode: str | None = None) -> str | None:
@@ -33,7 +36,7 @@ def city_department_code(city: str, postcode: str | None = None) -> str | None:
 
 def search_url_targets_city(url: str, city: str) -> bool:
     """True si l’URL de liste cible explicitement la ville (pas une page nationale)."""
-    city = (city or "").strip()
+    city, _ = split_city_postcode(city)
     if not city or not url:
         return True
     slug = _slug(city)
@@ -56,7 +59,7 @@ def listing_url_likely_in_city(url: str, city: str) -> bool:
     qui tranche en aval (_lead_in_target_city). Rejeter ici revenait à jeter toutes les
     annonces leboncoin → « 0 annonce ».
     """
-    city = (city or "").strip()
+    city, _ = split_city_postcode(city)
     if not city or not url:
         return True
     slug = _slug(city)
@@ -96,7 +99,8 @@ def apply_city_to_search_url(
     postcode: str | None = None,
 ) -> str:
     """Retourne l’URL de liste avec filtre ville si possible."""
-    city = (city or "").strip()
+    city, _embedded_pc = split_city_postcode(city)
+    postcode = (postcode or "").strip() or _embedded_pc
     if not city:
         return search_url
 
@@ -165,7 +169,8 @@ def city_search_url_candidates(
     postcode: str | None = None,
 ) -> list[str]:
     """URLs de liste ville, du plus fiable au repli (testées par le moteur au crawl)."""
-    city = (city or "").strip()
+    city, _embedded_pc = split_city_postcode(city)
+    postcode = (postcode or "").strip() or _embedded_pc
     if not city:
         return [search_url] if search_url else []
 
@@ -193,23 +198,14 @@ def city_search_url_candidates(
                 out.append(cleaned)
 
     if portal == "seloger":
-        immo = path_slug
+        # Format actuel vérifié : /immobilier/achat/immo-{ville}-{dept}/ (ex. immo-lorient-56).
+        # Achat (ventes) en premier — c'est la cible des mandats. Le vieux endpoint
+        # /list.htm?places=[…] est mort (redirige/410) : on ne le génère plus.
+        immo = path_slug  # ex. lorient-56
         _add(f"https://www.seloger.com/immobilier/achat/immo-{immo}/")
+        _add(f"https://www.seloger.com/immobilier/achat/immo-{immo}/bien-appartement/")
+        _add(f"https://www.seloger.com/immobilier/achat/immo-{immo}/bien-maison/")
         _add(f"https://www.seloger.com/immobilier/tout/immo-{immo}/")
-        row = resolve_commune(city, postcode)
-        cp = (row or {}).get("postcode") or (postcode or "")
-        place_label = f"{city} ({cp})" if cp else city
-        places = json.dumps(
-            [{"label": place_label}], ensure_ascii=False, separators=(",", ":")
-        )
-        base = (
-            search_url
-            if "seloger.com" in (search_url or "").lower()
-            else "https://www.seloger.com/list.htm"
-        )
-        parsed = urlparse(base)
-        qs = {"types": "1", "projects": "2", "places": places}
-        _add(f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(qs)}")
         return out
 
     if portal == "logicimmo":

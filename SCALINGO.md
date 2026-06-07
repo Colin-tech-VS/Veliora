@@ -84,6 +84,25 @@ grep -v '^\s*#' scripts/scalingo-env-apply.env | xargs -I{} scalingo --app velio
 
 Activez dans le CRM les portails **sans badge « Navigateur requis »** pour votre ville.
 
+##### Activer SeLoger / LBC / PAP **sur Scalingo**
+
+SeLoger & co sont protégés par DataDome : impossible en HTTP simple. Il faut un
+**navigateur headless + des proxies résidentiels (Decodo)**. L'`Aptfile` embarque
+déjà les libs Chromium, donc Scalingo peut le faire — au prix de plus de RAM (dyno
+**L** recommandé) et de la bande passante Decodo. À régler :
+
+```
+CRAWL_PLAYWRIGHT_ENABLED=true
+CRAWL_ANTIBOT_PORTALS_ENABLED=1
+CRAWL_PROXIES=http://spXXXX:MOTDEPASSE@fr.decodo.com:40000   # France rotatif
+AUTO_WARMUP_ANTIBOT=false   # garder false : pas de Chrome visible sur un dyno
+```
+
+Au build, Chromium doit être installé : `playwright install chromium` (ajouter au
+`postdeploy`/release si absent). Sans l'un de ces réglages, le crawl renvoie
+désormais un **message explicite** (« portail anti-bot : 0 annonce tant qu'il
+manque … ») au lieu d'un silencieux « 0 annonce ». Voir [DECODO.md](DECODO.md).
+
 #### Qualité des données (strict)
 
 | Variable | Défaut Scalingo | Rôle |
