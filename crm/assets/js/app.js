@@ -469,6 +469,86 @@ function updateCrawlerSummary() {
   updateSidebarCount();
 }
 
+/** Panneau « Sites protégés » : état navigateur + Decodo + activation anti-bot. */
+const DECODO_LEVEL_LABELS = {
+  ready: "Prêt — SeLoger & co sont crawlés",
+  partial: "Navigateur OK, proxies Decodo manquants",
+  browser_only: "Navigateur OK, aucune rotation d’IP",
+  blocked: "Inactif — navigateur non disponible",
+};
+
+function setDecodoCheck(id, ok) {
+  const el = document.getElementById(id);
+  if (el) el.dataset.state = ok ? "ok" : "ko";
+}
+
+function updateDecodoPanel() {
+  const panel = document.getElementById("decodo-panel");
+  if (!panel) return;
+  const cfg = state.backgroundCrawl || {};
+  const r = cfg.antibot_readiness;
+  const dot = document.getElementById("decodo-dot");
+  const label = document.getElementById("decodo-level-label");
+  const hint = document.getElementById("decodo-hint");
+  if (!r) {
+    if (label) label.textContent = "Vérification de la configuration…";
+    return;
+  }
+  const level = r.level || "blocked";
+  if (dot) {
+    dot.className = "decodo-dot";
+    dot.classList.add(
+      level === "ready" ? "is-ready" : level === "blocked" ? "is-blocked" : "is-partial",
+    );
+  }
+  if (label) label.textContent = DECODO_LEVEL_LABELS[level] || level;
+  setDecodoCheck("decodo-check-browser", !!r.has_browser);
+  setDecodoCheck(
+    "decodo-check-proxy",
+    !!r.has_residential_proxies,
+  );
+  setDecodoCheck("decodo-check-enabled", !!r.enabled);
+  if (hint) {
+    const host = cfg.proxy_host ? ` — proxy : ${cfg.proxy_host}` : "";
+    hint.textContent = (cfg.antibot_hint || "") + host;
+  }
+}
+
+async function runDecodoProxyTest() {
+  const btn = document.getElementById("decodo-test-btn");
+  const out = document.getElementById("decodo-test-result");
+  if (!btn || !out) return;
+  btn.disabled = true;
+  out.className = "decodo-test-result";
+  out.textContent = "Test en cours…";
+  try {
+    const res = await api("/crawler/proxy-test", {
+      method: "POST",
+      body: JSON.stringify({}),
+      timeoutMs: 20000,
+    });
+    if (res.ok) {
+      const parts = [res.ip || "IP OK"];
+      if (res.country) parts.push(res.country);
+      if (typeof res.latency_ms === "number") parts.push(`${res.latency_ms} ms`);
+      out.className = "decodo-test-result ok";
+      out.textContent = `✓ Proxy joignable — ${parts.join(" · ")}`;
+    } else {
+      out.className = "decodo-test-result ko";
+      out.textContent = `✕ ${res.error || "Échec du test"}`;
+    }
+  } catch (err) {
+    out.className = "decodo-test-result ko";
+    out.textContent = "✕ Test impossible (réseau)";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "decodo-test-btn") runDecodoProxyTest();
+});
+
 function countLeadsForSource(source) {
   if (!source) return 0;
   const id = source.id;
@@ -6764,6 +6844,7 @@ function renderCrawler() {
   updateCrawlerSummary();
   scheduleSourceUrlsForCity();
   updateDeepAnalysisUi();
+  updateDecodoPanel();
 }
 
 function updateBadges() {
@@ -8288,6 +8369,7 @@ async function runBackgroundPoll() {
     state.backgroundCrawl = status;
     renderVeilleFeed(status.veille_feed || []);
     updateCrawlerVeilleHint(status);
+    updateDecodoPanel();
     syncCrawlerUI();
 
     if (crawlState.active) {
