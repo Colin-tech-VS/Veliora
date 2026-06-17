@@ -274,30 +274,28 @@ def _run_db_housekeeping() -> None:
         logging.exception("Expiration crawl jobs (arrière-plan)")
 
 
-@app.before_request
-def ensure_db():
+def ensure_db_ready() -> None:
+    """Garantit l'init de la base UNE seule fois (idempotent, thread-safe).
+
+    Appelée à la fois par le thread de boot (``gunicorn.conf.py`` post_fork) et,
+    en repli paresseux, par ``ensure_db`` (@before_request). Le premier appel qui
+    aboutit exécute l'init et pose le drapeau ``_db_ready`` ; les suivants
+    reviennent immédiatement.
+
+    Sans cette coordination, le thread de boot exécutait ``init_db()`` SANS poser
+    le drapeau : la première requête ``/api`` ré-exécutait alors TOUTE l'init
+    Postgres (création/migration des tables + ``secure_public_schema_rls`` qui
+    verrouille toutes les tables ``public`` + ``prune_crawl_logs``) en synchrone,
+    dans le chemin requête et sous verrou. Sur Supabase (latence réseau + DDL),
+    ce travail pouvait dépasser le timeout routeur Scalingo → « application
+    timeout » après chaque déploiement ou réveil de dyno.
+    """
     if getattr(app, "_db_ready", False):
-        return
-    # Les pages/assets statiques (vitrine, CRM shell, favicon…) n'attendent pas
-    # la base : chargement immédiat même pendant l'init ou au réveil du dyno.
-    if not _request_needs_db():
         return
     with _db_init_lock:
         if getattr(app, "_db_ready", False):
             return
-        try:
-            init_db()
-        except Exception as exc:
-            logging.exception("Initialisation DB échouée")
-            if request.path.startswith("/api/"):
-                return jsonify(
-                    {
-                        "error": "Base de données indisponible",
-                        "code": "database_unavailable",
-                        "detail": str(exc),
-                    }
-                ), 503
-            raise
+        init_db()
         from crawler.storage import mark_crawl_jobs_interrupted_on_startup
 
         mark_crawl_jobs_interrupted_on_startup()
@@ -307,6 +305,29 @@ def ensure_db():
         threading.Thread(
             target=_run_db_housekeeping, name="db-housekeeping", daemon=True
         ).start()
+
+
+@app.before_request
+def ensure_db():
+    if getattr(app, "_db_ready", False):
+        return
+    # Les pages/assets statiques (vitrine, CRM shell, favicon…) n'attendent pas
+    # la base : chargement immédiat même pendant l'init ou au réveil du dyno.
+    if not _request_needs_db():
+        return
+    try:
+        ensure_db_ready()
+    except Exception as exc:
+        logging.exception("Initialisation DB échouée")
+        if request.path.startswith("/api/"):
+            return jsonify(
+                {
+                    "error": "Base de données indisponible",
+                    "code": "database_unavailable",
+                    "detail": str(exc),
+                }
+            ), 503
+        raise
 
 
 def _register_database_busy_handler(flask_app: Flask) -> None:

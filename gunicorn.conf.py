@@ -25,10 +25,21 @@ def post_fork(server, worker):  # noqa: ARG001
     def _boot() -> None:
         # Init base d'abord (idempotente avec la phase release et ensure_db),
         # puis services de fond (veille auto, notifications, pool proxies).
-        from crawler.engine import bootstrap_background_services
-        from wsgi import _bootstrap_db
+        #
+        # ``ensure_db_ready`` pose le drapeau ``app._db_ready`` partagé : une fois
+        # l'init faite ici en arrière-plan, la première requête ``/api`` la trouve
+        # déjà prête au lieu de tout ré-exécuter en synchrone (cause d'« application
+        # timeout » sur Scalingo). En cas d'échec ici, le repli paresseux de
+        # ``ensure_db`` (@before_request) retentera proprement à la première requête.
+        import logging
 
-        _bootstrap_db()
+        from crawler.engine import bootstrap_background_services
+        from app import ensure_db_ready
+
+        try:
+            ensure_db_ready()
+        except Exception:
+            logging.exception("Init DB au boot — repli paresseux à la 1re requête")
         bootstrap_background_services()
 
     threading.Thread(target=_boot, name="veliora-boot", daemon=True).start()
