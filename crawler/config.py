@@ -97,11 +97,15 @@ STREAMESTATE_INCLUDE_IN_VEILLE = os.getenv("STREAMESTATE_INCLUDE_IN_VEILLE", "fa
     "true",
     "yes",
 )
-# Mettre de côté StreamEstate (code conservé) — crawl 100 % HTML + Decodo/Playwright.
+# Mettre de côté StreamEstate (code conservé) — analyse approfondie = Decodo + Playwright.
 CRAWL_SKIP_STREAMESTATE = os.getenv("CRAWL_SKIP_STREAMESTATE", "false").strip().lower() in (
     "1",
     "true",
     "yes",
+)
+DEEP_ANALYSIS_MAX_LEADS_PER_RUN = max(
+    1,
+    int(os.getenv("DEEP_ANALYSIS_MAX_LEADS_PER_RUN", os.getenv("STREAMESTATE_MAX_LISTINGS", "30")) or "30"),
 )
 STREAMESTATE_PARTICULIER_ONLY = os.getenv("STREAMESTATE_PARTICULIER_ONLY", "true").strip().lower() in (
     "1",

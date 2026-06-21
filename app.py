@@ -2180,39 +2180,68 @@ def api_crawler_scan():
 
 
 @app.route("/api/crawler/streamestate/verify", methods=["POST"])
+@app.route("/api/crawler/deep-analysis/verify", methods=["POST"])
 def api_crawler_streamestate_verify():
-    """Vérifie/complète les annonces déjà en base via StreamEstate, à coût crédit minimal."""
-    from crawler.streamestate import StreamEstateError, streamestate_display_name, verify_existing_leads
+    """Recrawl Decodo des fiches incomplètes (Playwright + rotation IP)."""
+    from crawler.deep_analysis import (
+        DeepAnalysisError,
+        DeepAnalysisNotConfiguredError,
+        count_deep_analysis_candidates,
+        deep_analysis_configured,
+        deep_analysis_display_name,
+        deep_analysis_setup_hint,
+    )
     from crawler.storage import is_streamestate_enabled_for_agency
 
-    if not is_streamestate_enabled_for_agency(_aid()):
+    agency_id = _aid()
+    if not is_streamestate_enabled_for_agency(agency_id):
         return jsonify(
             {
                 "ok": False,
                 "error": (
-                    f"{streamestate_display_name()} est désactivé — "
+                    f"{deep_analysis_display_name()} est désactivé — "
                     "activez-le dans Portails pour vérifier les fiches."
                 ),
             }
         ), 403
+    if not deep_analysis_configured():
+        return jsonify(
+            {
+                "ok": False,
+                "error": deep_analysis_setup_hint(),
+                "code": "deep_analysis_not_configured",
+            }
+        ), 400
 
-    data = request.get_json(silent=True) or {}
-    kwargs: dict = {}
-    if data.get("max_pages") is not None:
-        try:
-            kwargs["max_pages"] = int(data["max_pages"])
-        except (TypeError, ValueError):
-            return jsonify({"error": "max_pages invalide"}), 400
-    if data.get("only_incomplete") is False:
-        kwargs["only_incomplete"] = False
+    city = _resolve_crawl_city(agency_id)
+    candidates = count_deep_analysis_candidates(agency_id, city=city, only_incomplete=True)
+    if not candidates:
+        return jsonify(
+            {
+                "ok": True,
+                "summary": {"candidates": 0, "updated": 0, "matched": 0},
+                "message": "Aucune fiche à compléter",
+            }
+        )
+
     try:
-        summary = verify_existing_leads(_aid(), **kwargs)
-    except StreamEstateError as exc:
+        job = engine.verify_leads_deep_analysis(agency_id=agency_id, city=city)
+    except DeepAnalysisNotConfiguredError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except DeepAnalysisError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
-        logging.exception("streamestate verify")
+        logging.exception("deep analysis verify")
         return jsonify({"ok": False, "error": f"Erreur serveur : {exc}"}), 500
-    return jsonify({"ok": True, "summary": summary})
+
+    return jsonify(
+        {
+            "ok": True,
+            "job_id": job["id"],
+            "job": job,
+            "summary": {"candidates": candidates, "started": True},
+        }
+    )
 
 
 @app.route("/api/crawler/scan/<source_id>", methods=["POST"])

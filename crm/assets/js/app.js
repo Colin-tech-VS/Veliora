@@ -3042,21 +3042,29 @@ function setupLeadsActions() {
         verifyBtn.disabled = true;
         verifyBtn.textContent = "Vérification…";
       }
-      showToast("Vérification des fiches via l'Analyse approfondie…", "info", 2500);
-      const res = await api("/crawler/streamestate/verify", { method: "POST" });
+      showToast("Analyse approfondie (Decodo) — lancement…", "info", 2500);
+      const res = await api("/crawler/deep-analysis/verify", { method: "POST" });
       const s = res.summary || {};
-      if (!s.candidates) {
+      if (!s.candidates && !s.started) {
         showToast("Aucune fiche à compléter (toutes déjà renseignées)", "success", 5000);
-      } else {
+        return;
+      }
+      const jobId = res.job_id || res.job?.id;
+      if (jobId) {
+        startCrawlPolling(jobId, "Analyse approfondie", {
+          onComplete: async () => {
+            await window.velioraReloadLeads?.();
+            showToast("Analyse approfondie terminée — fiches mises à jour", "success", 6000);
+          },
+        });
         showToast(
-          `Vérification terminée: ${s.matched || 0} fiche(s) trouvée(s), ${s.updated || 0} complétée(s) · ${s.credits_used || 0} crédit(s) utilisé(s)${s.budget_exhausted ? " · budget atteint, relancez pour continuer" : ""}`,
-          "success",
-          7000,
+          `${s.candidates || "?"} fiche(s) à recrawler — suivi en cours (Decodo)`,
+          "info",
+          5000,
         );
-        await window.velioraReloadLeads();
       }
     } catch (err) {
-      showToast(err.message || "Vérification indisponible (clé API ?)", "error");
+      showToast(err.message || "Analyse approfondie indisponible (Decodo / Playwright ?)", "error");
     } finally {
       if (verifyBtn) {
         verifyBtn.disabled = false;
@@ -6815,7 +6823,7 @@ function findDeepAnalysisSource(list = SOURCES) {
   return (list || []).find((s) => isDeepAnalysisSource(s)) || null;
 }
 
-/** Analyse approfondie active = source StreamEstate présente ET interrupteur activé. */
+/** Analyse approfondie active = source présente ET interrupteur activé (recrawl Decodo). */
 function isDeepAnalysisEnabled(list = SOURCES) {
   const src = findDeepAnalysisSource(list);
   return Boolean(src && src.enabled !== false);

@@ -283,6 +283,8 @@ class CrawlerEngine:
                 self._job_import_listing(job_id, target_url)
             elif job_type == "lead_refresh" and target_url:
                 self._job_refresh_lead(job_id, target_url, source_id)
+            elif job_type == "deep_analysis_verify":
+                self._job_deep_analysis_verify(job_id, city=city)
             else:
                 update_crawl_job(
                     job_id,
@@ -630,9 +632,9 @@ class CrawlerEngine:
     def _job_scan_source(self, job_id: str, source_id: str, city: str | None = None) -> None:
         src = next((s for s in get_sources(self._agency_id) if s["id"] == source_id), None)
         if src and not src.get("enabled"):
-            from crawler.streamestate import streamestate_display_name
+            from crawler.deep_analysis import deep_analysis_display_name
 
-            label = src.get("name") or streamestate_display_name()
+            label = src.get("name") or deep_analysis_display_name()
             err = CrawlError.issue(
                 CrawlError.SOURCE_UNKNOWN,
                 f"{label} est désactivé — activez-le dans Portails pour lancer une analyse.",
@@ -650,6 +652,41 @@ class CrawlerEngine:
                 message=f"Préparation du crawl sur {label}…",
             )
         result = self._crawl_source(source_id, job_id, city=city)
+        self._finish_job(job_id, result, label)
+
+    def _job_deep_analysis_verify(self, job_id: str, city: str | None = None) -> None:
+        from crawler.deep_analysis import deep_analysis_display_name
+        from crawler.storage import find_streamestate_source, get_sources
+
+        label = deep_analysis_display_name()
+        src = find_streamestate_source(self._agency_id or "") if self._agency_id else None
+        source_id = (src or {}).get("id") or "streamestate"
+        adapter = self.adapters.get(source_id)
+        if not adapter:
+            from crawler.adapters import build_adapters
+
+            self.adapters = build_adapters(get_sources(self._agency_id or ""))
+            adapter = self.adapters.get(source_id)
+        if not adapter:
+            update_crawl_job(
+                job_id,
+                status="failed",
+                message=f"{label} — source introuvable",
+                finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            )
+            return
+        update_crawl_job(
+            job_id,
+            progress=10,
+            message=f"{label} — recrawl Decodo des fiches incomplètes…",
+        )
+        result = self._crawl_deep_analysis_source(
+            source_id,
+            adapter,
+            job_id,
+            city=city,
+            only_incomplete=True,
+        )
         self._finish_job(job_id, result, label)
 
     def _job_crawl_url(self, job_id: str, url: str) -> None:
@@ -749,7 +786,7 @@ class CrawlerEngine:
         from crawler.portals import resolve_base_portal_id
 
         if resolve_base_portal_id(source_id) == "streamestate":
-            return self._crawl_streamestate_source(
+            return self._crawl_deep_analysis_source(
                 source_id, adapter, job_id, city=city, veille_mode=veille_mode
             )
 
@@ -903,7 +940,7 @@ class CrawlerEngine:
         finally:
             self._bind_crawl_city_context(None, restore=prev_ctx)
 
-    def _crawl_streamestate_source(
+    def _crawl_deep_analysis_source(
         self,
         source_id: str,
         adapter: BaseAdapter,
@@ -911,13 +948,18 @@ class CrawlerEngine:
         city: str | None = None,
         *,
         veille_mode: bool = False,
+        only_incomplete: bool | None = None,
     ) -> CrawlResult:
-        """Synchronisation API agrégée (pas de crawl HTML)."""
-        from crawler.streamestate import streamestate_configured, streamestate_display_name
+        """Recrawl approfondi des fiches existantes — Playwright + rotation IP Decodo."""
+        from crawler.deep_analysis import (
+            deep_analysis_configured,
+            deep_analysis_display_name,
+            deep_analysis_setup_hint,
+        )
         from crawler.storage import is_streamestate_enabled_for_agency, mark_source_scanned
 
         result = CrawlResult()
-        label = adapter.source_name or streamestate_display_name()
+        label = adapter.source_name or deep_analysis_display_name()
         if self._agency_id and not is_streamestate_enabled_for_agency(self._agency_id):
             err = CrawlError.issue(
                 CrawlError.SOURCE_UNKNOWN,
@@ -926,31 +968,32 @@ class CrawlerEngine:
             result.errors.append(err)
             mark_source_scanned(source_id, error=err["message"][:200])
             return result
-        if not streamestate_configured():
-            err = CrawlError.issue(
-                CrawlError.SOURCE_UNKNOWN,
-                f"{label} — service non configuré (contactez l'administrateur Veliora)",
-            )
+        if not deep_analysis_configured():
+            hint = deep_analysis_setup_hint()
+            err = CrawlError.issue(CrawlError.SOURCE_UNKNOWN, hint)
             result.errors.append(err)
-            mark_source_scanned(source_id, error=err["message"][:200])
+            mark_source_scanned(source_id, error=hint[:200])
             return result
 
         prev_ctx = (self._crawl_city, self._crawl_postcode, self._crawl_commune_row)
         crawl_city = self._bind_crawl_city_context(city)
 
         try:
-            return self._run_streamestate_sync(
+            if only_incomplete is None:
+                only_incomplete = not veille_mode
+            return self._run_deep_analysis_sync(
                 source_id,
                 adapter,
                 result,
                 job_id,
                 crawl_city,
                 veille_mode=veille_mode,
+                only_incomplete=only_incomplete,
             )
         finally:
             self._bind_crawl_city_context(None, restore=prev_ctx)
 
-    def _run_streamestate_sync(
+    def _run_deep_analysis_sync(
         self,
         source_id: str,
         adapter: BaseAdapter,
@@ -959,176 +1002,108 @@ class CrawlerEngine:
         crawl_city: str | None,
         *,
         veille_mode: bool,
+        only_incomplete: bool,
     ) -> CrawlResult:
-        from crawler.streamestate import (
-            StreamEstateCreditsError,
-            StreamEstateError,
-            StreamEstateNotConfiguredError,
-            iter_leads,
-            streamestate_display_name,
-            streamestate_settings,
+        from crawler.config import DEEP_ANALYSIS_MAX_LEADS_PER_RUN
+        from crawler.deep_analysis import (
+            deep_analysis_display_name,
+            iter_leads_for_deep_analysis,
         )
-        from crawler.storage import get_agency_postcode_for_city, mark_source_scanned
+        from crawler.human import listing_delay
+        from crawler.proxy_manager import begin_crawl_session
+        from crawler.storage import get_lead_by_source_url, mark_source_scanned, recalc_source_found_counts
 
-        label = adapter.source_name or streamestate_display_name()
-        crawl_postcode = get_agency_postcode_for_city(self._agency_id, crawl_city)
-        cfg = streamestate_settings(veille=veille_mode)
+        label = adapter.source_name or deep_analysis_display_name()
+        candidates = list(
+            iter_leads_for_deep_analysis(
+                self._agency_id or "",
+                city=crawl_city,
+                only_incomplete=only_incomplete,
+                limit=DEEP_ANALYSIS_MAX_LEADS_PER_RUN,
+            )
+        )
         if job_id:
-            zone_lbl = f" — {crawl_city}" if crawl_city else " — toute la France"
+            zone_lbl = f" — {crawl_city}" if crawl_city else ""
             mode_lbl = "veille" if veille_mode else "manuel"
             update_crawl_job(
                 job_id,
-                progress=20,
+                progress=15,
                 message=(
                     f"{label} ({mode_lbl}){zone_lbl} — "
-                    f"{cfg['max_listings']} annonce(s) max ({cfg['max_pages']} page(s))…"
+                    f"{len(candidates)} fiche(s) à recrawler (Decodo)…"
                 ),
-                listings_total=cfg["max_listings"],
+                listings_total=max(1, len(candidates)),
             )
 
         mark_source_scanned(source_id)
-        if self._agency_id and job_id:
-            repaired = repair_source_leads_in_db(source_id, self._agency_id)
-            if repaired:
-                update_crawl_job(
-                    job_id,
-                    message=f"{repaired} prospect(s) corrigé(s) en base — lancement de {label}…",
-                )
-        processed = 0
-        skipped = 0
-        try:
-            for lead in iter_leads(
-                city=crawl_city,
-                postcode=crawl_postcode,
-                veille=veille_mode,
-            ):
-                result.listings_processed += 1
-                if self._crawl_stopped(job_id) or not result.can_process_more_listings():
-                    break
-                lead, skip_reason = self._prepare_streamestate_lead(lead, crawl_city, source_id, job_id)
-                if lead is None:
-                    skipped += 1
-                    if skip_reason == "out_of_city":
-                        result.out_of_city += 1
-                    continue
-                processed += 1
-                if job_id and processed % 5 == 0:
-                    update_crawl_job(
-                        job_id,
-                        message=f"{label} — {processed} fiche(s) enregistrée(s)…",
-                        progress=min(85, 20 + processed * 2),
-                        listings_done=result.listings_processed,
-                    )
-                saved = save_lead(
-                    lead,
-                    source_id=source_id,
-                    job_id=job_id,
-                    agency_id=self._agency_id,
-                    require_verification=True,
-                    veille_recrawl=veille_mode,
-                )
-                if not saved or not saved.get("id"):
-                    if saved and saved.get("errors"):
-                        add_crawl_log(
-                            source_id,
-                            lead.source_url,
-                            "incomplete",
-                            "; ".join(saved.get("errors") or [])[:180],
-                            job_id,
-                        )
-                    continue
-                self._submit_address_match(saved, lead)
-                result.leads_found += 1
-                if saved.get("created"):
-                    result.leads_saved += 1
-                else:
-                    result.leads_updated += 1
-                add_crawl_log(
-                    source_id,
-                    lead.source_url,
-                    "saved" if saved.get("created") else "updated",
-                    f"{label} — {lead.source} ({lead.type})",
-                    job_id,
-                )
-        except StreamEstateNotConfiguredError as exc:
-            err = CrawlError.issue(CrawlError.SOURCE_UNKNOWN, str(exc))
-            result.errors.append(err)
-            mark_source_scanned(source_id, error=str(exc)[:200])
-            return result
-        except StreamEstateCreditsError as exc:
-            err = CrawlError.issue(CrawlError.FETCH_FAILED, str(exc))
-            result.errors.append(err)
-            if processed:
-                result.warnings.append(
-                    CrawlError.issue(CrawlError.FETCH_FAILED, f"Arrêt quota — {processed} fiche(s) déjà importée(s)")
-                )
-            mark_source_scanned(source_id, error=str(exc)[:200])
-            return result
-        except StreamEstateError as exc:
-            err = CrawlError.issue(CrawlError.FETCH_FAILED, str(exc))
-            result.errors.append(err)
-            mark_source_scanned(source_id, error=str(exc)[:200])
-            return result
-
-        if result.leads_found == 0:
-            result.errors.append(
+        if not candidates:
+            result.warnings.append(
                 CrawlError.issue(
                     CrawlError.NO_LISTINGS,
-                    f"{label} — aucune annonce pour ces critères (ville / filtres / quota)",
+                    f"{label} — aucune fiche à compléter pour ces critères",
                 )
             )
-            mark_source_scanned(source_id, error=f"0 annonce {label}")
+            mark_source_scanned(source_id, error="0 fiche à compléter")
+            return result
+
+        begin_crawl_session(force_new=True, source_id=source_id, url=None)
+        total = len(candidates)
+        for idx, row in enumerate(candidates):
+            if self._crawl_stopped(job_id) or not result.can_process_more_listings():
+                break
+            url = (row.get("source_url") or "").strip()
+            if not url:
+                continue
+            sid = row.get("source_id") or source_id
+            lead_adapter = self.adapters.get(sid) if sid else None
+            if not lead_adapter:
+                lead_adapter = resolve_adapter(url, self.adapters)
+            if job_id:
+                owner = row.get("owner") or row.get("address") or f"#{row.get('id')}"
+                update_crawl_job(
+                    job_id,
+                    progress=min(88, 15 + int((idx + 1) / total * 70)),
+                    message=f"{label} — {owner} ({idx + 1}/{total})…",
+                    listings_done=idx + 1,
+                )
+            self._process_listing(
+                url,
+                lead_adapter,
+                result,
+                sid or source_id,
+                job_id,
+                index=idx,
+                total=total,
+                deep_refresh=True,
+                skip_city_check=True,
+                crawl_related=False,
+            )
+            listing_delay(is_recrawl=get_lead_by_source_url(url, None) is not None)
+
+        if result.leads_found == 0 and not result.leads_updated:
+            result.warnings.append(
+                CrawlError.issue(
+                    CrawlError.NO_LISTINGS,
+                    f"{label} — recrawl terminé sans mise à jour (blocages ou fiches déjà complètes)",
+                )
+            )
+            mark_source_scanned(source_id, error="0 mise à jour")
         else:
             mark_source_scanned(source_id, error=None)
 
         if self._agency_id:
-            from crawler.storage import recalc_source_found_counts
-
             recalc_source_found_counts(self._agency_id)
 
         if job_id:
-            skip_note = f", {skipped} ignorée(s)" if skipped else ""
             update_crawl_job(
                 job_id,
                 progress=90,
                 message=(
-                    f"{label} — {result.leads_saved} nouveau(x), "
-                    f"{result.leads_updated} mis à jour{skip_note}"
+                    f"{label} — {result.leads_updated} fiche(s) complétée(s), "
+                    f"{result.leads_saved} nouveau(x)"
                 ),
             )
         return result
-
-    def _prepare_streamestate_lead(
-        self,
-        lead: LeadData,
-        crawl_city: str | None,
-        source_id: str | None = None,
-        job_id: str | None = None,
-    ) -> tuple[LeadData | None, str | None]:
-        """Même qualité que le crawl HTML : ville, cohérence prix/m², champs fiables."""
-        from crawler.listing_guard import validate_field_coherence, validate_listing_coherence_import
-        from crawler.validation import sanitize_lead
-
-        self._clean_unreliable_fields(lead)
-        lead = sanitize_lead(lead)
-        if crawl_city and not self._lead_in_target_city(lead):
-            add_crawl_log(
-                source_id or "",
-                lead.source_url,
-                "skip_city",
-                f"Hors zone — annonce ignorée (≠ {crawl_city})",
-                job_id,
-            )
-            return None, "out_of_city"
-        ok_field, reason = validate_field_coherence(lead)
-        if not ok_field:
-            logger.debug("Analyse approfondie skip %s — %s", lead.source_url, reason)
-            return None, None
-        coherent, coh_reason = validate_listing_coherence_import(lead.source_url or "", None, lead)
-        if not coherent:
-            logger.debug("Analyse approfondie skip %s — %s", lead.source_url, coh_reason)
-            return None, None
-        return lead, None
 
     def _crawl_url_sync(
         self,
@@ -2911,6 +2886,30 @@ class CrawlerEngine:
             agency_id=agency_id,
             eta_seconds=90,
             listings_total=1,
+        )
+
+    def verify_leads_deep_analysis(
+        self,
+        *,
+        agency_id: str | None = None,
+        city: str | None = None,
+    ) -> dict:
+        """Lance le recrawl Decodo des fiches incomplètes (job asynchrone)."""
+        from crawler.deep_analysis import count_deep_analysis_candidates
+        from crawler.config import DEEP_ANALYSIS_MAX_LEADS_PER_RUN
+
+        if not agency_id:
+            raise ValueError("agency_id requis")
+        n = count_deep_analysis_candidates(agency_id, city=city, only_incomplete=True)
+        n = min(n, DEEP_ANALYSIS_MAX_LEADS_PER_RUN)
+        eta = estimate_crawl_seconds(max(1, n), 0)
+        return self.enqueue_job(
+            "deep_analysis_verify",
+            agency_id=agency_id,
+            city=city,
+            eta_seconds=eta,
+            listings_total=max(1, n),
+            lane="portal",
         )
 
     def refresh_lead(self, lead_id: int, *, agency_id: str | None = None) -> dict:

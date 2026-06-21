@@ -1087,7 +1087,7 @@ def _crawl_priority(src: dict) -> int:
 
 
 def find_streamestate_source(agency_id: str) -> dict | None:
-    """Source « Analyse approfondie » (StreamEstate) de l'agence."""
+    """Source « Analyse approfondie » (recrawl Decodo) de l'agence."""
     from crawler.portals import resolve_base_portal_id
 
     for s in get_sources(agency_id, sync=False, live_counts=False):
@@ -1127,11 +1127,11 @@ def is_recommended_crawl_source(src: dict) -> bool:
     base = resolve_base_portal_id(src.get("id") or "")
     if base == "streamestate":
         from crawler.config import CRAWL_SKIP_STREAMESTATE, STREAMESTATE_INCLUDE_IN_VEILLE
-        from crawler.streamestate import streamestate_configured
+        from crawler.deep_analysis import deep_analysis_configured
 
         if CRAWL_SKIP_STREAMESTATE:
             return False
-        return streamestate_configured() and STREAMESTATE_INCLUDE_IN_VEILLE
+        return deep_analysis_configured() and STREAMESTATE_INCLUDE_IN_VEILLE
     return base is not None
 
 
@@ -1453,7 +1453,7 @@ def cancel_all_active_crawl_jobs(agency_id: str | None = None) -> int:
 
 
 PORTAL_CRAWL_JOB_TYPES = frozenset(
-    {"all_sources", "veille_auto", "single_source", "url"}
+    {"all_sources", "veille_auto", "single_source", "url", "deep_analysis_verify"}
 )
 REFRESH_CRAWL_JOB_TYPES = frozenset({"lead_refresh", "listing_import"})
 

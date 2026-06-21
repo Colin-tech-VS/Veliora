@@ -645,7 +645,7 @@
             <button type="button" class="btn btn-secondary btn-sm" id="leads-refresh-all-btn" title="Actualiser toutes les fiches depuis les portails">
               Actualiser toutes les fiches
             </button>
-            <button type="button" class="btn btn-secondary btn-sm" id="leads-streamestate-verify-btn" title="Compléter les champs manquants des fiches via l'Analyse approfondie (coût crédit minimal)">
+            <button type="button" class="btn btn-secondary btn-sm" id="leads-streamestate-verify-btn" title="Recrawler les fiches incomplètes via Playwright + rotation IP Decodo">
               Vérifier les fiches
             </button>
             <button type="button" class="btn btn-secondary btn-sm" id="leads-dvf-compare-all" title="Comparer aux ventes DVF (Etalab)">
@@ -807,7 +807,7 @@
           <div class="sources-deep-wrap" id="sources-deep-wrap">
             <h4 class="sources-subsection-title sources-subsection-title--deep">Analyse approfondie</h4>
             <p class="form-hint sources-subsection-hint" id="sources-deep-hint">
-              Recherche étendue multi-sources — particuliers et contacts prioritaires. Même filtre ville que vos portails (territoire agence ou toute la France).
+              Recrawl approfondi des fiches déjà en base (contacts, prix, surface) — navigateur Playwright + rotation IP Decodo. Filtre ville = territoire agence.
             </p>
             <div class="sources-grid sources-grid--deep" id="sources-grid-deep"></div>
           </div>

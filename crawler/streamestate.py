@@ -654,18 +654,10 @@ def _blank(value: Any) -> bool:
 
 
 def lead_needs_verification(row: dict[str, Any]) -> bool:
-    """Annonce existante incomplète : au moins un champ clé manquant à compléter."""
-    has_phone = not _blank(row.get("phone"))
-    has_email = not _blank(row.get("email"))
-    if not (has_phone or has_email):
-        return True
-    if _blank(row.get("surface")) or not row.get("surface"):
-        return True
-    if _blank(row.get("price")) or not row.get("price"):
-        return True
-    if _blank(row.get("address")):
-        return True
-    return False
+    """Compat tests — voir crawler.deep_analysis."""
+    from crawler.deep_analysis import lead_needs_verification as _fn
+
+    return _fn(row)
 
 
 def _city_group_key(row: dict[str, Any]) -> tuple[str, str]:
