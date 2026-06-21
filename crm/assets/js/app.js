@@ -81,13 +81,16 @@ const state = {
   crawlerFocusPortal: null,
 };
 
-const POLL_IDLE_MS = 18000;
+const POLL_IDLE_MS = 25000;
+const POLL_IDLE_MAX_MS = 90000;
 const POLL_CRAWL_MS = 12000;
 /** Pendant un crawl, le worker Flask est occupé — poll léger, timeouts longs. */
 const CRAWL_JOB_POLL_MS = 4500;
 const CRAWL_JOB_POLL_TIMEOUT_MS = 90000;
 const CRAWL_LEADS_REFRESH_MS = 20000;
 let backgroundPollTimer = null;
+let pollUnchangedStreak = 0;
+let lastCrawlerStatusFp = "";
 
 /** Crawl en arrière-plan — navigation libre pendant le job */
 const crawlState = {
@@ -1683,6 +1686,7 @@ async function ensureAuth() {
   try {
     const me = await api("/auth/me");
     state.user = me.user;
+    state.billing = me.billing || null;
     state.settings = normalizeSettingsPayload(me.settings || state.settings || {});
     applyAgencyCityToCrawl();
     scheduleSourceUrlsForCity();
@@ -1859,7 +1863,7 @@ async function init() {
   setupOfflineIndicator();
   window.addEventListener("resize", () => {
     applyMobileLeadsLayout();
-    renderLeads();
+    if (state.currentView === "leads") renderLeads();
   });
 
   if (!(await ensureAuth())) {
@@ -3175,11 +3179,11 @@ function prefetchDrawerHtml(lead) {
 
 function scheduleDrawerCacheWarm() {
   if (!LEADS?.length) return;
-  const run = () => warmDrawerCache(10);
+  const run = () => warmDrawerCache(5);
   if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(run, { timeout: 4000 });
+    requestIdleCallback(run, { timeout: 12000 });
   } else {
-    setTimeout(run, 800);
+    setTimeout(run, 2000);
   }
 }
 
@@ -3761,7 +3765,7 @@ async function refreshLeadsDuringCrawl(job) {
     syncRadarFromLeads(leads);
     updateSourceCardsLive(crawlState.lastJob);
     updateCrawlerSummary();
-    await refreshStats();
+    syncStatsFromLeads(leads);
     updateSidebarCount();
     updateBadges();
 
@@ -5163,15 +5167,43 @@ function updateCrawlerVeilleHint(status) {
   autoHint.textContent = lines.join(" ");
 }
 
-async function refreshStats() {
+async function refreshStats({ includeMeta = true } = {}) {
+  syncStatsFromLeads();
+  if (!includeMeta) return;
   try {
     const statsData = await api("/stats");
-    state.appStats = statsData.stats || state.appStats;
-    ACTIVITIES = statsData.activities || [];
-    SOURCE_STATS = statsData.source_stats || [];
+    ACTIVITIES = statsData.activities || ACTIVITIES;
+    SOURCE_STATS = statsData.source_stats || SOURCE_STATS;
   } catch (err) {
     console.warn("refreshStats", err);
   }
+}
+
+function computeStatsFromLeads(leads = LEADS) {
+  const list = Array.isArray(leads) ? leads : [];
+  let sansAgence = 0;
+  let nouveaux = 0;
+  let mandats = 0;
+  let particuliers = 0;
+  for (const l of list) {
+    const kind = l.listing_type || l.type || "particulier";
+    if (kind !== "agence") sansAgence += 1;
+    if (kind === "particulier") particuliers += 1;
+    const status = l.status || "";
+    if (status === "nouveau") nouveaux += 1;
+    if (status === "mandat") mandats += 1;
+  }
+  return {
+    total: list.length,
+    sans_agence: sansAgence,
+    nouveaux,
+    mandats,
+    particuliers,
+  };
+}
+
+function syncStatsFromLeads(leads = LEADS) {
+  state.appStats = computeStatsFromLeads(leads);
 }
 
 /** Recharge leads, sources, stats et met à jour toute l’interface. */
@@ -5262,6 +5294,14 @@ function populateLeadsCityFilterOptions() {
   const select = document.getElementById("leads-city-filter");
   if (!select) return;
   const selected = state.leadsCityFilter || "";
+  const fp = LEADS.map((l) => `${l.id}|${l.city || ""}|${l.postcode || ""}`).join(";");
+  if (fp === populateLeadsCityFilterOptions._fp && select.options.length > 1) {
+    select.value =
+      selected && [...select.options].some((o) => o.value === selected) ? selected : "";
+    if (selected && select.value !== selected) state.leadsCityFilter = "";
+    return;
+  }
+  populateLeadsCityFilterOptions._fp = fp;
   const cityMap = new Map();
   LEADS.forEach((lead) => {
     const { key, label } = normalizedLeadCommune(lead);
@@ -5408,10 +5448,10 @@ function formatDateShort(value) {
 function renderView(view = state.currentView) {
   updateBadges();
   updateSidebarCount();
-  renderStats();
-  renderActivity();
   switch (view) {
     case "dashboard":
+      renderStats();
+      renderActivity();
       renderRadarBriefing();
       renderDashboardTopLeads();
       renderSourceChart();
@@ -5448,17 +5488,6 @@ function renderView(view = state.currentView) {
       break;
     default:
       break;
-  }
-  if (typeof requestIdleCallback === "function") {
-    requestIdleCallback(() => {
-      if (view !== "dashboard") {
-        renderRadarBriefing();
-        renderSourceChart();
-      }
-      if (view !== "playbook" && PLAYBOOK?.guide?.length) {
-        /* playbook déjà chargé en arrière-plan */
-      }
-    });
   }
 }
 
@@ -5664,7 +5693,7 @@ function pulseHeroStat(id, value) {
   }
 }
 
-function renderRadarBriefing() {
+function renderRadarBriefing({ prefetchMatches = true } = {}) {
   const counts =
     LEADS.length > 0 ? computeLiveRadarCounts(LEADS) : RADAR?.counts || computeLiveRadarCounts([]);
   const set = (id, v) => {
@@ -5683,7 +5712,9 @@ function renderRadarBriefing() {
       : RADAR?.priorities?.length
         ? RADAR.priorities
         : [];
-  prefetchRadarMatches(list.slice(0, 8));
+  if (prefetchMatches) {
+    prefetchRadarMatches(list.slice(0, 8), { deferMs: 1800 });
+  }
 
   const totalOpps = counts.total_opportunities ?? activeLeads().length;
   const hotCount = counts.hot_mandate ?? 0;
@@ -5831,27 +5862,44 @@ function summarizeLeadMatches(payload) {
   return `${vente} acheteur(s) / ${location} locataire(s)${who}`;
 }
 
-function prefetchRadarMatches(leads = []) {
-  leads.forEach((lead) => {
-    const id = Number(lead?.id || 0);
-    if (!id || radarMatchCache.has(id) || radarMatchInFlight.has(id)) return;
-    radarMatchInFlight.add(id);
-    api(`/leads/${id}/matches`, { headers: getAuthHeaders() })
-      .then((data) => {
-        radarMatchCache.set(id, {
-          counts: data?.counts || {},
-          summary: summarizeLeadMatches(data),
-        });
-        if (state.currentView === "dashboard") renderRadarBriefing();
-      })
-      .catch(() => {
-        radarMatchCache.set(id, {
-          counts: { vente: 0, location: 0 },
-          summary: "0 acheteur / 0 locataire",
-        });
-      })
-      .finally(() => radarMatchInFlight.delete(id));
-  });
+let radarMatchRenderTimer = null;
+
+function scheduleRadarMatchRender() {
+  if (radarMatchRenderTimer) return;
+  radarMatchRenderTimer = window.setTimeout(() => {
+    radarMatchRenderTimer = null;
+    if (state.currentView === "dashboard") renderRadarBriefing({ prefetchMatches: false });
+  }, 120);
+}
+
+function prefetchRadarMatches(leads = [], { deferMs = 0 } = {}) {
+  const run = () => {
+    leads.forEach((lead) => {
+      const id = Number(lead?.id || 0);
+      if (!id || radarMatchCache.has(id) || radarMatchInFlight.has(id)) return;
+      radarMatchInFlight.add(id);
+      api(`/leads/${id}/matches`, { headers: getAuthHeaders() })
+        .then((data) => {
+          radarMatchCache.set(id, {
+            counts: data?.counts || {},
+            summary: summarizeLeadMatches(data),
+          });
+          scheduleRadarMatchRender();
+        })
+        .catch(() => {
+          radarMatchCache.set(id, {
+            counts: { vente: 0, location: 0 },
+            summary: "0 acheteur / 0 locataire",
+          });
+        })
+        .finally(() => radarMatchInFlight.delete(id));
+    });
+  };
+  if (deferMs > 0) {
+    window.setTimeout(run, deferMs);
+  } else {
+    run();
+  }
 }
 
 async function fetchPlaybookStatic() {
@@ -6911,28 +6959,37 @@ function renderCrawler() {
 }
 
 function updateBadges() {
-  document.getElementById("badge-leads").textContent = LEADS.length;
+  const counts = {
+    all: LEADS.length,
+    particulier: 0,
+    "sans-agence": 0,
+    "avec-agence": 0,
+    vente: 0,
+    location: 0,
+    nouveau: 0,
+    retire: 0,
+    "hot-mandate": 0,
+    "price-drop": 0,
+    "dvf-sous-marche": 0,
+  };
+  for (const l of LEADS) {
+    if (l.type === "particulier") counts.particulier += 1;
+    if (l.type !== "agence") counts["sans-agence"] += 1;
+    if (l.type === "agence") counts["avec-agence"] += 1;
+    if ((l.transaction_type || "vente") === "vente") counts.vente += 1;
+    if (l.transaction_type === "location") counts.location += 1;
+    if (l.status === "nouveau") counts.nouveau += 1;
+    if (l.status === "retire") counts.retire += 1;
+    if (l.status !== "retire" && (l.mandate_score || 0) >= 85) counts["hot-mandate"] += 1;
+    if ((l.alert_tags || []).includes("baisse_prix")) counts["price-drop"] += 1;
+    if (["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict)) counts["dvf-sous-marche"] += 1;
+  }
+  document.getElementById("badge-leads").textContent = counts.all;
   document.querySelectorAll(".filter-chip").forEach((chip) => {
     const filter = chip.dataset.filter;
     const countEl = chip.querySelector(".count");
     if (!countEl) return;
-    let count = LEADS.length;
-    if (filter === "particulier") count = LEADS.filter((l) => l.type === "particulier").length;
-    else if (filter === "sans-agence") count = LEADS.filter((l) => l.type !== "agence").length;
-    else if (filter === "avec-agence") count = LEADS.filter((l) => l.type === "agence").length;
-    else if (filter === "vente") count = LEADS.filter((l) => (l.transaction_type || "vente") === "vente").length;
-    else if (filter === "location") count = LEADS.filter((l) => l.transaction_type === "location").length;
-    else if (filter === "nouveau") count = LEADS.filter((l) => l.status === "nouveau").length;
-    else if (filter === "retire") count = LEADS.filter((l) => l.status === "retire").length;
-    else if (filter === "hot-mandate")
-      count = LEADS.filter((l) => l.status !== "retire" && (l.mandate_score || 0) >= 85).length;
-    else if (filter === "price-drop")
-      count = LEADS.filter((l) => (l.alert_tags || []).includes("baisse_prix")).length;
-    else if (filter === "dvf-sous-marche")
-      count = LEADS.filter((l) =>
-        ["sous_marche", "leger_sous_marche"].includes(l.dvf_verdict),
-      ).length;
-    countEl.textContent = count;
+    countEl.textContent = counts[filter] ?? counts.all;
   });
 }
 
@@ -8413,20 +8470,47 @@ function scheduleBackgroundPoll(delayMs) {
   backgroundPollTimer = setTimeout(runBackgroundPoll, ms);
 }
 
+function crawlerStatusFingerprint(status) {
+  if (!status || typeof status !== "object") return "";
+  const job = status.active_job || {};
+  return [
+    status.running ? 1 : 0,
+    status.is_crawling ? 1 : 0,
+    status.found_today ?? 0,
+    job.id ?? "",
+    job.status ?? "",
+    job.leads_saved ?? 0,
+  ].join("|");
+}
+
+function nextBackgroundPollDelay(changed) {
+  if (crawlState.active || state.crawlerRunning) return POLL_CRAWL_MS;
+  if (changed) {
+    pollUnchangedStreak = 0;
+    return POLL_IDLE_MS;
+  }
+  pollUnchangedStreak += 1;
+  return Math.min(POLL_IDLE_MS * (1 + pollUnchangedStreak * 0.75), POLL_IDLE_MAX_MS);
+}
+
 async function runBackgroundPoll() {
   backgroundPollTimer = null;
   if (document.visibilityState === "hidden") {
     scheduleBackgroundPoll(POLL_IDLE_MS);
     return;
   }
+  let leadsChanged = false;
   try {
     if (crawlState.active && !crawlState.pagePollPaused) {
-      // Suivi détaillé déjà fait par startCrawlPolling — pas de /leads en parallèle.
       scheduleBackgroundPoll(45000);
       return;
     }
 
     const status = await api("/crawler/status");
+    const statusFp = crawlerStatusFingerprint(status);
+    const statusStable = statusFp === lastCrawlerStatusFp;
+    lastCrawlerStatusFp = statusFp;
+
     state.crawlerRunning = !!status.running;
     state.veilleEffective = !!status.veille_effective;
     state.backgroundCrawl = status;
@@ -8440,29 +8524,38 @@ async function runBackgroundPoll() {
       return;
     }
 
+    const crawlBusy = !!(status.running || status.is_crawling);
+    if (statusStable && !crawlBusy && pollUnchangedStreak >= 2) {
+      updateSidebarCount();
+      scheduleBackgroundPoll(nextBackgroundPollDelay(false));
+      return;
+    }
+
     const leads = await api("/leads");
     const fp = leadsDataFingerprint(leads);
     const prevFp = leadsDataFingerprint(LEADS);
-    const changed = fp !== prevFp;
+    leadsChanged = fp !== prevFp;
     LEADS = leads;
     syncRadarFromLeads(leads);
-    if (changed) {
-      await refreshStats();
+    syncStatsFromLeads(leads);
+    if (leadsChanged) {
       renderViewLight(state.currentView);
-      void loadRadarAndPlaybook().then(() => {
-        if (state.currentView === "dashboard" || state.currentView === "playbook") {
-          renderRadarBriefing();
+      if (state.currentView === "dashboard" || state.currentView === "playbook") {
+        void loadRadarAndPlaybook().then(() => {
+          if (state.currentView === "dashboard") renderRadarBriefing();
           if (state.currentView === "playbook") renderPlaybook();
-        }
-      });
+        });
+      }
+      if (pollUnchangedStreak === 0 || pollUnchangedStreak % 4 === 0) {
+        void refreshStats({ includeMeta: true });
+      }
     } else {
-      if (state.currentView === "dashboard") renderRadarBriefing();
       updateSidebarCount();
     }
   } catch {
     /* silent */
   }
-  scheduleBackgroundPoll();
+  scheduleBackgroundPoll(nextBackgroundPollDelay(leadsChanged));
 }
 
 function startPolling() {
@@ -8742,7 +8835,14 @@ function setupAccountMenu() {
 
 async function syncAccountBillingButton() {
   try {
+    const billing = state.billing;
+    if (billing) {
+      const btn = document.getElementById("btn-billing-portal");
+      if (btn) btn.hidden = !billing.has_stripe_customer;
+      return;
+    }
     const me = await api("/auth/me");
+    state.billing = me.billing || null;
     const btn = document.getElementById("btn-billing-portal");
     if (btn) btn.hidden = !me.billing?.has_stripe_customer;
   } catch {

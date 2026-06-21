@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import os
@@ -38,6 +38,11 @@ _LEADS_LIST_SQL = """
     image_custom, image_updated_at, relisted_at, missing_fields, created_at, updated_at
 """.strip()
 
+# Colonnes minimales pour les compteurs dashboard (sans parsing lourd).
+_STATS_LEADS_SQL = """
+    agency_id, listing_type, type, status, city, postcode, sector, address
+""".strip()
+
 _SOURCES_CACHE_TTL_SEC = 50.0
 _sources_cache: dict[str, tuple[float, list[dict]]] = {}
 
@@ -47,7 +52,7 @@ _sources_cache: dict[str, tuple[float, list[dict]]] = {}
 # donc l'instantané frais au lieu de refaire toute la requête + l'enrichissement.
 # Seul le radar lit cet instantané (opt-in) ; les endpoints de liste restent
 # toujours frais. Invalidé à chaque mutation de lead.
-_LEADS_SNAPSHOT_TTL_SEC = float(os.getenv("LEADS_SNAPSHOT_TTL", "6"))
+_LEADS_SNAPSHOT_TTL_SEC = float(os.getenv("LEADS_SNAPSHOT_TTL", "30"))
 _leads_snapshot: dict[str, tuple[float, list[dict]]] = {}
 
 
@@ -2686,8 +2691,12 @@ def get_leads(
     enrich: bool = True,
     claim_orphans: bool = False,
     prefer_snapshot: bool = False,
+    include_extras: bool | None = None,
 ) -> list[dict]:
     from crm.leads.shared_pool import filter_leads_for_agency, shared_leads_sql_where
+
+    if include_extras is None:
+        include_extras = enrich
 
     # Réutilise l'instantané récent (briefing radar) si demandé. On renvoie une
     # copie de la liste (mêmes dicts) : les consommateurs radar sont en lecture
@@ -2713,14 +2722,17 @@ def get_leads(
         from crm.scoring.recalc import hydrate_leads_for_list
 
         leads = hydrate_leads_for_list(leads, agency_id)
-    _attach_estimates(leads, agency_id)
-    try:
-        from crm.transactions.service import attach_transactions
+    if include_extras and leads:
+        _attach_estimates(leads, agency_id)
+        try:
+            from crm.transactions.service import attach_transactions
 
-        attach_transactions(leads, agency_id)
-    except Exception:
-        logger.debug("attach_transactions ignoré", exc_info=True)
-    result = _annotate_dedup(leads)
+            attach_transactions(leads, agency_id)
+        except Exception:
+            logger.debug("attach_transactions ignoré", exc_info=True)
+        result = _annotate_dedup(leads)
+    else:
+        result = leads
     if enrich:
         # Alimente l'instantané pour le briefing radar qui suit (réutilisation
         # ~1 s plus tard, sans refaire toute la requête + l'enrichissement).
@@ -3147,17 +3159,19 @@ def sync_lead_source_ids(agency_id: str) -> int:
 
 
 def _batch_lead_counts_by_source_id(conn, agency_id: str) -> dict[str, dict[str, int]]:
-    today = _now()[:10]
+    today_start = date.today().isoformat()
+    tomorrow_start = (date.today() + timedelta(days=1)).isoformat()
     rows = conn.execute(
         """SELECT source_id,
                   COUNT(*) AS total,
-                  SUM(CASE WHEN substr(created_at, 1, 10) = ? THEN 1 ELSE 0 END) AS created_today,
-                  SUM(CASE WHEN substr(COALESCE(updated_at, created_at), 1, 10) = ? THEN 1 ELSE 0 END) AS touched_today
+                  SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END) AS created_today,
+                  SUM(CASE WHEN COALESCE(updated_at, created_at) >= ?
+                            AND COALESCE(updated_at, created_at) < ? THEN 1 ELSE 0 END) AS touched_today
            FROM leads
            WHERE agency_id = ?
              AND source_id IS NOT NULL AND source_id != ''
            GROUP BY source_id""",
-        (today, today, agency_id),
+        (today_start, tomorrow_start, today_start, tomorrow_start, agency_id),
     ).fetchall()
     out: dict[str, dict[str, int]] = {}
     for r in rows:
@@ -3568,10 +3582,39 @@ def compute_stats_from_leads(leads: list[dict]) -> dict:
     }
 
 
+def _row_to_stats_lead(row) -> dict:
+    keys = row.keys()
+    return {
+        "agency_id": row["agency_id"] if "agency_id" in keys else None,
+        "listing_type": row["listing_type"] if "listing_type" in keys else None,
+        "type": row["type"] if "type" in keys else None,
+        "status": row["status"] if "status" in keys else None,
+        "city": row["city"] if "city" in keys else None,
+        "postcode": row["postcode"] if "postcode" in keys else None,
+        "sector": row["sector"] if "sector" in keys else None,
+        "address": row["address"] if "address" in keys else None,
+    }
+
+
+def _fetch_leads_for_stats(agency_id: str) -> list[dict]:
+    """Compteurs sans parsing complet ni jointures transactions."""
+    from crm.leads.shared_pool import filter_leads_for_agency, shared_leads_sql_where
+
+    pool_where = shared_leads_sql_where()
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""SELECT {_STATS_LEADS_SQL} FROM leads
+               WHERE {pool_where} OR agency_id = ?""",
+            (agency_id,),
+        ).fetchall()
+    leads = [_row_to_stats_lead(r) for r in rows]
+    return filter_leads_for_agency(leads, agency_id)
+
+
 def get_stats(agency_id: str, *, leads: list[dict] | None = None) -> dict:
     if leads is not None:
         return compute_stats_from_leads(leads)
-    return compute_stats_from_leads(get_leads(agency_id, enrich=False, claim_orphans=False))
+    return compute_stats_from_leads(_fetch_leads_for_stats(agency_id))
 
 
 def get_source_stats(agency_id: str) -> list[dict]:

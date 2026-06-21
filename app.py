@@ -1722,11 +1722,14 @@ def api_delete_all_leads():
 @app.route("/api/stats")
 def api_stats():
     try:
+        from crawler.storage import get_bootstrap_sidebar
+
         agency_id = _aid()
+        sidebar = get_bootstrap_sidebar(agency_id)
         return jsonify({
             "stats": get_stats(agency_id),
-            "source_stats": get_source_stats(agency_id),
-            "activities": get_activities(agency_id),
+            "source_stats": sidebar["source_stats"],
+            "activities": sidebar["activities"],
         })
     except Exception as exc:
         logging.exception("GET /api/stats")

@@ -34,20 +34,34 @@ def lead_visible_to_agency(lead: dict, agency_id: str) -> bool:
       Une fiche sans localisation connue (ni ville, ni CP, ni secteur) est masquée
       tant qu'une ville est définie — on n'affiche QUE le secteur de l'agence.
     """
-    if not lead:
-        return False
-    lid = lead.get("agency_id")
-    # Lead appartenant à une AUTRE agence : jamais visible.
-    if lid and str(lid).strip() and str(lid) != str(agency_id):
-        return False
     cities = territory_cities_for_agency(agency_id)
-    if not cities:
-        return True
-    return _lead_matches_cities(lead, cities)
+    return _lead_visible_with_cities(lead, agency_id, cities)
 
 
 def filter_leads_for_agency(leads: list[dict], agency_id: str) -> list[dict]:
-    return [l for l in leads if lead_visible_to_agency(l, agency_id)]
+    aid = str(agency_id)
+    cities = territory_cities_for_agency(agency_id)
+    if not cities:
+        return [
+            l
+            for l in leads
+            if l
+            and (
+                not (lid := l.get("agency_id"))
+                or not str(lid).strip()
+                or str(lid) == aid
+            )
+        ]
+    return [l for l in leads if _lead_visible_with_cities(l, aid, cities)]
+
+
+def _lead_visible_with_cities(lead: dict, agency_id: str, cities: list[str]) -> bool:
+    if not lead:
+        return False
+    lid = lead.get("agency_id")
+    if lid and str(lid).strip() and str(lid) != str(agency_id):
+        return False
+    return _lead_matches_cities(lead, cities)
 
 
 def shared_leads_sql_where(alias: str = "") -> str:
