@@ -794,7 +794,13 @@ def _fetch_commune_csv(code_commune: str, year: str) -> str | None:
         return None
     url = f"{DVF_CSV_BASE}/{year}/communes/{dept}/{code_commune}.csv"
     try:
-        r = _session().get(url, timeout=45)
+        # Borne volontairement courte : ce fetch peut s'exécuter en synchrone
+        # dans le chemin requête (1re analyse d'un lead non encore enrichi). Avec
+        # Retry(read=2), 45 s × 3 tentatives ≈ 135 s dépassait le ``--timeout 120``
+        # de Gunicorn → worker tué = « application timeout » côté agence. À 25 s,
+        # le pire cas reste sous la limite et l'analyse répond vite ; un CSV
+        # commune DVF est petit, 25 s suffisent largement.
+        r = _session().get(url, timeout=25)
         if r.status_code == 404:
             return None
         r.raise_for_status()
