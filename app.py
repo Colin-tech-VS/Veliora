@@ -274,6 +274,19 @@ def _run_db_housekeeping() -> None:
         logging.exception("Expiration crawl jobs (arrière-plan)")
 
 
+def _run_db_init_core() -> None:
+    """Init DB une fois — appelé sous verrou ``_db_init_lock``."""
+    init_db()
+    from crawler.storage import mark_crawl_jobs_interrupted_on_startup
+
+    mark_crawl_jobs_interrupted_on_startup()
+    app._db_ready = True
+    logging.info("Base Veliora : %s", db_status())
+    threading.Thread(
+        target=_run_db_housekeeping, name="db-housekeeping", daemon=True
+    ).start()
+
+
 def ensure_db_ready() -> None:
     """Garantit l'init de la base UNE seule fois (idempotent, thread-safe).
 
@@ -295,16 +308,7 @@ def ensure_db_ready() -> None:
     with _db_init_lock:
         if getattr(app, "_db_ready", False):
             return
-        init_db()
-        from crawler.storage import mark_crawl_jobs_interrupted_on_startup
-
-        mark_crawl_jobs_interrupted_on_startup()
-        app._db_ready = True
-        logging.info("Base Veliora : %s", db_status())
-        # Entretien lourd hors du chemin requête : la réponse part sans l'attendre.
-        threading.Thread(
-            target=_run_db_housekeeping, name="db-housekeeping", daemon=True
-        ).start()
+        _run_db_init_core()
 
 
 @app.before_request
@@ -315,19 +319,31 @@ def ensure_db():
     # la base : chargement immédiat même pendant l'init ou au réveil du dyno.
     if not _request_needs_db():
         return
+    if not _db_init_lock.acquire(blocking=False):
+        return jsonify(
+            {
+                "error": "Initialisation base en cours — réessayez dans un instant",
+                "code": "database_warming",
+            }
+        ), 503
     try:
-        ensure_db_ready()
-    except Exception as exc:
-        logging.exception("Initialisation DB échouée")
-        if request.path.startswith("/api/"):
-            return jsonify(
-                {
-                    "error": "Base de données indisponible",
-                    "code": "database_unavailable",
-                    "detail": str(exc),
-                }
-            ), 503
-        raise
+        if getattr(app, "_db_ready", False):
+            return None
+        try:
+            _run_db_init_core()
+        except Exception as exc:
+            logging.exception("Initialisation DB échouée")
+            if request.path.startswith("/api/"):
+                return jsonify(
+                    {
+                        "error": "Base de données indisponible",
+                        "code": "database_unavailable",
+                        "detail": str(exc),
+                    }
+                ), 503
+            raise
+    finally:
+        _db_init_lock.release()
 
 
 def _register_database_busy_handler(flask_app: Flask) -> None:
@@ -2926,12 +2942,15 @@ def api_register_agency():
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
     from crm.auth.service import login_user
+    from crm.billing.access import billing_status_payload
 
     data = request.get_json(silent=True) or {}
     result = login_user(data.get("email"), data.get("password"))
     if not result:
         return jsonify({"error": "Email ou mot de passe incorrect"}), 401
-    return jsonify({"ok": True, **result})
+    agency_id = result.get("user", {}).get("agency_id")
+    billing = billing_status_payload(agency_id) if agency_id else {}
+    return jsonify({"ok": True, **result, "billing": billing})
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -2952,8 +2971,11 @@ def api_auth_me():
     if not user:
         return jsonify({"error": "Non connecté"}), 401
     billing = billing_status_payload(user["agency_id"])
-    settings = get_agency_settings(user["agency_id"])
-    return jsonify({"ok": True, "user": user, "billing": billing, "settings": settings})
+    payload: dict = {"ok": True, "user": user, "billing": billing}
+    lite = (request.args.get("lite") or "").strip().lower() in ("1", "true", "yes")
+    if not lite:
+        payload["settings"] = get_agency_settings(user["agency_id"])
+    return jsonify(payload)
 
 
 @app.route("/api/billing/config", methods=["GET"])

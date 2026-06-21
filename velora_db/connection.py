@@ -445,7 +445,7 @@ def _get_postgres_pool():
         pool_max = int(os.getenv("DATABASE_POOL_MAX", default_pool_max))
         global _pg_pool_max
         _pg_pool_max = pool_max
-        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "10"))
+        pool_timeout = float(os.getenv("DATABASE_POOL_TIMEOUT", "18"))
         # File courte : 503 + retry client plutôt que 20 requêtes bloquées.
         pool_waiting = int(os.getenv("DATABASE_POOL_MAX_WAITING", "8"))
         # Recyclage : on ne garde pas une connexion éternellement (PgBouncer en

@@ -926,29 +926,39 @@ def init_db() -> None:
                 ensure_columns(conn, "leads", {"relisted_at": "TEXT"})
             except Exception:
                 logger.exception("ensure leads.relisted_at (postgres)")
-        try:
-            from crm.maps.service import ensure_map_schema
-            from crm.leads.images import ensure_lead_image_schema
 
-            ensure_map_schema()
-            ensure_lead_image_schema()
-        except Exception:
-            logger.exception("ensure_map_schema / lead images")
-        # Sécurité Supabase : RLS + verrou API sur TOUTES les tables public,
-        # une fois que tous les modules ont créé les leurs (auto-réparation des
-        # tables « RLS Disabled »). L'app (rôle propriétaire) contourne RLS.
-        if os.getenv("VELIORA_AUTO_RLS", "1").strip().lower() not in ("0", "false", "no", ""):
+        def _deferred_postgres_init() -> None:
             try:
-                from velora_db.connection import secure_public_schema_rls
+                from crm.maps.service import ensure_map_schema
+                from crm.leads.images import ensure_lead_image_schema
 
-                secure_public_schema_rls()
+                ensure_map_schema()
+                ensure_lead_image_schema()
             except Exception:
-                logger.exception("secure_public_schema_rls au démarrage")
-        try:
-            prune_crawl_logs()
-        except Exception:
-            logger.debug("prune_crawl_logs au démarrage ignoré", exc_info=True)
-        logger.info("Base Supabase Veliora prête")
+                logger.exception("ensure_map_schema / lead images (deferred)")
+            if os.getenv("VELIORA_AUTO_RLS", "1").strip().lower() not in (
+                "0",
+                "false",
+                "no",
+                "",
+            ):
+                try:
+                    from velora_db.connection import secure_public_schema_rls
+
+                    secure_public_schema_rls()
+                except Exception:
+                    logger.exception("secure_public_schema_rls (deferred)")
+            try:
+                prune_crawl_logs()
+            except Exception:
+                logger.debug("prune_crawl_logs (deferred) ignoré", exc_info=True)
+
+        threading.Thread(
+            target=_deferred_postgres_init,
+            name="veliora-pg-deferred-init",
+            daemon=True,
+        ).start()
+        logger.info("Base Supabase Veliora prête (init lourde en arrière-plan)")
         return
     _init_sqlite()
     try:

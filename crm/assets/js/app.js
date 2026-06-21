@@ -324,7 +324,7 @@ function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
 async function api(path, options = {}) {
   const url = `${API}${path}`;
   const isPost = (options.method || "GET").toUpperCase() !== "GET";
-  const maxAttempts = isPost ? 3 : 2;
+  const maxAttempts = isPost ? 3 : 4;
   const timeoutMs = options.timeoutMs ?? API_FETCH_TIMEOUT_MS;
   const { timeoutMs: _drop, ...fetchOptions } = options;
   let lastError;
@@ -343,9 +343,13 @@ async function api(path, options = {}) {
         },
         timeoutMs,
       );
-      if (res.status === 503 && !isPost && attempt < maxAttempts - 1) {
+      if (res.status === 503 && attempt < maxAttempts - 1) {
         const peek = await res.clone().json().catch(() => ({}));
-        if (peek?.code === "database_busy") {
+        if (
+          peek?.code === "database_busy" ||
+          peek?.code === "database_warming" ||
+          peek?.code === "database_unavailable"
+        ) {
           await sleep(600 + attempt * 400);
           continue;
         }
@@ -859,6 +863,14 @@ async function fetchBootstrap() {
         if (peek?.code === "database_busy" && attempt < 2) {
           setSplashMessage("Base occupée — nouvelle tentative…");
           await sleep(700 + attempt * 450);
+          continue;
+        }
+        if (
+          (peek?.code === "database_warming" || peek?.code === "database_unavailable") &&
+          attempt < 2
+        ) {
+          setSplashMessage("Serveur en cours de démarrage…");
+          await sleep(900 + attempt * 500);
           continue;
         }
       }
@@ -1702,7 +1714,7 @@ async function ensureAuth() {
     return false;
   }
   try {
-    const me = await api("/auth/me");
+    const me = await api("/auth/me?lite=1", { timeoutMs: 35000 });
     state.user = me.user;
     state.billing = me.billing || null;
     state.settings = normalizeSettingsPayload(me.settings || state.settings || {});
