@@ -694,10 +694,19 @@ def sitemap_xml():
     from crm.config import SITE_URL
     from crm.portal.storage import list_published_slugs
 
-    pages = ["/", "/offre", "/estimation", "/annonces", "/legal"]
+    # Pages vitrine : priorité décroissante (accueil > offre > outils > légal).
+    # La home et l'offre ciblent « agence immobilière / pige » : priorité haute.
+    pages = [
+        ("/", "1.0"),
+        ("/offre", "0.9"),
+        ("/estimation", "0.7"),
+        ("/annonces", "0.7"),
+        ("/legal", "0.2"),
+    ]
     static_urls = [
-        f"  <url><loc>{SITE_URL}{p}</loc><changefreq>weekly</changefreq></url>"
-        for p in pages
+        f"  <url><loc>{SITE_URL}{p}</loc>"
+        f"<changefreq>weekly</changefreq><priority>{prio}</priority></url>"
+        for p, prio in pages
     ]
     listing_urls = []
     for row in list_published_slugs():
