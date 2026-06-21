@@ -3215,8 +3215,7 @@ def get_sources(
             for r in rows
         ]
     result = sorted(out, key=_source_sort_key)
-    if not sync:
-        _sources_cache[agency_id] = (time.monotonic(), result)
+    _sources_cache[agency_id] = (time.monotonic(), result)
     return result
 
 
@@ -3549,8 +3548,8 @@ def get_activities(agency_id: str, limit: int = 20) -> list[dict]:
         ]
 
 
-def get_stats(agency_id: str) -> dict:
-    leads = get_leads(agency_id, enrich=False, claim_orphans=False)
+def compute_stats_from_leads(leads: list[dict]) -> dict:
+    """Compteurs dashboard — sans requête DB si la liste est déjà chargée."""
     total = len(leads)
     sans_agence = sum(
         1 for l in leads if (l.get("listing_type") or l.get("type") or "particulier") != "agence"
@@ -3569,23 +3568,70 @@ def get_stats(agency_id: str) -> dict:
     }
 
 
+def get_stats(agency_id: str, *, leads: list[dict] | None = None) -> dict:
+    if leads is not None:
+        return compute_stats_from_leads(leads)
+    return compute_stats_from_leads(get_leads(agency_id, enrich=False, claim_orphans=False))
+
+
 def get_source_stats(agency_id: str) -> list[dict]:
     with get_connection() as conn:
+        return _source_stats_from_conn(conn, agency_id)
+
+
+def _source_stats_from_conn(conn, agency_id: str) -> list[dict]:
+    rows = conn.execute(
+        """SELECT name, found_total FROM sources
+           WHERE agency_id = ? ORDER BY found_total DESC""",
+        (agency_id,),
+    ).fetchall()
+    total = sum(r["found_total"] for r in rows) or 1
+    return [
+        {
+            "name": r["name"] or "Source",
+            "key": (r["name"] or "source").lower().replace("'", "").replace(" ", ""),
+            "count": r["found_total"],
+            "pct": round((r["found_total"] / total) * 100) if total else 0,
+        }
+        for r in rows
+    ]
+
+
+def get_bootstrap_sidebar(agency_id: str, *, activity_limit: int = 20) -> dict:
+    """Activités + stats sources en une seule connexion (bootstrap CRM)."""
+    with get_connection() as conn:
         rows = conn.execute(
-            """SELECT name, found_total FROM sources
-               WHERE agency_id = ? ORDER BY found_total DESC""",
-            (agency_id,),
+            """SELECT * FROM activities WHERE agency_id = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (agency_id, activity_limit),
         ).fetchall()
-        total = sum(r["found_total"] for r in rows) or 1
-        return [
-            {
-                "name": r["name"] or "Source",
-                "key": (r["name"] or "source").lower().replace("'", "").replace(" ", ""),
-                "count": r["found_total"],
-                "pct": round((r["found_total"] / total) * 100) if total else 0,
-            }
+        activities = [
+            {"type": r["type"], "text": r["text"], "time": _relative_time(r["created_at"])}
             for r in rows
         ]
+        return {
+            "activities": activities,
+            "source_stats": _source_stats_from_conn(conn, agency_id),
+        }
+
+
+def schedule_bootstrap_housekeeping(agency_id: str) -> None:
+    """Rattache orphelins + sync catalogues sources — hors chemin critique bootstrap."""
+
+    def _worker() -> None:
+        try:
+            n = claim_orphan_leads(agency_id)
+            if n:
+                invalidate_leads_snapshot(agency_id)
+            get_sources(agency_id, sync=True, live_counts=True)
+        except Exception:
+            logger.exception("bootstrap housekeeping agency=%s", agency_id)
+
+    threading.Thread(
+        target=_worker,
+        name=f"veliora-bootstrap-{str(agency_id)[:8]}",
+        daemon=True,
+    ).start()
 
 
 def _relative_time(iso: str) -> str:

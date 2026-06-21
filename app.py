@@ -464,6 +464,9 @@ def api_health():
         "auth_required": True,
         "billing": __import__("crm.billing.config", fromlist=["public_stripe_config"]).public_stripe_config(),
         "database": db_status(),
+        "database_ping": __import__(
+            "velora_db.connection", fromlist=["db_ping"]
+        ).db_ping(),
         "multi_agency": True,
         "post_sources": True,
         "delete_sources": True,
@@ -962,29 +965,26 @@ def api_leads():
 def api_bootstrap():
     """Chargement initial CRM — une requête, un passage base pour les leads."""
     from velora_db.connection import DatabaseBusyError
+    from crawler.storage import get_bootstrap_sidebar, schedule_bootstrap_housekeeping
 
     agency_id = _aid()
     try:
-        from crawler.storage import claim_orphan_leads
-
-        try:
-            claim_orphan_leads(agency_id)
-        except Exception as exc:
-            logging.warning("claim_orphan_leads agency=%s: %s", agency_id, exc)
         leads = get_leads(agency_id, claim_orphans=False)
     except DatabaseBusyError as exc:
         return jsonify({"error": str(exc), "code": "database_busy"}), 503
     except Exception as exc:
         logging.exception("GET /api/bootstrap leads")
         return jsonify({"error": f"Prospects indisponibles : {exc}"}), 500
-    stats = get_stats(agency_id)
-    sources = get_sources(agency_id, sync=True, live_counts=True)
+    stats = get_stats(agency_id, leads=leads)
+    sources = get_sources(agency_id, sync=False, live_counts=True)
+    sidebar = get_bootstrap_sidebar(agency_id)
+    schedule_bootstrap_housekeeping(agency_id)
     engine_status = engine.status()
     return jsonify({
         "leads": leads,
         "stats": stats,
-        "source_stats": get_source_stats(agency_id),
-        "activities": get_activities(agency_id),
+        "source_stats": sidebar["source_stats"],
+        "activities": sidebar["activities"],
         "sources": sources,
         "crawler": {
             **engine_status,

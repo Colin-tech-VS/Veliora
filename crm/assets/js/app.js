@@ -1744,6 +1744,85 @@ function hideAppSplash() {
   document.getElementById("app-splash")?.classList.add("is-hidden");
 }
 
+function applyServerHealthWarnings(health) {
+  if (!health) {
+    showWrongServerBanner();
+    showToast(
+      `API indisponible — lancez python app.py puis http://localhost:${PROPSCOUT_PORT}`,
+      "error",
+      12000,
+    );
+    return;
+  }
+  if (!health.mandates || !health.clients || (health.api_version || 0) < 6) {
+    showWrongServerBanner(true);
+    showToast(
+      "Serveur obsolète — fermez l’ancien terminal (Ctrl+C), relancez demarrer.bat ou python app.py (api_version 6, module clients requis)",
+      "warning",
+      14000,
+    );
+  } else if (!health.radar_analyze_url || (health.api_version || 0) < 7) {
+    showToast(
+      "Mode 2 (Score Mandat™) nécessite un redémarrage — Ctrl+C puis python app.py (api_version 7)",
+      "warning",
+      12000,
+    );
+  } else if (!health.delete_leads || (health.api_version || 0) < 5) {
+    showWrongServerBanner(true);
+    showToast(
+      "Serveur obsolète sur le port 8000 — Ctrl+C puis python app.py ou demarrer.bat",
+      "warning",
+      12000,
+    );
+  } else if (!health.radar) {
+    showToast(
+      "Module Radar indisponible — relancez le serveur avec la dernière version (python app.py)",
+      "warning",
+      8000,
+    );
+  } else if (API !== "/api") {
+    showToast(`API : ${API} (page ouverte ailleurs que :8000)`, "info", 5000);
+  } else if (!health.delete_sources) {
+    showToast("Serveur partiellement obsolète — relancez python app.py", "warning", 8000);
+  }
+  if (health?.ok && health.delete_leads) hideWrongServerBanner();
+  const ping = health?.database_ping;
+  if (ping && ping.ok === false) {
+    showToast("Base de données injoignable — vérifiez DATABASE_URL", "error", 10000);
+  } else if (ping?.latency_ms > 800) {
+    console.warn(`DB lente (${ping.latency_ms} ms) — préférez le pooler Supabase (port 6543)`);
+  }
+}
+
+function applyLeadRefreshFromHealth(health) {
+  if (!health) {
+    state.serverLeadRefresh = null;
+    return;
+  }
+  state.serverLeadRefresh = !!health.lead_refresh;
+  state.serverApiVersion = health.api_version;
+  if (!health.lead_refresh) {
+    showStaleServerBanner(
+      "Serveur Veliora obsolète — le bouton « Mettre à jour » nécessite api_version 7. " +
+        "Ctrl+C dans le terminal, puis double-clic sur demarrer.bat.",
+    );
+  } else {
+    hideStaleServerBanner();
+  }
+}
+
+async function initDeferredCrmUi() {
+  await Promise.all([fetchRoiStats(), syncAccountBillingButton(), refreshOnboardingUi()]);
+  if (!onboardingDidAutoNav && onboardingCache && !onboardingCache.settings?.onboarding_completed) {
+    const current = currentOnboardingStep(onboardingProgress(onboardingCache));
+    const meta = ONBOARDING_STEPS.find((s) => s.step === current);
+    if (meta && state.currentView !== meta.view) {
+      onboardingDidAutoNav = true;
+      await switchView(meta.view);
+    }
+  }
+}
+
 async function init() {
   setupNavigation();
   setupMobileNav();
@@ -1789,54 +1868,6 @@ async function init() {
   }
 
   try {
-    const health = await api("/health").catch(() => null);
-    if (!health) {
-      showWrongServerBanner();
-      showToast(
-        `API indisponible — lancez python app.py puis http://localhost:${PROPSCOUT_PORT}`,
-        "error",
-        12000,
-      );
-    } else if (!health.mandates || !health.clients || (health.api_version || 0) < 6) {
-      showWrongServerBanner(true);
-      showToast(
-        "Serveur obsolète — fermez l’ancien terminal (Ctrl+C), relancez demarrer.bat ou python app.py (api_version 6, module clients requis)",
-        "warning",
-        14000,
-      );
-    } else if (!health.radar_analyze_url || (health.api_version || 0) < 7) {
-      showToast(
-        "Mode 2 (Score Mandat™) nécessite un redémarrage — Ctrl+C puis python app.py (api_version 7)",
-        "warning",
-        12000,
-      );
-    } else if (!health.delete_leads || (health.api_version || 0) < 5) {
-      showWrongServerBanner(true);
-      showToast(
-        "Serveur obsolète sur le port 8000 — Ctrl+C puis python app.py ou demarrer.bat",
-        "warning",
-        12000,
-      );
-    } else if (!health.radar) {
-      showToast(
-        "Module Radar indisponible — relancez le serveur avec la dernière version (python app.py)",
-        "warning",
-        8000,
-      );
-    } else if (API !== "/api") {
-      showToast(
-        `API : ${API} (page ouverte ailleurs que :8000)`,
-        "info",
-        5000,
-      );
-    } else if (!health.delete_sources) {
-      showToast(
-        "Serveur partiellement obsolète — relancez python app.py",
-        "warning",
-        8000,
-      );
-    }
-    if (health?.ok && health.delete_leads) hideWrongServerBanner();
     if (typeof initVelioraClients === "function") {
       initVelioraClients({
         api,
@@ -1857,24 +1888,19 @@ async function init() {
         scheduleSourceUrlsForCity,
       });
     }
+
+    const healthPromise = api("/health").catch(() => null);
     await loadData();
-    await checkServerLeadRefreshCapability();
     renderAll();
     hideAppSplash();
     syncCrawlerUI();
-    fetchRoiStats();
-    await syncAccountBillingButton();
-    await refreshOnboardingUi();
-    if (!onboardingDidAutoNav && onboardingCache && !onboardingCache.settings?.onboarding_completed) {
-      const current = currentOnboardingStep(onboardingProgress(onboardingCache));
-      const meta = ONBOARDING_STEPS.find((s) => s.step === current);
-      if (meta && state.currentView !== meta.view) {
-        onboardingDidAutoNav = true;
-        await switchView(meta.view);
-      }
-    }
     startPolling();
-    await resumeActiveCrawlIfAny();
+    void resumeActiveCrawlIfAny();
+    void initDeferredCrmUi();
+
+    const health = await healthPromise;
+    applyServerHealthWarnings(health);
+    applyLeadRefreshFromHealth(health);
   } catch (err) {
     if (err?.message === "SUBSCRIPTION_REDIRECT") return;
     showToast(err.message || "Impossible de charger les données — lancez python app.py", "error");
@@ -4261,19 +4287,10 @@ async function startLeadRefreshJob(leadId) {
   );
 }
 
-async function checkServerLeadRefreshCapability() {
+async function checkServerLeadRefreshCapability(healthPayload) {
   try {
-    const health = await api("/health");
-    state.serverLeadRefresh = !!health.lead_refresh;
-    state.serverApiVersion = health.api_version;
-    if (!health.lead_refresh) {
-      showStaleServerBanner(
-        "Serveur Veliora obsolète — le bouton « Mettre à jour » nécessite api_version 7. " +
-          "Ctrl+C dans le terminal, puis double-clic sur demarrer.bat.",
-      );
-    } else {
-      hideStaleServerBanner();
-    }
+    const health = healthPayload ?? (await api("/health"));
+    applyLeadRefreshFromHealth(health);
   } catch {
     state.serverLeadRefresh = null;
   }

@@ -608,6 +608,24 @@ def get_connection():
         conn.close()
 
 
+def db_ping() -> dict:
+    """Test connexion actif + latence (ms) pour /api/health."""
+    t0 = time.perf_counter()
+    try:
+        with get_connection() as conn:
+            conn.execute("SELECT 1")
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        return {"ok": True, "latency_ms": latency_ms, **db_status()}
+    except Exception as exc:
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        return {
+            "ok": False,
+            "latency_ms": latency_ms,
+            **db_status(),
+            "error": str(exc)[:200],
+        }
+
+
 def db_status() -> dict:
     if is_postgres():
         url = database_url() or ""

@@ -4,6 +4,7 @@ from velora_db.config import backend_name, is_postgres, database_url_configured
 from velora_db.connection import (
     backup_database,
     checkpoint_database,
+    db_ping,
     db_status,
     get_connection,
     row_scalar,
@@ -11,6 +12,7 @@ from velora_db.connection import (
 
 __all__ = [
     "get_connection",
+    "db_ping",
     "db_status",
     "checkpoint_database",
     "backup_database",
