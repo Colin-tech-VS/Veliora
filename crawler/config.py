@@ -391,8 +391,9 @@ def _env_bool(name: str, default: str) -> bool:
     return os.getenv(name, default).strip().lower() in ("1", "true", "yes")
 
 
-# Démarre la veille auto au boot (wsgi / python app.py). Désactiver : CRAWL_AUTO_START=false
-CRAWL_AUTO_START = _env_bool("CRAWL_AUTO_START", "true")
+# Démarre la veille auto au boot (wsgi / python app.py). Désactivé par défaut pour
+# ne pas saturer la base au chargement CRM — activer : CRAWL_AUTO_START=true
+CRAWL_AUTO_START = _env_bool("CRAWL_AUTO_START", "false")
 
 # Intervalle entre deux passages « tous portails » (secondes). Défaut 300 = 5 min.
 CRAWL_BACKGROUND_INTERVAL_SEC = max(

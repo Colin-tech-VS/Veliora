@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import threading
 import time
@@ -2980,6 +2981,13 @@ class CrawlerEngine:
             get_pending_or_running_crawl_job,
             list_agency_ids,
         )
+
+        # Laisse le CRM / bootstrap respirer après un redémarrage serveur.
+        startup_grace = max(0, int(os.getenv("CRAWL_AUTO_START_DELAY_SEC", "120")))
+        for _ in range(startup_grace):
+            if not self.running:
+                return
+            time.sleep(1)
 
         while self.running:
             try:
