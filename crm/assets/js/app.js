@@ -847,15 +847,33 @@ function applyBootstrapPayload(data) {
 }
 
 async function fetchBootstrap() {
-  try {
-    const res = await fetchWithTimeout(`${API}/bootstrap`, {
-      headers: { ...getAuthHeaders(), Accept: "application/json" },
-    }, 45000);
-    if (!res.ok) return null;
-    return res.json().catch(() => null);
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetchWithTimeout(
+        `${API}/bootstrap`,
+        { headers: { ...getAuthHeaders(), Accept: "application/json" } },
+        attempt === 0 ? 28000 : 35000,
+      );
+      if (res.status === 503) {
+        const peek = await res.clone().json().catch(() => ({}));
+        if (peek?.code === "database_busy" && attempt < 2) {
+          setSplashMessage("Base occupée — nouvelle tentative…");
+          await sleep(700 + attempt * 450);
+          continue;
+        }
+      }
+      if (!res.ok) return null;
+      return res.json().catch(() => null);
+    } catch (err) {
+      if (attempt < 2) {
+        setSplashMessage("Reconnexion au serveur…");
+        await sleep(500 + attempt * 350);
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 }
 
 async function loadDataCore() {
@@ -1748,6 +1766,15 @@ function hideAppSplash() {
   document.getElementById("app-splash")?.classList.add("is-hidden");
 }
 
+function setSplashMessage(msg) {
+  const el = document.getElementById("app-splash-msg");
+  if (el && msg) el.textContent = msg;
+}
+
+function setAppDataLoading(on) {
+  document.querySelector(".app")?.classList.toggle("is-loading-data", !!on);
+}
+
 function applyServerHealthWarnings(health) {
   if (!health) {
     showWrongServerBanner();
@@ -1828,6 +1855,12 @@ async function initDeferredCrmUi() {
 }
 
 async function init() {
+  if (!(await ensureAuth())) {
+    hideAppSplash();
+    return;
+  }
+  hideAppSplash();
+  setAppDataLoading(true);
   setupNavigation();
   setupMobileNav();
   setupSearch();
@@ -1866,12 +1899,8 @@ async function init() {
     if (state.currentView === "leads") renderLeads();
   });
 
-  if (!(await ensureAuth())) {
-    hideAppSplash();
-    return;
-  }
-
   try {
+    setSplashMessage("Chargement de vos prospects…");
     if (typeof initVelioraClients === "function") {
       initVelioraClients({
         api,
@@ -1893,23 +1922,22 @@ async function init() {
       });
     }
 
-    const healthPromise = api("/health").catch(() => null);
     await loadData();
     renderAll();
-    hideAppSplash();
     syncCrawlerUI();
     startPolling();
     void resumeActiveCrawlIfAny();
     void initDeferredCrmUi();
 
-    const health = await healthPromise;
+    const health = await api("/health").catch(() => null);
     applyServerHealthWarnings(health);
     applyLeadRefreshFromHealth(health);
   } catch (err) {
     if (err?.message === "SUBSCRIPTION_REDIRECT") return;
     showToast(err.message || "Impossible de charger les données — lancez python app.py", "error");
     renderAll();
-    hideAppSplash();
+  } finally {
+    setAppDataLoading(false);
   }
 }
 

@@ -608,22 +608,34 @@ def get_connection():
         conn.close()
 
 
-def db_ping() -> dict:
+_db_ping_cache: tuple[float, dict] | None = None
+_DB_PING_CACHE_TTL_SEC = float(os.getenv("DB_PING_CACHE_TTL", "15"))
+
+
+def db_ping(*, force: bool = False) -> dict:
     """Test connexion actif + latence (ms) pour /api/health."""
+    global _db_ping_cache
+    if not force and _db_ping_cache is not None:
+        age = time.monotonic() - _db_ping_cache[0]
+        if age < _DB_PING_CACHE_TTL_SEC:
+            return _db_ping_cache[1]
+
     t0 = time.perf_counter()
     try:
         with get_connection() as conn:
             conn.execute("SELECT 1")
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-        return {"ok": True, "latency_ms": latency_ms, **db_status()}
+        result = {"ok": True, "latency_ms": latency_ms, **db_status()}
     except Exception as exc:
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-        return {
+        result = {
             "ok": False,
             "latency_ms": latency_ms,
             **db_status(),
             "error": str(exc)[:200],
         }
+    _db_ping_cache = (time.monotonic(), result)
+    return result
 
 
 def db_status() -> dict:

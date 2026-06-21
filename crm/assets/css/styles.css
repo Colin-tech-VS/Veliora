@@ -168,6 +168,10 @@ body {
   pointer-events: none;
 }
 
+.app.is-loading-data .main {
+  cursor: progress;
+}
+
 /* Photo immobilière en fond, léger zoom « Ken Burns » */
 .app-splash-bg {
   position: absolute;

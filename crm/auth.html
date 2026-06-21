@@ -170,6 +170,24 @@
       }
     }
 
+    const AUTH_FETCH_TIMEOUT_MS = 25000;
+
+    function fetchAuth(url, options = {}, timeoutMs = AUTH_FETCH_TIMEOUT_MS) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      return fetch(url, { ...options, signal: ctrl.signal })
+        .finally(() => clearTimeout(timer));
+    }
+
+    function authFetchError(err) {
+      if (err?.name === "AbortError") {
+        return new Error(
+          "Délai dépassé — le serveur met trop de temps à répondre. Vérifiez votre connexion et réessayez.",
+        );
+      }
+      return err instanceof Error ? err : new Error(String(err));
+    }
+
     async function loadBillingConfig() {
       try {
         const [billR, pubR] = await Promise.all([
@@ -339,7 +357,7 @@
         if (!r.ok) throw new Error(d.error || "Erreur");
         toast(d.message || "Email envoyé si le compte existe", true);
         tabs[0].click();
-      } catch (err) { toast(err.message, false); }
+      } catch (err) { toast(authFetchError(err).message, false); }
       finally { setBtnLoading(btn, false); }
     });
 
@@ -363,7 +381,7 @@
         if (!r.ok) throw new Error(d.error || "Erreur");
         toast(d.message || "Mot de passe mis à jour", true);
         tabs[0].click();
-      } catch (err) { toast(err.message, false); }
+      } catch (err) { toast(authFetchError(err).message, false); }
       finally { setBtnLoading(btn, false); }
     });
 
@@ -420,7 +438,7 @@
       let stayLoading = false;
       setBtnLoading(btn, true, "Connexion…");
       try {
-        const r = await fetch(API + "/auth/login", {
+        const r = await fetchAuth(API + "/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -432,7 +450,7 @@
         if (!r.ok) throw new Error(d.error || "Erreur");
         saveSession(d);
         setBtnLoading(btn, true, "Vérification du compte…");
-        const me = await fetch(API + "/auth/me", {
+        const me = await fetchAuth(API + "/auth/me", {
           headers: { Authorization: "Bearer " + d.token },
         }).then(parseJson);
         if (me.billing?.requires_payment && !me.billing?.active) {
@@ -445,7 +463,7 @@
         setBtnLoading(btn, true, "Ouverture de votre espace…");
         stayLoading = true;
         window.location.href = nextUrl;
-      } catch (err) { toast(err.message, false); }
+      } catch (err) { toast(authFetchError(err).message, false); }
       finally {
         if (!stayLoading) setBtnLoading(btn, false);
       }
@@ -464,7 +482,7 @@
       lockAuthForm(form, true);
       showBanner("Création de votre espace agence — merci de patienter quelques secondes.", "");
       try {
-        const r = await fetch(API + "/auth/register-agency", {
+        const r = await fetchAuth(API + "/auth/register-agency", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

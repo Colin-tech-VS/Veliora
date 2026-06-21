@@ -3658,11 +3658,13 @@ def get_bootstrap_sidebar(agency_id: str, *, activity_limit: int = 20) -> dict:
         }
 
 
-def schedule_bootstrap_housekeeping(agency_id: str) -> None:
+def schedule_bootstrap_housekeeping(agency_id: str, *, delay_sec: float = 12.0) -> None:
     """Rattache orphelins + sync catalogues sources — hors chemin critique bootstrap."""
 
     def _worker() -> None:
         try:
+            if delay_sec > 0:
+                time.sleep(delay_sec)
             n = claim_orphan_leads(agency_id)
             if n:
                 invalidate_leads_snapshot(agency_id)
