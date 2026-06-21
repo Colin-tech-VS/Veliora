@@ -891,7 +891,11 @@ async function fetchBootstrap() {
 async function loadDataCore() {
   const bootstrap = await fetchBootstrap();
   if (applyBootstrapPayload(bootstrap)) {
-    return;
+    return bootstrap;
+  }
+
+  if (bootstrap === null) {
+    showToast("Chargement CRM incomplet — nouvel essai…", "warning", 6000);
   }
 
   const [coreResult, settingsResult] = await Promise.all([
@@ -931,6 +935,31 @@ async function loadDataCore() {
     applyAgencyCityToCrawl();
   }
   scheduleDrawerCacheWarm();
+  return null;
+}
+
+function crmNeedsInitialDataReload() {
+  return (!Array.isArray(LEADS) || LEADS.length === 0) && (!Array.isArray(SOURCES) || SOURCES.length === 0);
+}
+
+async function loadData() {
+  let bootstrap = await loadDataCore();
+  if (crmNeedsInitialDataReload()) {
+    await sleep(2500);
+    bootstrap = await loadDataCore();
+    if (crmNeedsInitialDataReload()) {
+      showToast(
+        "Aucune annonce pour l'instant — configurez vos portails (Crawler) puis lancez une veille.",
+        "info",
+        9000,
+      );
+    } else {
+      renderAll();
+      syncCrawlerUI();
+    }
+  }
+  applyMobileLeadsLayout();
+  scheduleRadarPlaybookLoad();
 }
 
 /** Recharge prospects + briefing (ex. après finalisation d'une affaire). */
@@ -998,12 +1027,6 @@ function scheduleRadarPlaybookLoad() {
       radarPlaybookLoadPromise = null;
     });
   return radarPlaybookLoadPromise;
-}
-
-async function loadData() {
-  await loadDataCore();
-  applyMobileLeadsLayout();
-  scheduleRadarPlaybookLoad();
 }
 
 /** Recharge tout (y compris radar) — après crawl, import, etc. */
@@ -8565,7 +8588,12 @@ async function runBackgroundPoll() {
     }
 
     const crawlBusy = !!(status.running || status.is_crawling);
-    if (statusStable && !crawlBusy && pollUnchangedStreak >= 2) {
+    const needsDataRefresh =
+      !Array.isArray(LEADS) ||
+      LEADS.length === 0 ||
+      !Array.isArray(SOURCES) ||
+      SOURCES.length === 0;
+    if (statusStable && !crawlBusy && pollUnchangedStreak >= 2 && !needsDataRefresh) {
       updateSidebarCount();
       scheduleBackgroundPoll(nextBackgroundPollDelay(false));
       return;

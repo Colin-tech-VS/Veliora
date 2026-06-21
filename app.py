@@ -981,10 +981,15 @@ def api_leads():
 def api_bootstrap():
     """Chargement initial CRM — une requête, un passage base pour les leads."""
     from velora_db.connection import DatabaseBusyError
-    from crawler.storage import get_bootstrap_sidebar, schedule_bootstrap_housekeeping
+    from crawler.storage import (
+        get_bootstrap_sidebar,
+        prepare_agency_bootstrap,
+        schedule_bootstrap_housekeeping,
+    )
 
     agency_id = _aid()
     try:
+        prepare_agency_bootstrap(agency_id)
         leads = get_leads(agency_id, claim_orphans=False)
     except DatabaseBusyError as exc:
         return jsonify({"error": str(exc), "code": "database_busy"}), 503

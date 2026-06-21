@@ -3668,16 +3668,37 @@ def get_bootstrap_sidebar(agency_id: str, *, activity_limit: int = 20) -> dict:
         }
 
 
+def prepare_agency_bootstrap(agency_id: str) -> None:
+    """Portails par défaut + orphelins — avant le 1er affichage CRM (rapide)."""
+    from crm.leads.shared_pool import is_shared_pool_agency_id
+
+    if is_shared_pool_agency_id(agency_id):
+        return
+    with get_connection() as conn:
+        n = row_scalar(
+            conn.execute(
+                "SELECT COUNT(*) AS c FROM sources WHERE agency_id = ?",
+                (agency_id,),
+            )
+        )
+    if n == 0:
+        sync_default_sources_for_agency(agency_id)
+        invalidate_sources_cache(agency_id)
+    try:
+        claimed = claim_orphan_leads(agency_id)
+        if claimed:
+            invalidate_leads_snapshot(agency_id)
+    except Exception:
+        logger.warning("claim_orphan_leads bootstrap agency=%s", agency_id, exc_info=True)
+
+
 def schedule_bootstrap_housekeeping(agency_id: str, *, delay_sec: float = 12.0) -> None:
-    """Rattache orphelins + sync catalogues sources — hors chemin critique bootstrap."""
+    """Sync catalogues sources lourds — hors chemin critique bootstrap."""
 
     def _worker() -> None:
         try:
             if delay_sec > 0:
                 time.sleep(delay_sec)
-            n = claim_orphan_leads(agency_id)
-            if n:
-                invalidate_leads_snapshot(agency_id)
             get_sources(agency_id, sync=True, live_counts=True)
         except Exception:
             logger.exception("bootstrap housekeeping agency=%s", agency_id)
